@@ -41,7 +41,7 @@ export const QUALITY_PRESETS: Record<QualityPresetId, QualityPreset> = {
 	max: {
 		id: 'max',
 		label: 'Max power',
-		tagline: 'Every core, near-lossless',
+		tagline: 'Near-lossless mastering',
 		bitsPerPixel: 0.34,
 		crf: 9,
 		x264Preset: 'veryslow',

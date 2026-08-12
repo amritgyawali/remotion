@@ -3,13 +3,15 @@
 Upload a code file, get a rendered video. A Next.js 16 App Router app that
 compiles a Remotion composition **in the browser**, previews it frame-accurately
 and encodes a finished MP4/WebM with WebCodecs - including music and sound -
-with no render server or queue.
-An optional server engine renders with headless Chrome at maximum power when you
-want ProRes, GIF or every-core encoding.
+with no render server or queue. It supports deterministic React Three Fiber
+scenes as well as DOM/SVG motion graphics.
+An optional protected server engine renders on a trusted Node host or inside an
+isolated Vercel Sandbox VM when you want ProRes, GIF, or server-side encoding.
 
 ```
 upload .tsx / .zip  ->  sucrase compile  ->  <Player> preview  ->  browser video + audio render  ->  download
-                                                              \-> optional /api/render (headless Chrome)
+                                                              \-> optional /api/render
+                                                                  Node or Vercel Sandbox -> Blob
 ```
 
 ## Quick start
@@ -21,7 +23,7 @@ npm install
 npm run dev          # http://localhost:3000
 ```
 
-Then click **Load** on *Star Forge 3D* and press **Render video**.
+Then click **Load** on *AI Master Template* and press **Render video**.
 
 ## Build a video with AI
 
@@ -32,10 +34,17 @@ Then click **Load** on *Star Forge 3D* and press **Render video**.
    runnable `.tsx` file. Use only the supported imports; do not return a diff."
 4. Upload the completed file here, preview every scene, then render it.
 
-The template is already a working composition with original music and timed SFX.
-Its annotated edit map tells the AI where to replace the brief, theme, timeline,
-scene code, object/icon/arrow/neon/geometry/depth system, soundtrack and final
-Composition settings.
+The template is already a working composition with a lit procedural 3D sun and
+tree, an original music bed, story sounds, and frame-synchronized SFX. Its
+`VISUAL_PROOF_PLAN` forces every important user phrase to become a recognizable
+subject and visible action. “Sun” must produce a sun; “tree” must produce a tree;
+verbs, relationships, comparisons, and claims must be demonstrated—not merely
+written on screen. The edit contract also covers bespoke art direction, camera,
+lighting, materials, responsive layout, sound, performance, and final quality.
+
+The **Music & sound** control applies one master setting to both the Player and
+the exported file. Turn it off for a silent cut, or leave it on to mix all
+authored music, sounds, narration, SFX and source-video audio.
 
 ## Deploy to GitHub + Vercel
 
@@ -57,45 +66,68 @@ git push -u origin main
 This can be `$0` for a personal, non-commercial project within Vercel Hobby's
 usage limits. Hobby is not licensed for commercial use; use Vercel Pro (or
 another host) if the deployment supports a business. Keep the optional server
-renderer disabled for the simplest free public deployment.
+renderer disabled for the simplest public deployment.
+
+For cloud server rendering, connect a Vercel Blob store and set
+`ENABLE_SERVER_RENDER=1` plus a strong `RENDER_ACCESS_KEY`. On Vercel, the route
+orchestrates `@remotion/vercel`: uploaded code, Chrome, and FFmpeg execute in a
+disposable Sandbox VM, and the finished file is delivered through Blob. A normal
+Vercel Function does not run Chromium directly. The Vercel build creates a
+reusable renderer snapshot; each job restores it and then uploads only the
+current Remotion bundle. Old snapshot/Blob objects should be removed as part of
+your deployment retention policy.
 
 ### Environment variables (all optional)
 
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `ENABLE_SERVER_RENDER` | unset | Set to `1` to turn on `/api/render` (headless Chrome). |
-| `RENDER_ACCESS_KEY` | unset | When set, the UI must send this key before the server will render. **Strongly recommended if you enable server rendering.** |
+| `ENABLE_SERVER_RENDER` | unset | Set to `1` to turn on protected Node/Vercel Sandbox rendering. |
+| `RENDER_ACCESS_KEY` | unset | Shared render key. **Required** for both Node and Vercel server rendering. |
 | `MAX_RENDER_FRAMES` | `1800` | Frame ceiling for a single server render. |
 | `MAX_RENDER_PIXELS` | `8294400` | Resolution ceiling (4K) for a single server render. |
-| `REMOTION_CONCURRENCY` | `max` | `max` uses every core; a number pins it. |
-| `REMOTION_GL` | `swangle` | Chrome GL backend used on the server. |
+| `REMOTION_CONCURRENCY` | `auto` | Remotion chooses a memory-safe worker count; a number pins it. |
+| `REMOTION_GL` | `angle` on macOS/Windows, `swangle` on Linux | Chrome GL backend for WebGL/ThreeCanvas. GPU-less Linux hosts (CI, containers, Vercel Sandbox) need `swangle`. |
 | `NEXT_PUBLIC_REMOTION_LICENSE_KEY` | `free-license` | Set a purchased Remotion key if the Free License does not cover your team. |
-| `BLOB_READ_WRITE_TOKEN` | unset | Finished server renders are uploaded to Vercel Blob instead of streamed back inline. |
+| `BLOB_READ_WRITE_TOKEN` | unset | Required for Vercel Sandbox output; created automatically when a Blob store is connected. |
+| `VERCEL_SANDBOX_VCPUS` | `4` | vCPUs requested for each Vercel Sandbox render VM. |
+| `VERCEL_SANDBOX_TIMEOUT_MS` | `2700000` | Sandbox lifetime ceiling (45 minutes by default). |
 
 Copy `.env.example` to `.env.local` to try them locally.
 
-> **Security:** the server engine compiles and runs code that a visitor
-> uploaded. Only enable it on a private deployment, and always pair it with
-> `RENDER_ACCESS_KEY`. The browser engine has no such risk - the code runs in the
-> visitor's own tab, inside the browser sandbox.
+> **Security and cost:** only load code you trust. Browser compilation uses
+> `new Function()` in the application tab; it is not a security isolation
+> boundary. Vercel Sandbox isolates server execution, but a public render API
+> still needs authentication, rate limiting, spend controls, cancellation, and
+> output cleanup before production use.
 
-## The three ways to render
+## The four rendering paths
 
-| | Browser engine | Server engine | `npm run render:local` |
-| --- | --- | --- | --- |
-| Cost | runs on the visitor's device | serverless compute | runs on your machine |
-| Limits | browser codec/RAM support | `maxDuration` 300s, frame/pixel caps | machine resources |
-| Formats | MP4 (H.264 + AAC), WebM (VP9/VP8 + Opus), PNG | + GIF, ProRes 4444 | + H.265, any Remotion codec |
-| Quality | up to 160 Mbps, 2x scale | crf 9, PNG frames, veryslow x264 | crf 9, PNG frames, every core |
-| Needs | Chrome / Edge recommended; Safari 16.4+ | `ENABLE_SERVER_RENDER=1` | Node 20.9+ on your machine |
+| Path | Best use | Quality and limits |
+| --- | --- | --- |
+| Browser engine | Interactive renders on any Vercel/static deployment | H.264/AAC or WebM/Opus, Max preset, 2x scale, OPFS-backed output where available; bounded by device codecs, GPU, disk and RAM |
+| Vercel Sandbox | Protected on-demand cloud renders | Isolated Chrome + FFmpeg VM, Blob delivery, MP4/WebM/GIF/ProRes; requires Vercel, Blob, auth and spend controls |
+| Node server / local CLI | Trusted private infrastructure | CRF 9, PNG source frames, H.264/H.265/VP9/ProRes; bounded by the host |
+| GitHub Actions | Trusted committed/manual offline renders | CI smoke-renders 3D + audio; **Render video** workflow creates a High/Max downloadable artifact, with a 6-hour job ceiling and no hosted-runner GPU guarantee |
 
-**Max power, locally:**
+**Max-quality local rendering:**
 
 ```bash
 npm run render:sample                                   # the flagship sample at crf 9
 node scripts/render-local.mjs my-video.tsx --preset max --scale 2 --codec h265
 node scripts/render-local.mjs my-video.tsx --frames 0-119 --preset draft   # quick check
 ```
+
+**Checking a render without a video player:**
+
+```bash
+npm run stills -- my-video.tsx --frames 0,60,120 --scale 0.5   # PNG contact sheet
+npm run inspect -- out/my-video.mp4 --expect-audio             # tracks, duration, size
+```
+
+`stills` renders the real layout at a lower raster resolution, so it shows
+exactly what the full-size export will look like. `inspect` reads the container
+with mediabunny and fails when a track, duration or the audio you expected is
+missing - no system FFmpeg required.
 
 ## What you can upload
 
@@ -111,33 +143,54 @@ node scripts/render-local.mjs my-video.tsx --frames 0-119 --preset draft   # qui
 Bundled modules: `remotion`, `react`, `@remotion/player`, `@remotion/shapes`,
 `@remotion/paths`, `@remotion/noise`, `@remotion/motion-blur`,
 `@remotion/transitions` (+ fade/slide/wipe/flip/clock-wipe), `@remotion/media`,
-`@remotion/media-utils`, `@remotion/gif`. Anything else has to come with your
-upload as source.
+`@remotion/media-utils`, `@remotion/gif`, `@remotion/fonts`, `@remotion/three`,
+`@react-three/fiber`, and `three`. Anything else has to come with your upload as
+source.
 
 ### Production asset kit
 
 Open `/assets/index.html` in the running app, or click **Browse** under
-**Production asset kit** in the left panel. The included CC0 library contains:
+**Production asset kit** in the left panel. 99 assets ship with the app:
 
-- 41 editable SVGs: objects, icons, arrows, neon graphics, geometry and
-  browser-safe 3D/depth artwork.
-- 3 original loopable music beds and 10 transition, UI, impact and reveal SFX.
-- Machine-readable catalogs, source generators, usage guides and one ZIP download.
+| Pack | Contents | Licence |
+| --- | --- | --- |
+| Visuals | 41 editable SVGs: objects, icons, arrows, neon graphics, geometry, depth art | CC0-1.0 |
+| Textures | 20 PNGs: film grain, paper, halftone, scanlines, vignette, light leaks, glow/bokeh/spark/smoke sprites, 4 matcaps, 3 equirectangular environment maps | CC0-1.0 |
+| Typography | 10 self-hosted families (Inter, Archivo, Anton, Bebas Neue, Oswald, Playfair Display, Space Grotesk, JetBrains Mono, Nunito, Caveat) - 8 of them variable | OFL-1.1 |
+| Audio | 8 loopable music beds (neon, warm, cinematic, ambient, epic, lofi, corporate, tension) and 20 SFX | CC0-1.0 |
 
-Use a visual path such as `/assets/visual/v1/objects/phone.svg`, or sound with
-`<Audio src="/assets/audio/v1/music/neon-pulse-120bpm-loop.wav" />` imported
-from `@remotion/media`. Regenerate and validate the whole library with:
+```tsx
+staticFile('assets/visual/v1/objects/phone.svg')
+staticFile('assets/texture/v1/overlays/film-grain.png')
+<Audio src={staticFile('assets/audio/v1/music/ambient-calm-70bpm-loop.wav')} />   // @remotion/media
+loadFont({family: 'Anton', url: staticFile('assets/fonts/v1/anton/Anton-Regular.ttf')})  // @remotion/fonts
+```
+
+Fonts are self-hosted on purpose: a render host without the family installed
+silently falls back to Arial, and `loadFont()` holds the render open until the
+face is parsed. Textures cover the two things procedural CSS cannot fake -
+photographic grain and image-based 3D lighting.
+
+Regenerate and validate the library with:
 
 ```bash
-npm run assets
-npm run assets:verify
+npm run assets           # visuals, audio, textures, fonts, then the combined catalog + ZIP
+npm run assets:verify    # offline: hashes and audio levels for all three generated packs
 ```
+
+Everything except the fonts is synthesised from seeded math by the scripts in
+`scripts/`, so there is no third-party artwork, sample or recording in this
+repository. The font families come from the official
+[google/fonts](https://github.com/google/fonts) repository under the SIL Open
+Font License, which permits redistribution as long as each family keeps its
+`OFL.txt` - `npm run assets:fonts` downloads both and records SHA-256 hashes in
+`public/assets/fonts/fonts.lock.json`.
 
 ### Samples
 
 | Sample | What it shows |
 | --- | --- |
-| `samples/ai-master-template.tsx` | AI-ready single-file scaffold. Download it, attach it to your AI with your video brief, then upload the returned complete `.tsx`. In-file markers cover the concept, script, scenes, timing, palette, typography, assets, motion rules and composition settings. |
+| `samples/ai-master-template.tsx` | AI-ready single-file scaffold with a real procedural ThreeCanvas sun/tree demonstration. `VISUAL_PROOF_PLAN` maps the user’s exact sayings to literal subjects, visible actions, shared beat frames, camera/light direction, soundtrack and final quality. |
 | `samples/star-forge-3d.tsx` | 1080x1920, 30s. Real perspective 3D with **no WebGL**: a hand-written yaw/pitch rotation + perspective divide projects every tile, and each star is extruded by stacking 8 shaded copies along the view vector. Four loop shapes, one wing flap, 2x2 contact-sheet outro. |
 | `samples/event-loop-orbit.tsx` | 1080x1920, 30s. Blocking vs async I/O as an orbit. A 12-line `schedule()` returns real start/end times; the request cards, the SVG ring and the running clock all read from that one source of truth, so the 4.8s vs 2.1s payoff is arithmetically honest. |
 | `samples/thread-race.tsx` | 1080x1920, 30s. Concurrency against parallelism. A `roundRobin(quantum)` simulator emits the interleaved stripes - the tape, the core grid and the per-job progress bars are all derived from that segment list, never hand-keyframed. |
@@ -169,7 +222,7 @@ components/
   Studio.tsx            state machine: project -> compile -> preview -> render
   SourcePanel.tsx       dropzone, samples, file tree, entry picker
   StagePanel.tsx        <Player> stage + composition metadata
-  RenderPanel.tsx       engine, quality preset, format, scale, progress, output
+  RenderPanel.tsx       audio, engine, quality preset, format, scale, progress, output
   PlayerCanvas.tsx      dynamic({ ssr: false }) wrapper around @remotion/player
 lib/
   compiler.ts           sucrase + a tiny CommonJS module graph, runs in the tab
@@ -182,25 +235,40 @@ samples/                the uploadable examples
 scripts/
   generate-audio-assets.mjs   deterministic original WAV library + verifier
   generate-visual-assets.mjs  deterministic original SVG library
+  generate-texture-assets.mjs deterministic PNG grain/sprite/matcap/env library
+  fetch-fonts.mjs             self-hosted OFL font kit + hash lock + verifier
   build-asset-library.mjs     combined catalog, gallery and ZIP
-  render-local.mjs      unlimited CLI renderer
+  render-local.mjs      host-limited, max-quality CLI renderer
+  preview-stills.mjs    PNG contact sheet from any composition
+  inspect-media.mjs     track/duration check without a system FFmpeg
   sync-samples.mjs      samples -> public/samples (runs on predev/prebuild)
 ```
 
-## How the free renderer works
+## How browser rendering works
 
 MediaRecorder-based exporters record the screen in wall-clock time, so a slow
 frame becomes a dropped frame. This app never records the screen. Visual-only
 projects use the high-fidelity `Thumbnail -> html-to-image -> VideoEncoder`
 pipeline. Projects importing `@remotion/media` use Remotion's stable web
-renderer, which composites frames, mixes audio and muxes AAC/Opus with the
-video. Both paths assign exact frame timestamps, so slow frames do not alter
-timeline timing.
+renderer, which composites DOM, media, and supported ThreeCanvas frames, mixes
+audio, and muxes AAC/Opus with the video. Large media renders use browser OPFS
+when available instead of keeping the entire encoder target in RAM. Both paths
+assign exact frame timestamps, so slow frames do not alter timeline timing.
 
 Quality knobs: bitrate scales with `width x height x fps x bitsPerPixel`
 (0.05 / 0.14 / 0.34 by preset, clamped to 4-160 Mbps), the H.264 level is chosen
 from the macroblock rate so Chrome accepts 4K, and the encoder runs in
 `quality` latency mode with `avc1.6400xx` High profile.
+
+Audio bitrate is negotiated, not assumed: browsers cap their audio encoders far
+below the video preset (Chrome refuses AAC above 128 kbps), so the export walks
+320 -> 256 -> 192 -> 160 -> 128 -> 96 kbps and keeps the highest rate this device
+actually accepts instead of failing the render.
+
+3D scenes must set `gl={{preserveDrawingBuffer: true}}` on `<ThreeCanvas>`; the
+exporter copies the WebGL canvas after the frame is composited, and without it
+the export is blank even though the preview looks right. The studio raises a
+warning when an uploaded file forgets it.
 
 ## Troubleshooting
 
@@ -209,14 +277,30 @@ from the macroblock rate so Chrome accepts 4K, and the encoder runs in
   server engine.
 * **"That file did not compile"** - the stage shows the exact error and file.
   Check that every import is in the supported list above.
-* **Server render 503** - `ENABLE_SERVER_RENDER` is not `1` on that deployment.
+* **Server render 503** - on Node, set `ENABLE_SERVER_RENDER=1`; on Vercel also
+  connect Blob and set `RENDER_ACCESS_KEY`.
 * **Server render times out** - functions and this route cap work at 300s.
   Lower the length, use the browser engine, or render locally.
-* **Vercel build fails on `sharp`/Chromium** - the app never installs Chromium at
-  build time; only `/api/render` downloads it at runtime, on first use.
+* **Vercel Sandbox startup is slow** - a cold Sandbox installs its isolated
+  renderer/browser environment before the render. Browser rendering avoids that
+  startup and remains the default.
+* **"This browser cannot encode AAC audio at any supported bitrate"** - pick the
+  WebM format (Opus), turn Music & sound off, or use a server path. Firefox has
+  no AAC encoder at all.
+* **3D renders black on a Linux host** - set `REMOTION_GL=swangle`; plain `angle`
+  needs a graphics stack that headless Linux boxes do not have.
+* **A layer looks shifted or banded in a browser export but correct in preview** -
+  give that inline `<svg>` explicit `width`/`height` attributes. The browser
+  exporter serialises the tag, and one sized only by CSS has no intrinsic size,
+  so it rasterises at the wrong scale. The studio warns about this on upload.
+* **A texture is missing from a browser export** - it was set with
+  `background-image: url(...)`, which the browser exporter does not draw. Use
+  `<Img>` from `remotion` instead; CSS gradients are supported.
 
 ## License
 
-MIT for this app. Generated visual/audio assets are CC0-1.0. Remotion and your
+MIT for this app. Generated visual, texture and audio assets are CC0-1.0. The
+bundled font families are SIL Open Font License 1.1 - keep each `OFL.txt` with
+its font files when you redistribute them. Remotion and your
 hosting provider have their own usage/license terms; review them before a public
 commercial launch: <https://remotion.dev/license> and <https://vercel.com/pricing>.

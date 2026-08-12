@@ -30,8 +30,8 @@ export const SAMPLES: SampleDefinition[] = [
 		id: 'ai-master-template',
 		file: 'ai-master-template.tsx',
 		name: 'AI Master Template',
-		description: '1080x1920 - 15s - an annotated single-file blueprint for any video idea.',
-		technique: 'Download it, attach it to your AI with your brief, then upload the completed TSX here.',
+		description: '1080x1920 - 15s - visual-proof contract, procedural 3D subjects and synced sound.',
+		technique: 'A lit ThreeCanvas sun/tree proves the words; camera, growth, music and SFX share frames.',
 		badge: 'ai-starter',
 	},
 	{

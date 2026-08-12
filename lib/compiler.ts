@@ -12,7 +12,7 @@
  */
 
 import * as React from 'react'
-import { MODULE_REGISTRY, Remotion, SUPPORTED_MODULES } from './module-registry'
+import { moduleRegistryForSource, Remotion, SUPPORTED_MODULES } from './module-registry'
 import { dirname, extname, joinPath, normalizePath } from './path-utils'
 import type { CompileResult, CompiledComposition, SourceFile, VirtualProject } from './types'
 
@@ -99,7 +99,7 @@ function collectCompositions(node: unknown, out: RawComposition[], depth = 0): v
 function toCompiled(
 	raw: RawComposition,
 	index: number,
-	usesWebMedia: boolean,
+	needsWebRenderer: boolean,
 ): CompiledComposition | null {
 	if (!isComponentLike(raw.component)) return null
 	const inferred =
@@ -115,29 +115,113 @@ function toCompiled(
 		defaultProps: raw.defaultProps,
 		inferred,
 		component: raw.component as CompiledComposition['component'],
-		usesWebMedia,
+		needsWebRenderer,
 	}
 }
 
-function projectUsesWebMedia(files: SourceFile[]): boolean {
+/** Advanced canvases and media must use Remotion's deterministic web compositor. */
+function projectNeedsWebRenderer(files: SourceFile[]): boolean {
 	return files
 		.filter((file) => ['.ts', '.tsx', '.js', '.jsx'].includes(extname(file.path)))
 		.some((file) =>
-			/(?:from\s*|require\s*\(\s*)['"]@remotion\/media['"]/.test(file.contents),
+			/(?:from\s*|require\s*\(\s*)['"](?:@remotion\/(?:media|three|gif)|@react-three\/fiber|three)['"]/.test(
+				file.contents,
+			),
 		)
+}
+
+/** Optional AI-template manifest audit. Ordinary Remotion uploads need no manifest. */
+function auditCreativeManifest(value: unknown, durationInFrames: number): string[] {
+	if (value === undefined) return []
+	if (typeof value !== 'object' || value === null) {
+		return ['CREATIVE_MANIFEST must be an object when provided.']
+	}
+
+	const manifest = value as { literalSubjects?: unknown; beats?: unknown }
+	const subjects = Array.isArray(manifest.literalSubjects)
+		? manifest.literalSubjects.filter((subject): subject is string => typeof subject === 'string')
+		: []
+	const beats = Array.isArray(manifest.beats) ? manifest.beats : []
+	const issues: string[] = []
+
+	if (subjects.length === 0) issues.push('CREATIVE_MANIFEST has no literal subjects.')
+	if (beats.length === 0) issues.push('CREATIVE_MANIFEST has no visual proof beats.')
+
+	for (const [index, rawBeat] of beats.entries()) {
+		if (typeof rawBeat !== 'object' || rawBeat === null) {
+			issues.push(`Visual proof beat ${index + 1} is not an object.`)
+			continue
+		}
+		const beat = rawBeat as {
+			id?: unknown
+			saying?: unknown
+			visibleAction?: unknown
+			mustShow?: unknown
+			from?: unknown
+			durationInFrames?: unknown
+		}
+		const label = typeof beat.id === 'string' && beat.id ? beat.id : `#${index + 1}`
+		if (typeof beat.saying !== 'string' || !beat.saying.trim()) {
+			issues.push(`Visual proof beat ${label} has no source saying.`)
+		}
+		if (typeof beat.visibleAction !== 'string' || !beat.visibleAction.trim()) {
+			issues.push(`Visual proof beat ${label} has no visible action.`)
+		}
+		const mustShow = Array.isArray(beat.mustShow)
+			? beat.mustShow.filter((subject): subject is string => typeof subject === 'string')
+			: []
+		if (mustShow.length === 0) issues.push(`Visual proof beat ${label} has no literal object.`)
+		for (const subject of mustShow) {
+			if (!subjects.includes(subject)) {
+				issues.push(`Visual proof beat ${label} uses undeclared subject "${subject}".`)
+			}
+		}
+		const from = typeof beat.from === 'number' ? beat.from : -1
+		const duration = typeof beat.durationInFrames === 'number' ? beat.durationInFrames : 0
+		if (from < 0 || duration < 1 || from + duration > durationInFrames) {
+			issues.push(`Visual proof beat ${label} falls outside the ${durationInFrames}-frame composition.`)
+		}
+	}
+
+	return issues.map((issue) => `Creative quality check: ${issue}`)
+}
+
+/** Every pack the deployed app serves from public/assets. */
+const STUDIO_KIT_PATH = /^[`'"]assets\/(?:audio|visual|texture|fonts)\/v1\//
+
+function staticFileCallsOutsideStudioKit(code: string): boolean {
+	const calls = [...code.matchAll(/staticFile\s*\(\s*([^\r\n)]*)\)/g)]
+	if (calls.length === 0) return true
+	return calls.some((match) => !STUDIO_KIT_PATH.test(match[1].trim()))
+}
+
+/**
+ * Comments in these files are documentation for the next AI edit and routinely
+ * quote the very patterns the checks below look for ("never use useFrame()").
+ * Analysing the stripped source keeps every warning about real code.
+ */
+function stripComments(code: string): string {
+	return code.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1')
 }
 
 /** Static source analysis - surfaces things the browser engine cannot do. */
 export function analyzeSources(files: SourceFile[]): string[] {
 	const warnings = new Set<string>()
-	const code = files
-		.filter((f) => ['.ts', '.tsx', '.js', '.jsx'].includes(extname(f.path)))
-		.map((f) => f.contents)
-		.join('\n')
+	const code = stripComments(
+		files
+			.filter((f) => ['.ts', '.tsx', '.js', '.jsx'].includes(extname(f.path)))
+			.map((f) => f.contents)
+			.join('\n'),
+	)
 
-	if (/staticFile\s*\(/.test(code)) {
+	const usesStaticFiles = /staticFile\s*\(/.test(code)
+	const onlyReferencesStudioKit =
+		usesStaticFiles &&
+		/staticFile\s*\(\s*[`'"]assets\/(?:audio|visual|texture|fonts)\/v1\//.test(code) &&
+		!staticFileCallsOutsideStudioKit(code)
+	if (usesStaticFiles && !onlyReferencesStudioKit) {
 		warnings.add(
-			'This project uses staticFile(). Assets from its public/ folder are not uploaded, so those images, fonts or clips will be missing.',
+			'This project uses staticFile() outside the built-in asset kit. Files from an uploaded public/ folder are not included, so add those assets to the deployed app or use reachable URLs.',
 		)
 	}
 	if (
@@ -145,12 +229,12 @@ export function analyzeSources(files: SourceFile[]): string[] {
 		/import\s*{[^}]*\b(?:Audio|Html5Audio)\b[^}]*}\s*from\s*['"]remotion['"]/.test(code)
 	) {
 		warnings.add(
-			'For audio in free browser exports, import <Audio> from @remotion/media instead of the legacy remotion Audio/Html5Audio component.',
+			'For audio in browser exports, import <Audio> from @remotion/media instead of the legacy remotion Audio/Html5Audio component.',
 		)
 	}
 	if (/<\s*(Video|OffthreadVideo)[\s/>]/.test(code)) {
 		warnings.add(
-			'Video layers may not rasterise reliably in the free browser renderer. Use the server renderer for media-heavy projects.',
+			'Video layers may not rasterise reliably in the legacy browser path. Use @remotion/media or the server renderer for media-heavy projects.',
 		)
 	}
 	if (/calculateMetadata/.test(code)) {
@@ -158,17 +242,57 @@ export function analyzeSources(files: SourceFile[]): string[] {
 			'calculateMetadata() is not executed in the browser preview. Adjust the size and duration manually if they look wrong.',
 		)
 	}
-	if (/from\s+['"]@remotion\/(lottie|skia|three|gif)['"]/.test(code)) {
+	if (/from\s+['"]@remotion\/(three|gif)['"]/.test(code)) {
 		warnings.add(
-			'Heavy Remotion packages (Skia, Three, Lottie) can be slow to rasterise in the browser. Prefer the server renderer for those.',
+			'Advanced canvas packages are supported by the browser renderer, but 3D and animated GIF layers can be demanding at 2x. Use Max/1x first, then 2x or the server renderer on capable hardware.',
+		)
+	}
+	if (/(?:@remotion\/three|@react-three\/fiber)/.test(code) && /\buseFrame\s*\(/.test(code)) {
+		warnings.add(
+			'3D animation must use useCurrentFrame(), not React Three Fiber useFrame(), so preview, seeking and exports stay deterministic.',
+		)
+	}
+	// The browser exporter serialises inline SVG. A tag sized only by CSS has no
+	// intrinsic size once serialised and is rasterised at the wrong scale, which
+	// silently shifts or crops that layer in the exported file.
+	const svgTags = code.match(/<svg\b[^>]*>/g) ?? []
+	if (svgTags.some((tag) => !/\bwidth[=\s]/.test(tag) || !/\bheight[=\s]/.test(tag))) {
+		warnings.add(
+			'Give every inline <svg> explicit width and height attributes (not only CSS). Without them, browser exports rasterise the SVG at the wrong scale.',
+		)
+	}
+	// The browser exporter rasterises <img>/<canvas>/SVG and CSS gradients, but
+	// not url() background layers, so those vanish from the file.
+	if (/background(?:-image)?\s*:\s*[^;'"`]*url\(/i.test(code) || /backgroundImage\s*:\s*[`'"][^`'"]*url\(/i.test(code)) {
+		warnings.add(
+			'Images used as CSS background-image: url(...) are not drawn in browser exports. Render them with <Img> from remotion instead, or use the server renderer.',
+		)
+	}
+	// Browser exports copy the WebGL canvas after the frame is composited, which
+	// only keeps pixels when the drawing buffer is preserved.
+	if (/<\s*ThreeCanvas\b/.test(code) && !/preserveDrawingBuffer\s*:\s*true/.test(code)) {
+		warnings.add(
+			'Add gl={{preserveDrawingBuffer: true}} to <ThreeCanvas>. Without it, browser exports capture an empty 3D canvas even though the preview looks correct.',
+		)
+	}
+	if (/@react-three\/fiber/.test(code) && /<\s*Canvas\b/.test(code)) {
+		warnings.add(
+			'Wrap 3D scenes in <ThreeCanvas> from @remotion/three instead of React Three Fiber <Canvas> so frame rendering stays synchronized.',
 		)
 	}
 	return [...warnings]
 }
 
 export async function compileProject(project: VirtualProject): Promise<CompileResult> {
-	const { transform } = await import('sucrase')
-	const usesWebMedia = projectUsesWebMedia(project.files)
+	const source = project.files
+		.filter((file) => ['.ts', '.tsx', '.js', '.jsx'].includes(extname(file.path)))
+		.map((file) => file.contents)
+		.join('\n')
+	const [{ transform }, moduleRegistry] = await Promise.all([
+		import('sucrase'),
+		moduleRegistryForSource(source),
+	])
+	const needsWebRenderer = projectNeedsWebRenderer(project.files)
 
 	const fileMap = new Map<string, string>()
 	for (const file of project.files) fileMap.set(normalizePath(file.path), file.contents)
@@ -216,7 +340,7 @@ export async function compileProject(project: VirtualProject): Promise<CompileRe
 		}
 
 		// Bare specifier, possibly with a deep path such as `@remotion/transitions/fade`.
-		if (specifier in MODULE_REGISTRY) return MODULE_REGISTRY[specifier]
+		if (specifier in moduleRegistry) return moduleRegistry[specifier]
 
 		throw new CompileError(
 			`"${specifier}" is not available in the studio sandbox.\nSupported packages: ${SUPPORTED_MODULES.join(', ')}`,
@@ -315,7 +439,7 @@ export async function compileProject(project: VirtualProject): Promise<CompileRe
 	}
 
 	let compositions = raw
-		.map((composition, index) => toCompiled(composition, index, usesWebMedia))
+		.map((composition, index) => toCompiled(composition, index, needsWebRenderer))
 		.filter((value): value is CompiledComposition => value !== null)
 
 	// Fallback: a single file that just exports the component.
@@ -347,13 +471,16 @@ export async function compileProject(project: VirtualProject): Promise<CompileRe
 				durationInFrames: config.durationInFrames ?? DEFAULTS.durationInFrames,
 				inferred: !config.width || !config.height,
 				component: candidate as CompiledComposition['component'],
-				usesWebMedia,
+				needsWebRenderer,
 			},
 		]
 		warnings.push(
 			'No <Composition /> was registered, so the studio used the exported component with default settings. Fine-tune the size and duration below.',
 		)
 	}
+
+	const longestComposition = Math.max(...compositions.map((composition) => composition.durationInFrames))
+	warnings.push(...auditCreativeManifest(entryExports.CREATIVE_MANIFEST, longestComposition))
 
 	return { compositions, warnings, css: cssChunks.join('\n\n') }
 }

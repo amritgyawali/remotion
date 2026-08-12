@@ -28,6 +28,7 @@ import * as RemotionClockWipe from '@remotion/transitions/clock-wipe'
 import * as RemotionMediaUtils from '@remotion/media-utils'
 import * as RemotionMedia from '@remotion/media'
 import * as RemotionGif from '@remotion/gif'
+import * as RemotionFonts from '@remotion/fonts'
 
 export const MODULE_REGISTRY: Record<string, unknown> = {
 	react: React,
@@ -50,8 +51,30 @@ export const MODULE_REGISTRY: Record<string, unknown> = {
 	'@remotion/media-utils': RemotionMediaUtils,
 	'@remotion/media': RemotionMedia,
 	'@remotion/gif': RemotionGif,
+	// Self-hosted typography: loadFont() blocks the render until the face is ready.
+	'@remotion/fonts': RemotionFonts,
 }
 
-export const SUPPORTED_MODULES = Object.keys(MODULE_REGISTRY)
+const OPTIONAL_MODULES = ['@remotion/three', '@react-three/fiber', 'three'] as const
+
+export const SUPPORTED_MODULES = [...Object.keys(MODULE_REGISTRY), ...OPTIONAL_MODULES]
+
+/** Three.js is large; only load its client chunks when uploaded source imports it. */
+export async function moduleRegistryForSource(source: string): Promise<Record<string, unknown>> {
+	if (!/(?:@remotion\/three|@react-three\/fiber|['"]three['"])/.test(source)) {
+		return MODULE_REGISTRY
+	}
+	const [RemotionThree, ReactThreeFiber, Three] = await Promise.all([
+		import('@remotion/three'),
+		import('@react-three/fiber'),
+		import('three'),
+	])
+	return {
+		...MODULE_REGISTRY,
+		'@remotion/three': RemotionThree,
+		'@react-three/fiber': ReactThreeFiber,
+		three: Three,
+	}
+}
 
 export { React, Remotion }

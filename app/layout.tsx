@@ -4,11 +4,11 @@ import './globals.css'
 export const metadata: Metadata = {
 	title: 'Remotion Video Studio - render video from a code file',
 	description:
-		'Upload a Remotion composition file and render a broadcast-quality MP4 in your browser for free, or on the server at maximum power.',
+		'Upload a Remotion composition and render high-quality video in your browser, with protected Vercel Sandbox and local render options.',
 	applicationName: 'Remotion Video Studio',
 	openGraph: {
 		title: 'Remotion Video Studio',
-		description: 'Upload a code file, get a rendered video. Free, in-browser, hardware accelerated.',
+		description: 'Upload a code file and render an authored video with browser, Vercel Sandbox, or local workflows.',
 		type: 'website',
 	},
 }

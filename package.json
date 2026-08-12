@@ -2,31 +2,38 @@
   "name": "remotion-video-studio",
   "version": "1.0.0",
   "private": true,
-  "description": "Drop in a Remotion code file, preview it instantly and render a broadcast-quality video. Free browser rendering + optional max-power server rendering. Deploys to Vercel.",
-	"license": "MIT",
-	"engines": {
-		"node": ">=20.9.0"
-	},
-	"scripts": {
-		"predev": "node scripts/sync-samples.mjs",
-		"dev": "next dev --webpack",
-		"prebuild": "node scripts/sync-samples.mjs",
-		"build": "next build --webpack",
+  "description": "Drop in a Remotion code file, preview it instantly and render high-quality browser, Node, or Vercel Sandbox video. Deploys from GitHub to Vercel.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "scripts": {
+    "predev": "node scripts/sync-samples.mjs",
+    "dev": "next dev --webpack",
+    "prebuild": "node scripts/sync-samples.mjs",
+    "build": "next build --webpack",
+    "vercel:snapshot": "node scripts/create-vercel-sandbox-snapshot.mjs",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "samples": "node scripts/sync-samples.mjs",
     "assets:visual": "node scripts/generate-visual-assets.mjs",
     "assets:audio": "node scripts/generate-audio-assets.mjs",
+    "assets:texture": "node scripts/generate-texture-assets.mjs",
+    "assets:fonts": "node scripts/fetch-fonts.mjs",
     "assets:library": "node scripts/build-asset-library.mjs",
-    "assets": "npm run assets:visual && npm run assets:audio && npm run assets:library",
-    "assets:verify": "node scripts/generate-audio-assets.mjs --verify-only",
+    "assets": "npm run assets:visual && npm run assets:audio && npm run assets:texture && npm run assets:fonts && npm run assets:library",
+    "assets:verify": "node scripts/generate-audio-assets.mjs --verify-only && node scripts/generate-texture-assets.mjs --verify-only && node scripts/fetch-fonts.mjs --verify-only",
     "studio": "remotion studio samples/code-becomes-geometry.tsx",
     "studio:neon": "remotion studio samples/neon-product-reveal.tsx",
     "render:local": "node scripts/render-local.mjs",
+    "stills": "node scripts/preview-stills.mjs",
+    "inspect": "node scripts/inspect-media.mjs",
     "render:sample": "node scripts/render-local.mjs samples/code-becomes-geometry.tsx --preset max"
   },
   "dependencies": {
+    "@react-three/fiber": "9.7.0",
     "@remotion/bundler": "4.0.508",
+    "@remotion/fonts": "4.0.508",
     "@remotion/gif": "4.0.508",
     "@remotion/media": "4.0.508",
     "@remotion/media-utils": "4.0.508",
@@ -36,9 +43,13 @@
     "@remotion/player": "4.0.508",
     "@remotion/renderer": "4.0.508",
     "@remotion/shapes": "4.0.508",
+    "@remotion/three": "4.0.508",
     "@remotion/transitions": "4.0.508",
+    "@remotion/vercel": "4.0.508",
     "@remotion/web-renderer": "4.0.508",
     "@vercel/blob": "^2.8.0",
+    "@vercel/functions": "3.9.3",
+    "@vercel/sandbox": "1.6.0",
     "html-to-image": "^1.11.11",
     "jszip": "^3.10.1",
     "mp4-muxer": "^5.0.0",
@@ -47,6 +58,7 @@
     "react-dom": "19.2.8",
     "remotion": "4.0.508",
     "sucrase": "^3.35.0",
+    "three": "0.185.1",
     "webm-muxer": "^5.0.0"
   },
   "devDependencies": {
@@ -54,6 +66,7 @@
     "@types/node": "^22.10.0",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
+    "@types/three": "0.185.0",
     "typescript": "^5.6.0"
   },
   "overrides": {

@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Free, unlimited, zero-server rendering.
+ * Device-local, zero-render-server encoding with browser-dependent limits.
  *
  * Visual-only compositions keep the broad-CSS Thumbnail -> html-to-image path.
  * Compositions importing @remotion/media use Remotion's web renderer so music,
@@ -277,6 +277,8 @@ export async function renderStillInBrowser(args: BrowserRenderArgs): Promise<Ren
 
 async function renderMediaWithSound(args: BrowserRenderArgs): Promise<RenderOutput> {
 	const { composition, settings, css, signal, onProgress } = args
+	// Missing values from older callers preserve the historical sound-on behavior.
+	const audioEnabled = settings.audioEnabled !== false
 
 	if (settings.format === 'png') return renderStillInBrowser(args)
 	if (!isWebCodecsSupported()) {
@@ -299,7 +301,8 @@ async function renderMediaWithSound(args: BrowserRenderArgs): Promise<RenderOutp
 			: composition.durationInFrames,
 	)
 	const bitrate = computeBitrate(width, height, fps, settings.preset)
-	const audioBitrate = settings.preset === 'draft' ? 128_000 : settings.preset === 'max' ? 320_000 : 256_000
+	const preferredAudioBitrate =
+		settings.preset === 'draft' ? 128_000 : settings.preset === 'max' ? 320_000 : 256_000
 	const style = css ? document.createElement('style') : null
 	if (style) {
 		style.setAttribute('data-browser-render-css', '')
@@ -315,9 +318,26 @@ async function renderMediaWithSound(args: BrowserRenderArgs): Promise<RenderOutp
 			getEncodableVideoCodecs,
 			renderMediaOnWeb,
 		} = await import('@remotion/web-renderer')
-		const [videoCodecs, audioCodecs] = await Promise.all([
+		const wantedAudioCodec: 'opus' | 'aac' = container === 'webm' ? 'opus' : 'aac'
+		// Browsers cap audio encoders well below the video preset. Chrome's AAC
+		// encoder, for example, refuses anything over 128 kbps, so the highest
+		// bitrate this device actually accepts is negotiated instead of assumed.
+		const audioBitrateLadder = [320_000, 256_000, 192_000, 160_000, 128_000, 96_000].filter(
+			(candidate) => candidate <= preferredAudioBitrate,
+		)
+		const negotiateAudio = async () => {
+			for (const candidate of audioBitrateLadder) {
+				const codecs = await getEncodableAudioCodecs(container, { audioBitrate: candidate })
+				if (codecs.includes(wantedAudioCodec)) return { codec: wantedAudioCodec, bitrate: candidate }
+			}
+			return { codec: null, bitrate: audioBitrateLadder[audioBitrateLadder.length - 1] }
+		}
+
+		const [videoCodecs, audio] = await Promise.all([
 			getEncodableVideoCodecs(container, { videoBitrate: bitrate }),
-			getEncodableAudioCodecs(container, { audioBitrate }),
+			audioEnabled
+				? negotiateAudio()
+				: Promise.resolve({ codec: null, bitrate: preferredAudioBitrate }),
 		])
 		const videoCodec =
 			container === 'webm'
@@ -329,18 +349,19 @@ async function renderMediaWithSound(args: BrowserRenderArgs): Promise<RenderOutp
 				: videoCodecs.includes('h264')
 					? 'h264'
 					: null
-		const audioCodec =
-			container === 'webm'
-				? audioCodecs.includes('opus')
-					? 'opus'
-					: null
-				: audioCodecs.includes('aac')
-					? 'aac'
-					: null
+		const audioCodec = audio.codec
+		const audioBitrate = audio.bitrate
 
-		if (!videoCodec || !audioCodec) {
+		if (!videoCodec) {
 			throw new Error(
-				`This browser cannot encode ${container.toUpperCase()} video with sound. Try Chrome or Edge, choose another format, or switch to the server renderer.`,
+				`This browser cannot encode ${container.toUpperCase()} video. Try Chrome or Edge, choose another format, or switch to the server renderer.`,
+			)
+		}
+		if (audioEnabled && !audioCodec) {
+			throw new Error(
+				container === 'mp4'
+					? 'This browser cannot encode AAC audio at any supported bitrate. Choose the WebM format, turn Music & sound off, or switch to the server renderer.'
+					: 'This browser cannot encode Opus audio. Choose the MP4 format, turn Music & sound off, or switch to the server renderer.',
 			)
 		}
 
@@ -348,6 +369,7 @@ async function renderMediaWithSound(args: BrowserRenderArgs): Promise<RenderOutp
 			container,
 			videoCodec,
 			audioCodec,
+			muted: !audioEnabled,
 			width,
 			height,
 			videoBitrate: bitrate,
@@ -375,6 +397,7 @@ async function renderMediaWithSound(args: BrowserRenderArgs): Promise<RenderOutp
 			container,
 			videoCodec,
 			audioCodec,
+			muted: !audioEnabled,
 			videoBitrate: bitrate,
 			audioBitrate,
 			frameRange: totalFrames < composition.durationInFrames ? [0, totalFrames - 1] : null,
@@ -382,7 +405,8 @@ async function renderMediaWithSound(args: BrowserRenderArgs): Promise<RenderOutp
 			hardwareAcceleration: 'prefer-hardware',
 			keyframeIntervalInSeconds: preset.keyframeIntervalSeconds,
 			pageResponsiveness: 'medium',
-			outputTarget: 'arraybuffer',
+			// Let Remotion use OPFS when available so long 4K renders are not held
+			// entirely in RAM. It falls back to an ArrayBuffer on older browsers.
 			licenseKey: process.env.NEXT_PUBLIC_REMOTION_LICENSE_KEY?.trim() || 'free-license',
 			signal,
 			logLevel: 'warn',
@@ -396,7 +420,7 @@ async function renderMediaWithSound(args: BrowserRenderArgs): Promise<RenderOutp
 					totalFrames,
 					framesPerSecond: renderedFrames / Math.max(elapsed, 0.001),
 					etaSeconds: Math.max(0, renderEstimatedTime / 1000),
-					message: `${videoCodec.toUpperCase()} + ${audioCodec.toUpperCase()} - ${renderedFrames}/${totalFrames} frames`,
+					message: `${videoCodec.toUpperCase()}${audioCodec ? ` + ${audioCodec.toUpperCase()}` : ' (silent)'} - ${renderedFrames}/${totalFrames} frames`,
 				})
 			},
 		})
@@ -415,7 +439,7 @@ async function renderMediaWithSound(args: BrowserRenderArgs): Promise<RenderOutp
 			engine: 'browser',
 			width,
 			height,
-			codec: `${videoCodec.toUpperCase()} + ${audioCodec.toUpperCase()}`,
+			codec: `${videoCodec.toUpperCase()}${audioCodec ? ` + ${audioCodec.toUpperCase()}` : ' (silent)'}`,
 		}
 	} catch (error) {
 		if (signal.aborted) throw new RenderCancelled()
@@ -603,7 +627,7 @@ export async function renderInBrowser(args: BrowserRenderArgs): Promise<RenderOu
 		)
 	}
 
-	return args.composition.usesWebMedia
+	return args.composition.needsWebRenderer
 		? renderMediaWithSound(args)
 		: renderVisualOnly(args)
 }

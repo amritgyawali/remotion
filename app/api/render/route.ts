@@ -1,10 +1,12 @@
 import { NextRequest } from 'next/server'
-import { mkdtemp, mkdir, writeFile, readFile, rm, stat } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import { QUALITY_PRESETS, FORMAT_INFO, evenDimension } from '../../../lib/presets'
-import type { OutputFormat, QualityPresetId, RenderSettings, SourceFile } from '../../../lib/types'
+import type { OutputFormat, QualityPresetId, RenderSettings, ServerRenderRequest } from '../../../lib/types'
+import { validateRenderRequest, writeRenderProject } from '../../../lib/render-request'
+import { getRenderAccessKey, hasRenderAccess } from '../../../lib/render-server-auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -13,20 +15,26 @@ export const maxDuration = 300
 const require_ = createRequire(import.meta.url)
 
 const ENABLED = process.env.ENABLE_SERVER_RENDER === '1'
-const ACCESS_KEY = process.env.RENDER_ACCESS_KEY ?? ''
+const PROVIDER = process.env.VERCEL ? 'vercel-sandbox' : 'node'
+const ACCESS_KEY = getRenderAccessKey()
+const SERVER_READY =
+	ENABLED &&
+	ACCESS_KEY.length > 0 &&
+	(!process.env.VERCEL || Boolean(process.env.BLOB_READ_WRITE_TOKEN))
 const MAX_FRAMES = Number(process.env.MAX_RENDER_FRAMES ?? 1800)
 const MAX_PIXELS = Number(process.env.MAX_RENDER_PIXELS ?? 8_294_400) // 4K
 const CHUNK_SIZE = 512 * 1024
 
 function capabilities() {
 	return {
-		enabled: ENABLED,
-		requiresKey: ENABLED && ACCESS_KEY.length > 0,
+		enabled: SERVER_READY,
+		requiresKey: SERVER_READY,
+		provider: SERVER_READY ? PROVIDER : 'disabled',
 		maxFrames: MAX_FRAMES,
 		maxPixels: MAX_PIXELS,
 		maxDurationSeconds: maxDuration,
 		blobDelivery: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
-		concurrency: process.env.REMOTION_CONCURRENCY ?? 'max',
+		concurrency: process.env.REMOTION_CONCURRENCY ?? 'auto',
 	}
 }
 
@@ -34,29 +42,6 @@ export async function GET() {
 	return Response.json(capabilities(), {
 		headers: { 'cache-control': 'no-store' },
 	})
-}
-
-/** Blocks `../` escapes and absolute paths before anything touches the disk. */
-function sanitizeRelativePath(input: string): string {
-	const normalized = path.posix.normalize(input.replace(/\\/g, '/'))
-	if (
-		normalized.startsWith('/') ||
-		normalized.startsWith('..') ||
-		normalized.includes('\0') ||
-		path.posix.isAbsolute(normalized)
-	) {
-		throw new Error(`Refusing to write outside the project: ${input}`)
-	}
-	return normalized
-}
-
-type RenderRequest = {
-	files: SourceFile[]
-	entry: string
-	compositionId: string
-	settings: RenderSettings
-	fileName: string
-	overrides?: { width: number; height: number; fps: number; durationInFrames: number }
 }
 
 function codecFor(format: OutputFormat): 'h264' | 'vp9' | 'gif' | 'prores' {
@@ -67,19 +52,21 @@ function codecFor(format: OutputFormat): 'h264' | 'vp9' | 'gif' | 'prores' {
 }
 
 export async function POST(request: NextRequest) {
-	if (!ENABLED) {
+	if (!SERVER_READY) {
 		return new Response(
-			'Server rendering is disabled. Set ENABLE_SERVER_RENDER=1 in your environment to switch it on.',
+			process.env.VERCEL
+				? 'Vercel Sandbox rendering requires ENABLE_SERVER_RENDER=1, RENDER_ACCESS_KEY, and a connected Blob store.'
+				: 'Server rendering requires ENABLE_SERVER_RENDER=1 and RENDER_ACCESS_KEY.',
 			{ status: 503 },
 		)
 	}
-	if (ACCESS_KEY && request.headers.get('x-render-key') !== ACCESS_KEY) {
+	if (!hasRenderAccess(request)) {
 		return new Response('Invalid or missing render key.', { status: 401 })
 	}
 
-	let body: RenderRequest
+	let body: ServerRenderRequest
 	try {
-		body = (await request.json()) as RenderRequest
+		body = (await request.json()) as ServerRenderRequest
 	} catch {
 		return new Response('Malformed JSON body.', { status: 400 })
 	}
@@ -87,11 +74,104 @@ export async function POST(request: NextRequest) {
 	if (!Array.isArray(body.files) || body.files.length === 0) {
 		return new Response('No files were sent.', { status: 400 })
 	}
+	try {
+		validateRenderRequest(body)
+	} catch (error) {
+		return new Response(error instanceof Error ? error.message : 'Invalid render request.', {
+			status: 400,
+		})
+	}
+	if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(body.compositionId ?? '')) {
+		return new Response('Invalid composition id.', { status: 400 })
+	}
 
-	const preset: QualityPresetId = body.settings?.preset ?? 'high'
+	const rawSettings = (body.settings ?? {}) as Partial<RenderSettings>
+	const preset: QualityPresetId =
+		rawSettings.preset && Object.hasOwn(QUALITY_PRESETS, rawSettings.preset)
+			? rawSettings.preset
+			: 'high'
+	const format: OutputFormat =
+		rawSettings.format && Object.hasOwn(FORMAT_INFO, rawSettings.format)
+			? rawSettings.format
+			: 'mp4'
+	const scale = rawSettings.scale ?? 1
+	if (![0.5, 1, 2].includes(scale)) {
+		return new Response('Render scale must be 0.5, 1, or 2.', { status: 400 })
+	}
+	const previewSeconds = Number.isFinite(rawSettings.previewSeconds)
+		? Math.max(0, rawSettings.previewSeconds ?? 0)
+		: 0
+	const audioEnabled = rawSettings.audioEnabled !== false
+	body = {
+		...body,
+		fileName: path
+			.basename(body.fileName || `render.${FORMAT_INFO[format].extension}`)
+			.replace(/[^A-Za-z0-9._-]+/g, '-')
+			.slice(0, 120),
+		settings: {
+			engine: 'server',
+			preset,
+			format,
+			scale,
+			previewSeconds,
+			audioEnabled,
+		},
+	}
+
+	if (process.env.VERCEL && !body.overrides) {
+		return new Response('Vercel Sandbox renders require composition metadata.', { status: 400 })
+	}
+	if (body.overrides) {
+		const metadata = [
+			body.overrides.width,
+			body.overrides.height,
+			body.overrides.fps,
+			body.overrides.durationInFrames,
+		]
+		if (!metadata.every((value) => Number.isFinite(value) && value > 0)) {
+			return new Response('Composition dimensions, fps, and duration must be positive numbers.', {
+				status: 400,
+			})
+		}
+		if (
+			!Number.isInteger(body.overrides.width) ||
+			!Number.isInteger(body.overrides.height) ||
+			!Number.isInteger(body.overrides.durationInFrames)
+		) {
+			return new Response('Composition width, height, and duration must be whole numbers.', {
+				status: 400,
+			})
+		}
+		const width = evenDimension(body.overrides.width * scale)
+		const height = evenDimension(body.overrides.height * scale)
+		if (width < 2 || height < 2 || width * height > MAX_PIXELS) {
+			return new Response(`Requested ${width}x${height} output exceeds the pixel limit.`, {
+				status: 400,
+			})
+		}
+		const requestedFrames =
+			previewSeconds > 0
+				? Math.min(
+						body.overrides.durationInFrames,
+						Math.round(previewSeconds * body.overrides.fps),
+					)
+				: body.overrides.durationInFrames
+		if (requestedFrames < 1 || requestedFrames > MAX_FRAMES) {
+			return new Response(`Requested ${requestedFrames} frames exceeds the ${MAX_FRAMES}-frame limit.`, {
+				status: 400,
+			})
+		}
+	}
+
+	if (process.env.VERCEL) {
+		if (!body.overrides) {
+			return new Response('Vercel Sandbox renders require composition metadata.', { status: 400 })
+		}
+		const { renderInVercelSandbox } = await import('../../../lib/vercel-sandbox-render')
+		return renderInVercelSandbox({ body: { ...body, overrides: body.overrides } })
+	}
+
 	const quality = QUALITY_PRESETS[preset] ?? QUALITY_PRESETS.high
-	const format: OutputFormat = body.settings?.format ?? 'mp4'
-	const scale = body.settings?.scale ?? 1
 	const encoder = new TextEncoder()
 
 	const stream = new ReadableStream<Uint8Array>({
@@ -115,46 +195,7 @@ export async function POST(request: NextRequest) {
 
 				workDir = await mkdtemp(path.join(os.tmpdir(), 'rvs-'))
 				const projectDir = path.join(workDir, 'project')
-				await mkdir(projectDir, { recursive: true })
-
-				for (const file of body.files) {
-					const relative = sanitizeRelativePath(file.path)
-					const target = path.join(projectDir, relative)
-					await mkdir(path.dirname(target), { recursive: true })
-					await writeFile(target, file.contents, 'utf8')
-				}
-
-				// Remotion needs an entry that calls registerRoot(). Single-component
-				// uploads usually do not, so synthesise one next to the upload.
-				const entryRelative = sanitizeRelativePath(body.entry)
-				const entrySource = body.files.find((file) => sanitizeRelativePath(file.path) === entryRelative)
-				let entryPath = path.join(projectDir, entryRelative)
-
-				if (entrySource && !/registerRoot\s*\(/.test(entrySource.contents)) {
-					const importSpecifier = `./${entryRelative.replace(/\.(tsx|ts|jsx|js|mjs|cjs)$/i, '')}`
-					const meta = body.overrides ?? {
-						width: 1080,
-						height: 1920,
-						fps: 30,
-						durationInFrames: 300,
-					}
-					const generated = [
-						`import React from 'react';`,
-						`import { Composition, registerRoot } from 'remotion';`,
-						`import * as Entry from '${importSpecifier}';`,
-						`const Component = (Entry.default ?? Object.values(Entry).find((value) => typeof value === 'function'));`,
-						`const Root = () => React.createElement(Composition, {`,
-						`  id: ${JSON.stringify(body.compositionId || 'Main')},`,
-						`  component: Component,`,
-						`  width: ${meta.width}, height: ${meta.height}, fps: ${meta.fps},`,
-						`  durationInFrames: ${meta.durationInFrames},`,
-						`});`,
-						`registerRoot(Root);`,
-						``,
-					].join('\n')
-					entryPath = path.join(projectDir, '__studio-entry.tsx')
-					await writeFile(entryPath, generated, 'utf8')
-				}
+				const entryPath = await writeRenderProject(body, projectDir)
 
 				progress('bundling', 0.08, 'Bundling with webpack (first run takes the longest)')
 
@@ -223,10 +264,16 @@ export async function POST(request: NextRequest) {
 				const extension = FORMAT_INFO[format].extension
 				const outputPath = path.join(workDir, `out.${extension}`)
 				const concurrency =
-					process.env.REMOTION_CONCURRENCY && process.env.REMOTION_CONCURRENCY !== 'max'
+					process.env.REMOTION_CONCURRENCY &&
+					!['max', 'auto'].includes(process.env.REMOTION_CONCURRENCY)
 						? Number(process.env.REMOTION_CONCURRENCY)
 						: null
-				const chromiumOptions = { gl: (process.env.REMOTION_GL ?? 'swangle') as 'swangle' }
+				const chromiumOptions = {
+					// WebGL (@remotion/three) needs ANGLE. Headless Linux hosts have no
+					// graphics stack, so they use ANGLE's SwiftShader backend instead.
+					gl: (process.env.REMOTION_GL?.trim() ||
+						(os.platform() === 'linux' ? 'swangle' : 'angle')) as 'angle' | 'swangle',
+				}
 
 				if (format === 'png') {
 					progress('rendering', 0.35, 'Rendering a still at full resolution')
@@ -241,7 +288,7 @@ export async function POST(request: NextRequest) {
 						logLevel: 'error',
 					})
 				} else {
-					progress('rendering', 0.32, `Rendering ${totalFrames} frames with every available core`)
+					progress('rendering', 0.32, `Rendering ${totalFrames} frames with auto-tuned concurrency`)
 					await renderMedia({
 						composition: { ...composition, width, height, durationInFrames: totalFrames },
 						serveUrl,
@@ -250,8 +297,9 @@ export async function POST(request: NextRequest) {
 						crf: format === 'gif' || format === 'prores' ? undefined : quality.crf,
 						x264Preset: format === 'mp4' ? quality.x264Preset : undefined,
 						pixelFormat: format === 'mp4' ? 'yuv420p' : undefined,
-						audioCodec: format === 'mp4' ? 'aac' : undefined,
-						audioBitrate: format === 'mp4' ? '320k' : undefined,
+						muted: !audioEnabled,
+						audioCodec: audioEnabled && format === 'mp4' ? 'aac' : undefined,
+						audioBitrate: audioEnabled && format === 'mp4' ? '320k' : undefined,
 						imageFormat: quality.imageFormat,
 						jpegQuality: quality.imageFormat === 'jpeg' ? quality.jpegQuality : undefined,
 						proResProfile: format === 'prores' ? '4444' : undefined,

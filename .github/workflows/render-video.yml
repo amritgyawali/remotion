@@ -1,0 +1,108 @@
+name: Render video
+
+on:
+  workflow_dispatch:
+    inputs:
+      entry:
+        description: Committed composition to render
+        required: true
+        type: choice
+        default: samples/ai-master-template.tsx
+        options:
+          - samples/ai-master-template.tsx
+          - samples/star-forge-3d.tsx
+          - samples/code-becomes-geometry.tsx
+          - samples/neon-product-reveal.tsx
+      preset:
+        description: Encoding quality
+        required: true
+        type: choice
+        default: max
+        options: [high, max]
+      scale:
+        description: Resolution multiplier
+        required: true
+        type: choice
+        default: '1'
+        options: ['1', '2']
+      codec:
+        description: Delivery codec
+        required: true
+        type: choice
+        default: h264
+        options: [h264, h265, vp9, prores]
+      audio:
+        description: Music and sound
+        required: true
+        type: choice
+        default: 'on'
+        options: ['on', 'off']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trusted-video-render-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Validate source and assets
+        run: |
+          npm run typecheck
+          npm run assets:verify
+
+      - name: Render trusted committed composition
+        shell: bash
+        env:
+          RENDER_ENTRY: ${{ inputs.entry }}
+          RENDER_PRESET: ${{ inputs.preset }}
+          RENDER_SCALE: ${{ inputs.scale }}
+          RENDER_CODEC: ${{ inputs.codec }}
+          RENDER_AUDIO: ${{ inputs.audio }}
+          # The runner has no GPU, so WebGL goes through ANGLE + SwiftShader.
+          REMOTION_GL: swangle
+        run: |
+          case "$RENDER_CODEC" in
+            h264|h265) extension=mp4 ;;
+            vp9) extension=webm ;;
+            prores) extension=mov ;;
+            *) exit 2 ;;
+          esac
+          muted=()
+          if [ "$RENDER_AUDIO" = "off" ]; then muted=(--muted); fi
+          node scripts/render-local.mjs "$RENDER_ENTRY" \
+            --preset "$RENDER_PRESET" \
+            --scale "$RENDER_SCALE" \
+            --codec "$RENDER_CODEC" \
+            "${muted[@]}" \
+            --out "out/github-render.$extension"
+
+      - name: Inspect rendered media
+        shell: bash
+        env:
+          RENDER_AUDIO: ${{ inputs.audio }}
+        run: |
+          expect=()
+          if [ "$RENDER_AUDIO" = "on" ]; then expect=(--expect-audio); fi
+          node scripts/inspect-media.mjs out/github-render.* "${expect[@]}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: remotion-${{ inputs.preset }}-${{ inputs.scale }}x-${{ inputs.codec }}-audio-${{ inputs.audio }}
+          path: out/github-render.*
+          if-no-files-found: error
+          retention-days: 7

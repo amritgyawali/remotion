@@ -25,8 +25,8 @@ export type CompositionMeta = {
 
 export type CompiledComposition = CompositionMeta & {
 	component: ComponentType<Record<string, unknown>>
-	/** Routes compositions using @remotion/media through the audio-aware web renderer. */
-	usesWebMedia: boolean
+	/** Routes media and advanced canvas compositions through Remotion's web renderer. */
+	needsWebRenderer: boolean
 }
 
 export type CompileResult = {
@@ -46,10 +46,53 @@ export type RenderSettings = {
 	engine: RenderEngine
 	preset: QualityPresetId
 	format: OutputFormat
+	/** Master switch for music, sound effects, narration and source-video audio. */
+	audioEnabled: boolean
 	/** 0.5 | 1 | 2 - resolution multiplier applied on top of the composition size */
 	scale: number
 	/** render only the first N seconds, 0 = full composition */
 	previewSeconds: number
+}
+
+export type RenderOverrides = {
+	width: number
+	height: number
+	fps: number
+	durationInFrames: number
+}
+
+export type ServerRenderRequest = {
+	files: SourceFile[]
+	entry: string
+	compositionId: string
+	settings: RenderSettings
+	fileName: string
+	overrides?: RenderOverrides
+}
+
+export type ServerRenderDone = {
+	type: 'done'
+	url?: string
+	sizeInBytes: number
+	codec: string
+	width: number
+	height: number
+	fileName: string
+	mimeType: string
+}
+
+/** Returned by Vercel after a detached Sandbox video render has started. */
+export type ServerRenderJob = {
+	type: 'job'
+	provider: 'vercel-sandbox'
+	sandboxId: string
+	commandId: string
+	fileName: string
+	mimeType: string
+	codec: string
+	width: number
+	height: number
+	totalFrames: number
 }
 
 export type RenderPhase =
@@ -89,6 +132,7 @@ export type RenderOutput = {
 export type ServerCapabilities = {
 	enabled: boolean
 	requiresKey: boolean
+	provider: 'disabled' | 'node' | 'vercel-sandbox'
 	maxFrames: number
 	maxPixels: number
 	maxDurationSeconds: number

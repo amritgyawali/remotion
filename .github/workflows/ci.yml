@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -17,10 +19,22 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
+
+      - name: Verify deterministic audio assets
+        run: npm run assets:verify
 
       - name: Type check
         run: npm run typecheck
 
       - name: Build
         run: npm run build
+
+      - name: Render 3D + audio smoke test
+        env:
+          # The runner has no GPU, so WebGL goes through ANGLE + SwiftShader.
+          REMOTION_GL: swangle
+        run: node scripts/render-local.mjs samples/ai-master-template.tsx --frames 0-2 --preset draft --scale 0.25 --out out/ci-smoke.mp4
+
+      - name: Inspect smoke-test tracks
+        run: node scripts/inspect-media.mjs out/ci-smoke.mp4 --expect-audio

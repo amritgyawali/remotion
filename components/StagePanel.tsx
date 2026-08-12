@@ -17,6 +17,7 @@ const PlayerCanvas = dynamic(() => import('./PlayerCanvas'), {
 export default function StagePanel({
 	compileResult,
 	composition,
+	audioEnabled,
 	selectedId,
 	onSelect,
 	compiling,
@@ -24,6 +25,7 @@ export default function StagePanel({
 }: {
 	compileResult: CompileResult | null
 	composition: CompiledComposition | null
+	audioEnabled: boolean
 	selectedId: string | null
 	onSelect: (id: string) => void
 	compiling: boolean
@@ -101,7 +103,11 @@ export default function StagePanel({
 							width: composition.height >= composition.width ? 'auto' : '100%',
 						}}
 					>
-						<PlayerCanvas composition={composition} css={compileResult?.css} />
+						<PlayerCanvas
+							composition={composition}
+							css={compileResult?.css}
+							audioEnabled={audioEnabled}
+						/>
 					</div>
 				) : (
 					<div className="stage-empty">

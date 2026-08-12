@@ -23,15 +23,32 @@
  * defaults when details are missing instead of stopping at placeholders.
  *
  * [AI: EDIT] Rewrite the WHOLE creative execution for the requested subject:
- * concept, script, scene order, visuals, colors, typography, animation, and
- * timing. Do not only replace the demo text or preserve this look by default.
+ * concept, script, scene order, visuals, colors, typography, animation, camera,
+ * lighting, materials, sound, and timing. Do not only replace the demo text or
+ * preserve this look by default. Preserve wording the user marks as exact.
  *
  * [AI: EDIT] Replace BRIEF, THEME, TIMELINE, and every scene component below.
  * You may add/remove scene components, SVG, charts, diagrams, or CSS artwork.
  * Make the visual language specific to the user's interest and instructions.
  * Use the embedded VISUAL KIT as a reliable starting vocabulary, then extend
- * its inline SVG paths or procedural shapes when the subject needs something
- * more specific. Never settle for text floating on an empty background.
+ * its React Three Fiber meshes, inline SVG paths, or procedural shapes when the
+ * subject needs something more specific. Never settle for text floating on an
+ * empty background.
+
+ * [AI: EDIT] VISUAL TRUTH IS A HARD REQUIREMENT. Before writing scenes, extract
+ * every important concrete noun, action, relationship, comparison, and claim
+ * from the user's request and final script into VISUAL_PROOF_PLAN. Each phrase
+ * must have a recognizable focal object plus an action or state that proves the
+ * words on the same frames. A label, emoji, generic cube, badge, particles, or
+ * decorative icon does not count as proof. If the user says "sun", show an
+ * unmistakable dimensional sun with a sphere, corona/rays, emitted light, and
+ * environmental response. If the user says "tree", show a dimensional tree
+ * with trunk, branches, layered canopy, depth, lighting, and ground shadow. If
+ * they say the sun warms the tree, visibly cast light from sun to tree and make
+ * the leaves respond. Verbs must happen; numbers need honest charts or visible
+ * quantities; comparisons need simultaneously legible before/after states.
+ * With every text layer hidden, a viewer must still identify the subject and
+ * understand the main story. Never keep a demo visual that fails this test.
  *
  * [AI: KEEP] Return one self-contained TSX file with no TODOs, pseudocode,
  * missing pieces, diffs, or explanatory prose. Keep every helper in this file.
@@ -39,36 +56,84 @@
  * [AI: KEEP] Imports supported by this studio are: react, remotion,
  * @remotion/player, @remotion/shapes, @remotion/paths, @remotion/noise,
  * @remotion/motion-blur, @remotion/transitions and its bundled transitions,
- * @remotion/media, @remotion/media-utils, and @remotion/gif. Do not invent npm
- * packages. Do not use Tailwind, framer-motion, Three.js, or WebGL here.
+ * @remotion/media, @remotion/media-utils, @remotion/gif, @remotion/fonts,
+ * @remotion/three, @react-three/fiber, and three. Do not invent npm packages.
+ * Do not use Tailwind or framer-motion.
+
+ * [AI: KEEP] Real 3D must live inside <ThreeCanvas width={width}
+ * height={height} gl={{antialias: true, preserveDrawingBuffer: true}}> with
+ * ambient plus directional/point lighting. preserveDrawingBuffer is required:
+ * without it browser exports capture an empty canvas. Animate every
+ * mesh, camera, material, and light from useCurrentFrame(); never use useFrame()
+ * or self-running shaders. Prefer procedural meshes so the one-file handoff has
+ * no missing model. If genuine 3D does not improve the story, use the lighter
+ * SVG/DOM depth kit. Keep a graceful, subject-faithful 2D fallback rather than
+ * replacing a missing object with generic geometry.
  *
- * [AI: KEEP] Prefer DOM, CSS, and inline SVG. This studio provides an original
- * built-in pack at /assets/visual/v1/ and /assets/audio/v1/; those URLs remain
- * available after this file is re-uploaded here. A single file does not carry
- * any other public/ folder, so do not invent local asset paths. Use a remote
- * asset only when the user supplied a reliable URL. Do not depend on fetches,
- * downloaded fonts, or browser state.
+ * [AI: KEEP] Prefer DOM, CSS, and inline SVG. This studio ships a built-in pack
+ * that stays available after this file is re-uploaded here:
+ *   /assets/visual/v1/   editable SVG icons, arrows, objects, geometry
+ *   /assets/texture/v1/  grain, paper, halftone, scanlines, vignette, light
+ *                        leaks, glow/bokeh/spark/smoke sprites, matcaps, and
+ *                        equirectangular environment maps (see TEXTURE_KIT)
+ *   /assets/fonts/v1/    10 self-hosted OFL families (see FONT_KIT)
+ *   /assets/audio/v1/    8 music beds and 20 sound effects (see SOUND_LIBRARY)
+ * A single file does not carry any other public/ folder, so do not invent local
+ * asset paths. Use a remote asset only when the user supplied a reliable URL.
+ * Never load a font from Google Fonts or any other URL at render time.
+ *
+ * [AI: EDIT] TYPOGRAPHY IS HALF THE DESIGN. Pick two or three families from
+ * FONT_KIT that match the subject (Anton or Bebas Neue for loud hooks, Playfair
+ * Display for luxury and editorial, Space Grotesk for tech, Nunito for friendly
+ * education, Caveat for handwritten annotation, JetBrains Mono for data and
+ * code) and register them with registerStudioFont() at module scope. Anton and
+ * Bebas Neue are single-weight: request weight 400, never a synthetic bold.
+ * Pair one display face with one text face; never set body copy in a display
+ * face; keep the mono face for labels, numbers and code only.
+ *
+ * [AI: EDIT] Use TEXTURE_KIT to escape the flat-render look, but keep it
+ * restrained: one grain plate (6-14% opacity, soft-light) and one vignette over
+ * the whole film, light leaks only when the story is warm or nostalgic, and
+ * sprites (glow, bokeh, spark, smoke) only where a light or particle belongs.
+ * In 3D, <SceneEnvironment> gives real image-based lighting from one PNG and
+ * meshMatcapMaterial with a matcap texture gives chrome, clay, pearl or glass
+ * without an HDRI. Set envMapIntensity={0} on emissive light sources.
  *
  * [AI: KEEP] All animation must be deterministic and frame-driven with
  * useCurrentFrame(), interpolate(), spring(), and deterministic math. Never use
  * CSS keyframes/transitions, Date.now(), or Math.random().
  * Use CSS linear gradients or inline SVG for radial/conic artwork and masks so
  * audio-enabled browser exports match the preview in every supported browser.
+ * Draw every bitmap with <Img> from remotion. The browser exporter rasterises
+ * images, SVG and linear gradients, but ignores `background-image: url(...)`,
+ * so a texture set that way disappears from the exported file. Give every
+ * inline <svg> explicit width and height attributes as well as CSS sizing: the
+ * exporter serialises the tag, and one with no intrinsic size is rasterised at
+ * the wrong scale, which shifts that whole layer in the export.
  *
- * [AI: KEEP] Every completed video must purposefully include all five visual
- * categories: (1) a recognizable topic-specific object or icon, (2) arrows or
- * connectors where they clarify flow, (3) a restrained neon/glow accent,
- * (4) supporting geometry, and (5) visible depth or 3D-like extrusion. Use
- * them to explain the story across the video; do not clutter every frame or
- * repeat the demo arrangement when a subject-specific composition is stronger.
+ * [AI: KEEP] Build a bespoke art direction from the brief: one dominant focal
+ * point per scene; coherent palette, typography, lighting, and materials;
+ * intentional negative space; foreground/midground/background separation; and
+ * motivated camera movement. Arrows, neon, particles, glass, and decorative
+ * geometry are optional tools, not a checklist. Remove them when the requested
+ * subject calls for natural, editorial, minimal, historical, playful, or other
+ * aesthetics. Never repeat the demo arrangement when a subject-specific shot
+ * tells the story better.
  * Every video also needs intentional sound unless the user explicitly asks for
- * silence: one low music bed plus a small number of beat-synced transitions,
- * impacts, UI sounds, or a closing stinger. Import Audio only from
- * @remotion/media, use the built-in SOUND paths, and keep music under speech.
+ * silence. Choose one music bed for the subject and separate the remaining cues
+ * into SOUNDS (small UI/story actions) and SFX (transitions, impacts, risers,
+ * reveals, and the closing stinger). Every cue frame must match the visual event
+ * that motivates it. Import Audio only from @remotion/media, use the built-in
+ * SOUND_LIBRARY paths, and keep music under speech.
  *
  * [AI: KEEP] Make scene durations add up exactly to Composition
- * durationInFrames. Keep important text at least 80px from the sides. Use a
- * main headline of roughly 84px or larger in a 1080px-wide composition.
+ * durationInFrames and derive the total from TIMELINE_END instead of copying a
+ * second magic number. Rebuild the layout for the requested aspect ratio; do
+ * not merely change Composition width/height. Keep important text at least 80px
+ * from the sides in a 1080px-wide composition and scale that safe area with
+ * width. Use a main headline of roughly 84px or larger at 1080px. Limit lines,
+ * fit long copy deliberately, and keep all key content inside title/action-safe
+ * bounds for the target platform.
  * Do not add a persistent title/header rail or visible scene numbering such as
  * 01, 02, 03, or 04. Let each scene open directly with its actual content.
  *
@@ -79,108 +144,457 @@
  * FINAL AI CHECK BEFORE RETURNING THE FILE
  * - One complete TSX file; no unsupported imports or missing local files.
  * - The first frames hook attention; every scene has one clear focal point.
- * - Object/icon, arrow, neon, geometry, and depth are all used with purpose.
- * - Music and SFX are timed, balanced, and imported from @remotion/media.
- * - All copy fits, all animations use frames, and the full timeline fits.
+ * - Every VISUAL_PROOF_PLAN phrase has its literal object and visible action.
+ * - The story remains identifiable and understandable with all text hidden.
+ * - 3D has real lights/materials/depth, keeps preserveDrawingBuffer, and
+ *   decorative effects remain restrained.
+ * - Music, sounds, and SFX are balanced and share exact frames with their visuals.
+ * - Type is loaded from FONT_KIT, weights are real, and no font is fetched remotely.
+ * - Grain/vignette/leaks stay subtle; textures serve the story, not the demo.
+ * - All copy fits, all animations use frames, and 9:16/16:9/1:1 layouts are
+ *   redesigned rather than stretched when the user requests those formats.
+ * - Complexity is bounded: semantic subjects survive before particles/glow are
+ *   reduced, and 4K/2x rendering does not depend on hundreds of blurred layers.
  * - The final frame resolves cleanly and the Composition metadata is correct.
  *
  * EDIT MAP
+ * 0. KITS        -> FONT_KIT, TEXTURE_KIT, SOUND_LIBRARY (what you can use)
  * 1. BRIEF       -> concept, audience, message, story, CTA
  * 2. THEME       -> colors, fonts, surfaces, visual personality
- * 3. TIMELINE    -> scene starts and durations in frames (30 frames = 1 second)
- * 4. SOUND       -> choose music/SFX and align them to the edited timeline
- * 5. SCENES      -> replace the actual layout and motion for the user's topic
- * 6. COMPOSITION -> set final size, fps, duration, and default props
+ * 3. PROOF PLAN  -> map every important saying to literal objects and actions
+ * 4. TIMELINE    -> scene starts and durations in frames (30 frames = 1 second)
+ * 5. SOUND       -> choose music, sounds, and SFX; share frames with visuals
+ * 6. SCENES      -> replace the actual layout and motion for the user's topic
+ * 7. COMPOSITION -> set final size, fps, duration, and default props
  */
 
 import React from 'react'
 import {
 	AbsoluteFill,
 	Composition,
+	continueRender,
+	delayRender,
 	Easing,
+	Img,
 	interpolate,
 	registerRoot,
 	Sequence,
 	spring,
+	staticFile,
 	useCurrentFrame,
 	useVideoConfig,
 } from 'remotion'
 import { Audio } from '@remotion/media'
+import { loadFont } from '@remotion/fonts'
+import { ThreeCanvas } from '@remotion/three'
+import { useThree } from '@react-three/fiber'
+import {
+	AdditiveBlending,
+	DoubleSide,
+	EquirectangularReflectionMapping,
+	SRGBColorSpace,
+	TextureLoader,
+	type Texture,
+} from 'three'
+
+/* -------------------------------------------------------------------------- */
+/*  TYPOGRAPHY KIT [AI: KEEP THE LOADER; CHOOSE FAMILIES FOR THE SUBJECT]     */
+/* -------------------------------------------------------------------------- */
+
+const fontAsset = (relativePath: string) => staticFile(`assets/fonts/v1/${relativePath}`)
+
+/**
+ * Self-hosted SIL Open Font License families. Nothing is fetched from the
+ * network at render time, so a server or CI render gets the same type as the
+ * preview instead of silently falling back to Arial.
+ *
+ * [AI: EDIT] Load ONLY the two or three families the design needs - each one
+ * costs a font download and parse in every render.
+ */
+export const FONT_KIT = {
+	inter: { family: 'Inter', file: 'inter/Inter[opsz,wght].ttf', weight: '100 900', use: 'neutral UI and body copy' },
+	archivo: { family: 'Archivo', file: 'archivo/Archivo[wdth,wght].ttf', weight: '100 900', use: 'editorial headlines with a width axis' },
+	anton: { family: 'Anton', file: 'anton/Anton-Regular.ttf', weight: '400', use: 'loud poster headlines and social hooks' },
+	bebasNeue: { family: 'Bebas Neue', file: 'bebas-neue/BebasNeue-Regular.ttf', weight: '400', use: 'condensed title cards and lower thirds' },
+	oswald: { family: 'Oswald', file: 'oswald/Oswald[wght].ttf', weight: '200 700', use: 'news, sport and documentary overlays' },
+	playfairDisplay: { family: 'Playfair Display', file: 'playfair-display/PlayfairDisplay[wght].ttf', weight: '400 900', use: 'luxury, fashion, food and editorial serif' },
+	spaceGrotesk: { family: 'Space Grotesk', file: 'space-grotesk/SpaceGrotesk[wght].ttf', weight: '300 700', use: 'technical, AI and product launches' },
+	jetBrainsMono: { family: 'JetBrains Mono', file: 'jetbrains-mono/JetBrainsMono[wght].ttf', weight: '100 800', use: 'code, labels, data and timestamps' },
+	nunito: { family: 'Nunito', file: 'nunito/Nunito[wght].ttf', weight: '200 1000', use: 'friendly education, kids and health' },
+	caveat: { family: 'Caveat', file: 'caveat/Caveat[wght].ttf', weight: '400 700', use: 'handwritten annotation and personal notes' },
+} as const
+
+/**
+ * Registers a family and returns a ready-to-use CSS font-family stack.
+ * loadFont() holds the render open until the face is parsed, so text never
+ * renders in a fallback face on the first frames.
+ */
+const registerStudioFont = (id: keyof typeof FONT_KIT, fallback: string): string => {
+	const entry = FONT_KIT[id]
+	loadFont({ family: entry.family, url: fontAsset(entry.file), weight: entry.weight })
+	return `'${entry.family}', ${fallback}`
+}
+
+const DISPLAY_FONT = registerStudioFont('anton', 'Impact, Haettenschweiler, sans-serif')
+const TEXT_FONT = registerStudioFont('inter', 'Arial, Helvetica, sans-serif')
+const MONO_FONT = registerStudioFont('jetBrainsMono', 'ui-monospace, Consolas, monospace')
+
+/* -------------------------------------------------------------------------- */
+/*  TEXTURE KIT [AI: KEEP; USE SPARINGLY AND ON PURPOSE]                      */
+/* -------------------------------------------------------------------------- */
+
+const textureAsset = (relativePath: string) => staticFile(`assets/texture/v1/${relativePath}`)
+
+/**
+ * Original CC0 raster assets. Overlays and sprites are DOM layers; matcaps and
+ * environments feed three.js materials.
+ */
+export const TEXTURE_KIT = {
+	filmGrain: textureAsset('overlays/film-grain.png'),
+	grainFine: textureAsset('overlays/grain-fine.png'),
+	noiseSoft: textureAsset('overlays/noise-soft.png'),
+	paperFiber: textureAsset('overlays/paper-fiber.png'),
+	halftone: textureAsset('overlays/halftone-dots.png'),
+	scanlines: textureAsset('overlays/scanlines.png'),
+	vignette: textureAsset('overlays/vignette.png'),
+	lightLeakWarm: textureAsset('overlays/light-leak-warm.png'),
+	lightLeakCool: textureAsset('overlays/light-leak-cool.png'),
+	glow: textureAsset('sprites/glow-radial.png'),
+	bokeh: textureAsset('sprites/bokeh-circle.png'),
+	sparkStar: textureAsset('sprites/spark-star.png'),
+	smokePuff: textureAsset('sprites/smoke-puff.png'),
+	matcapChrome: textureAsset('matcaps/chrome.png'),
+	matcapClay: textureAsset('matcaps/clay.png'),
+	matcapPearl: textureAsset('matcaps/pearl.png'),
+	matcapEmerald: textureAsset('matcaps/emerald.png'),
+	envStudio: textureAsset('environments/studio.png'),
+	envSunset: textureAsset('environments/sunset.png'),
+	envNightCity: textureAsset('environments/night-city.png'),
+} as const
 
 /* -------------------------------------------------------------------------- */
 /*  1. NORMALIZED USER BRIEF [AI: EDIT ALL CONTENT]                           */
 /* -------------------------------------------------------------------------- */
 
 export const BRIEF = {
-	topic: 'Turn one idea into a finished video',
-	audience: 'Creators with a story to tell',
-	goal: 'Make the next step obvious',
-	hook: 'YOUR IDEA\nDESERVES MOTION.',
-	subhead: 'One guided file gives an AI the brief, structure, and render rules.',
+	topic: 'Sunlight turns a seed into a living tree',
+	audience: 'Curious people who love nature and visual science',
+	goal: 'Make photosynthesis feel immediate, beautiful, and memorable',
+	hook: 'ONE RAY.\nA LIVING WORLD.',
+	subhead: 'Light arrives. A leaf catches it. Life builds upward.',
 	storyPoints: [
 		{
-			title: 'DESCRIBE',
-			body: 'Share the topic, audience, goal, style, and exact call to action.',
+			title: 'ABSORB',
+			body: 'Leaves capture sunlight across a layered green canopy.',
 		},
 		{
-			title: 'GENERATE',
-			body: 'Ask your AI to rewrite the complete file around your unique idea.',
+			title: 'BUILD',
+			body: 'Light energy becomes the sugars that shape wood, roots, and new leaves.',
 		},
 		{
-			title: 'RENDER',
-			body: 'Upload the returned TSX, preview every frame, and export the result.',
+			title: 'GROW',
+			body: 'A seed rises into a tree that stores carbon and shelters a living world.',
 		},
 	],
-	proof: 'BRIEF + STORY + STYLE + MOTION',
-	cta: 'DOWNLOAD. BRIEF. BUILD.',
-	ctaDetail: 'Attach this template to your AI and ask for one complete TSX file.',
-	mustInclude: ['One clear hook', 'Topic-specific visuals', 'One decisive CTA'],
-	avoid: ['Generic stock-template language', 'Unsupported packages', 'Random timing'],
+	proof: 'SUNLIGHT → ENERGY → LIFE',
+	cta: 'LET THE LIGHT IN.',
+	ctaDetail: 'Protect the systems that turn one ray into a living world.',
+	mustInclude: ['Dimensional sun', 'Growing 3D tree', 'Visible light-to-life relationship'],
+	avoid: ['Generic nature icons', 'Unmotivated neon', 'Text-only explanation'],
 }
 
-/* -------------------------------------------------------------------------- */
-/*  2. VISUAL THEME [AI: EDIT OR REPLACE]                                     */
-/* -------------------------------------------------------------------------- */
-
-const THEME = {
-	background: '#070812',
-	surface: '#121527',
-	ink: '#F7F7FB',
-	muted: '#A8AEC5',
-	accent: '#8B7CFF',
-	accent2: '#5FF4C6',
-	warm: '#FFB86B',
-	line: 'rgba(255,255,255,0.10)',
-	fontSans: 'Inter, Arial, Helvetica, sans-serif',
-	fontMono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-}
-
-/* -------------------------------------------------------------------------- */
-/*  3. TIMELINE [AI: EDIT; TOTAL MUST EQUAL 450 FRAMES / 15 SECONDS]          */
-/* -------------------------------------------------------------------------- */
-
-const TIMELINE = {
+/** Shared by the proof plan, scenes, soundtrack, and Composition metadata. */
+const STORY_CLOCK = {
 	hook: { from: 0, duration: 105 },
 	brief: { from: 105, duration: 120 },
 	story: { from: 225, duration: 120 },
 	cta: { from: 345, duration: 105 },
+} as const
+
+/* -------------------------------------------------------------------------- */
+/*  2. VISUAL PROOF PLAN [AI: REWRITE BEFORE BUILDING ANY SCENE]              */
+/* -------------------------------------------------------------------------- */
+
+type SubjectId = 'sun' | 'tree'
+
+type VisualProofBeat = {
+	id: string
+	saying: string
+	from: number
+	durationInFrames: number
+	mustShow: readonly SubjectId[]
+	focalObject: SubjectId
+	visibleAction: string
+	camera: 'push-in' | 'orbit' | 'tracking' | 'locked'
+}
+
+export const VISUAL_PROOF_PLAN: readonly VisualProofBeat[] = [
+	{
+		id: 'light-arrives',
+		saying: 'One ray begins a living world',
+		from: STORY_CLOCK.hook.from,
+		durationInFrames: STORY_CLOCK.hook.duration,
+		mustShow: ['sun', 'tree'],
+		focalObject: 'sun',
+		visibleAction: 'The sun rises, emits warm light, and reveals a young tree in depth',
+		camera: 'push-in',
+	},
+	{
+		id: 'leaf-captures-light',
+		saying: 'Leaves capture sunlight and turn it into stored energy',
+		from: STORY_CLOCK.brief.from,
+		durationInFrames: STORY_CLOCK.brief.duration,
+		mustShow: ['sun', 'tree'],
+		focalObject: 'tree',
+		visibleAction: 'Warm light travels from the sun to a leaf-rich canopy before energy pulses downward',
+		camera: 'locked',
+	},
+	{
+		id: 'light-becomes-growth',
+		saying: 'Sunlight helps the tree grow',
+		from: STORY_CLOCK.story.from,
+		durationInFrames: STORY_CLOCK.story.duration,
+		mustShow: ['sun', 'tree'],
+		focalObject: 'tree',
+		visibleAction: 'Light reaches the canopy while trunk, branches, and leaves visibly grow',
+		camera: 'orbit',
+	},
+	{
+		id: 'living-world-resolves',
+		saying: 'Protect the systems that turn one ray into a living world',
+		from: STORY_CLOCK.cta.from,
+		durationInFrames: STORY_CLOCK.cta.duration,
+		mustShow: ['sun', 'tree'],
+		focalObject: 'tree',
+		visibleAction: 'The mature tree fills the frame while the sun creates a resolved warm rim light',
+		camera: 'push-in',
+	},
+] as const
+
+export const CREATIVE_MANIFEST = {
+	schemaVersion: 1,
+	literalSubjects: ['sun', 'tree'] as const,
+	beats: VISUAL_PROOF_PLAN,
 }
 
 /* -------------------------------------------------------------------------- */
-/*  4. SOUND DESIGN [AI: EDIT PATHS, LEVELS, AND CUE FRAMES]                 */
+/*  3. VISUAL THEME [AI: EDIT OR REPLACE]                                     */
 /* -------------------------------------------------------------------------- */
 
-const AUDIO_ROOT = '/assets/audio/v1'
+const THEME = {
+	background: '#061710',
+	surface: '#10251C',
+	ink: '#F7F3E7',
+	muted: '#B8C9B7',
+	accent: '#FFB84D',
+	accent2: '#66D47F',
+	warm: '#FFE08A',
+	line: 'rgba(255,245,220,0.12)',
+	fontDisplay: DISPLAY_FONT,
+	fontSans: TEXT_FONT,
+	fontMono: MONO_FONT,
+}
 
-export const SOUND = {
-	music: `${AUDIO_ROOT}/music/neon-pulse-120bpm-loop.wav`,
-	click: `${AUDIO_ROOT}/sfx/ui/click-soft.wav`,
-	pop: `${AUDIO_ROOT}/sfx/ui/pop-clean.wav`,
-	whoosh: `${AUDIO_ROOT}/sfx/transitions/whoosh-fast.wav`,
-	riser: `${AUDIO_ROOT}/sfx/transitions/riser-digital.wav`,
-	impact: `${AUDIO_ROOT}/sfx/impacts/impact-clean.wav`,
-	shimmer: `${AUDIO_ROOT}/sfx/accents/reveal-shimmer.wav`,
-	stinger: `${AUDIO_ROOT}/sfx/accents/logo-stinger.wav`,
+/* -------------------------------------------------------------------------- */
+/*  3. TIMELINE [AI: EDIT STORY_CLOCK; COMPOSITION DURATION IS DERIVED]       */
+/* -------------------------------------------------------------------------- */
+
+const TIMELINE = STORY_CLOCK
+
+const TIMELINE_END = TIMELINE.cta.from + TIMELINE.cta.duration
+
+/** One source of truth for visible beats that also receive a sound cue. */
+const VISUAL_BEATS = {
+	hook: { headlineImpact: 0, tagReveal: 54 },
+	brief: { rowStarts: [0, 9, 18], iconStarts: [4, 13, 22] },
+	story: { cardStarts: [12, 22, 32] },
+	cta: { brandReveal: 60 },
+} as const
+
+/* -------------------------------------------------------------------------- */
+/*  4. SOUND DESIGN [AI: MATCH THE VIDEO, THEN RETIME WITH THE VISUALS]        */
+/* -------------------------------------------------------------------------- */
+
+const audioAsset = (relativePath: string) => staticFile(`assets/audio/v1/${relativePath}`)
+
+/**
+ * [AI: EDIT] Pick one music bed from the subject, not from the template's current
+ * look. All beds are loopable and mixed to sit under narration:
+ * - technology, products, fast motion            -> neonPulse (120 BPM)
+ * - education, friendly stories, explainers      -> warmInspiration (96 BPM)
+ * - cinematic, space, premium, slow builds       -> cinematicOrbit (80 BPM)
+ * - nature, meditation, documentary, narration   -> ambientCalm (70 BPM, no drums)
+ * - trailers, sport, launches, heroic payoffs    -> epicCinematic (88 BPM)
+ * - vlogs, study, casual and relaxed stories     -> lofiChill (84 BPM)
+ * - SaaS, business, optimistic explainers        -> corporateClean (112 BPM)
+ * - problems, suspense, before/after setups      -> tensionDrone (72 BPM)
+ * Keep UI/diegetic actions in `sounds`; keep editorial accents in `sfx`.
+ */
+export const SOUND_LIBRARY = {
+	music: {
+		neonPulse: audioAsset('music/neon-pulse-120bpm-loop.wav'),
+		warmInspiration: audioAsset('music/warm-inspiration-96bpm-loop.wav'),
+		cinematicOrbit: audioAsset('music/cinematic-orbit-80bpm-loop.wav'),
+		ambientCalm: audioAsset('music/ambient-calm-70bpm-loop.wav'),
+		epicCinematic: audioAsset('music/epic-cinematic-88bpm-loop.wav'),
+		lofiChill: audioAsset('music/lofi-chill-84bpm-loop.wav'),
+		corporateClean: audioAsset('music/corporate-clean-112bpm-loop.wav'),
+		tensionDrone: audioAsset('music/tension-drone-72bpm-loop.wav'),
+	},
+	sounds: {
+		click: audioAsset('sfx/ui/click-soft.wav'),
+		pop: audioAsset('sfx/ui/pop-clean.wav'),
+		notification: audioAsset('sfx/ui/notification-bright.wav'),
+		typewriter: audioAsset('sfx/ui/typewriter.wav'),
+		tick: audioAsset('sfx/ui/tick.wav'),
+		swipe: audioAsset('sfx/ui/swipe.wav'),
+	},
+	sfx: {
+		whooshFast: audioAsset('sfx/transitions/whoosh-fast.wav'),
+		whooshDeep: audioAsset('sfx/transitions/whoosh-deep.wav'),
+		riser: audioAsset('sfx/transitions/riser-digital.wav'),
+		riserOrganic: audioAsset('sfx/transitions/riser-organic.wav'),
+		glitch: audioAsset('sfx/transitions/glitch.wav'),
+		subDrop: audioAsset('sfx/transitions/sub-drop.wav'),
+		impactClean: audioAsset('sfx/impacts/impact-clean.wav'),
+		impactDeep: audioAsset('sfx/impacts/impact-deep.wav'),
+		impactSnap: audioAsset('sfx/impacts/impact-snap.wav'),
+		boomTail: audioAsset('sfx/impacts/impact-boom-tail.wav'),
+		shimmer: audioAsset('sfx/accents/reveal-shimmer.wav'),
+		chimeSparkle: audioAsset('sfx/accents/chime-sparkle.wav'),
+		powerUp: audioAsset('sfx/accents/power-up.wav'),
+		stinger: audioAsset('sfx/accents/logo-stinger.wav'),
+	},
+} as const
+
+type TimedAudioCue = {
+	id: string
+	src: string
+	from: number
+	durationInFrames: number
+	volume: number
+}
+
+const VIDEO_END_FRAME = TIMELINE_END - 1
+
+/**
+ * [AI: EDIT] This demo is a warm educational nature story, so Warm Inspiration fits.
+ * Cue frames below reuse the scene and animation timing above: clicks land on
+ * brief-row icons, pops land on story cards, whooshes straddle scene cuts, and
+ * the riser ends exactly when the CTA begins. Retiming a visual means retiming
+ * its matching cue here in the same edit.
+ */
+export const SOUND_DESIGN: {
+	music: {
+		src: string
+		volume: number
+		fadeInFrames: number
+		fadeOutFrames: number
+	}
+	sounds: TimedAudioCue[]
+	sfx: TimedAudioCue[]
+} = {
+	music: {
+		src: SOUND_LIBRARY.music.warmInspiration,
+		volume: 0.13,
+		fadeInFrames: 24,
+		fadeOutFrames: 34,
+	},
+	sounds: [
+		{
+			id: 'topic icon',
+			src: SOUND_LIBRARY.sounds.click,
+			from: TIMELINE.brief.from + VISUAL_BEATS.brief.iconStarts[0],
+			durationInFrames: 3,
+			volume: 0.16,
+		},
+		{
+			id: 'audience icon',
+			src: SOUND_LIBRARY.sounds.click,
+			from: TIMELINE.brief.from + VISUAL_BEATS.brief.iconStarts[1],
+			durationInFrames: 3,
+			volume: 0.16,
+		},
+		{
+			id: 'goal icon',
+			src: SOUND_LIBRARY.sounds.click,
+			from: TIMELINE.brief.from + VISUAL_BEATS.brief.iconStarts[2],
+			durationInFrames: 3,
+			volume: 0.16,
+		},
+		{
+			id: 'describe card',
+			src: SOUND_LIBRARY.sounds.pop,
+			from: TIMELINE.story.from + VISUAL_BEATS.story.cardStarts[0],
+			durationInFrames: 6,
+			volume: 0.17,
+		},
+		{
+			id: 'generate card',
+			src: SOUND_LIBRARY.sounds.pop,
+			from: TIMELINE.story.from + VISUAL_BEATS.story.cardStarts[1],
+			durationInFrames: 6,
+			volume: 0.17,
+		},
+		{
+			id: 'render card',
+			src: SOUND_LIBRARY.sounds.pop,
+			from: TIMELINE.story.from + VISUAL_BEATS.story.cardStarts[2],
+			durationInFrames: 6,
+			volume: 0.17,
+		},
+	],
+	sfx: [
+		{
+			id: 'hook impact',
+			src: SOUND_LIBRARY.sfx.impactClean,
+			from: TIMELINE.hook.from + VISUAL_BEATS.hook.headlineImpact,
+			durationInFrames: 12,
+			volume: 0.32,
+		},
+		{
+			id: 'hook shimmer',
+			src: SOUND_LIBRARY.sfx.shimmer,
+			from: TIMELINE.hook.from + VISUAL_BEATS.hook.tagReveal,
+			durationInFrames: 30,
+			volume: 0.2,
+		},
+		{
+			id: 'brief transition',
+			src: SOUND_LIBRARY.sfx.whooshFast,
+			from: TIMELINE.brief.from - 6,
+			durationInFrames: 12,
+			volume: 0.23,
+		},
+		{
+			id: 'story transition',
+			src: SOUND_LIBRARY.sfx.whooshFast,
+			from: TIMELINE.story.from - 6,
+			durationInFrames: 12,
+			volume: 0.23,
+		},
+		{
+			id: 'CTA riser',
+			src: SOUND_LIBRARY.sfx.riser,
+			from: TIMELINE.cta.from - 45,
+			durationInFrames: 45,
+			volume: 0.18,
+		},
+		{
+			id: 'CTA impact',
+			src: SOUND_LIBRARY.sfx.impactClean,
+			from: TIMELINE.cta.from,
+			durationInFrames: 12,
+			volume: 0.28,
+		},
+		{
+			id: 'closing stinger',
+			src: SOUND_LIBRARY.sfx.stinger,
+			from: TIMELINE.cta.from + VISUAL_BEATS.cta.brandReveal,
+			durationInFrames: 36,
+			volume: 0.22,
+		},
+	],
 }
 
 const CLAMP = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const
@@ -601,6 +1015,337 @@ const hashValue = (value: number) => {
 	return hashed - Math.floor(hashed)
 }
 
+/* -------------------------------------------------------------------------- */
+/*  REAL 3D SUBJECT KIT [AI: KEEP THE METHOD; REBUILD SUBJECTS FOR THE BRIEF] */
+/* -------------------------------------------------------------------------- */
+
+type Subject3DProps = {
+	position?: readonly [number, number, number]
+	scale?: number
+	delay?: number
+}
+
+const SUN_RAYS = Array.from({ length: 20 }, (_, index) => index)
+const SUN_SPOTS: ReadonlyArray<readonly [number, number, number, number]> = [
+	[-0.34, 0.42, 0.91, 0.13],
+	[0.45, 0.16, 0.89, 0.09],
+	[-0.08, -0.48, 0.88, 0.1],
+]
+const TREE_BRANCHES: ReadonlyArray<readonly [number, number, number, number]> = [
+	[-0.48, 2.2, 0, -0.76],
+	[0.53, 2.42, -0.06, 0.72],
+	[-0.36, 2.88, 0.18, -0.58],
+	[0.34, 3.02, 0.12, 0.5],
+]
+const TREE_CANOPY: ReadonlyArray<readonly [number, number, number, number, string]> = [
+	[-0.95, 3.02, 0.08, 0.98, '#2F8F5B'],
+	[0.1, 3.45, -0.12, 1.22, '#42B86E'],
+	[1.0, 2.98, 0.14, 0.92, '#277A50'],
+	[-0.45, 4.15, -0.22, 0.9, '#66D47F'],
+	[0.62, 4.08, 0.02, 0.84, '#38A960'],
+	[-0.08, 2.7, 0.62, 0.82, '#226D4A'],
+]
+const LIGHT_PARTICLES = Array.from({ length: 7 }, (_, index) => index)
+
+/** A literal sun: emissive sphere, corona, rays, sunspots, and emitted light. */
+const ProceduralSun3D: React.FC<Subject3DProps> = ({
+	position = [2.35, 2.35, -1.2],
+	scale = 1,
+	delay = 0,
+}) => {
+	const frame = useCurrentFrame()
+	const { fps } = useVideoConfig()
+	const enter = spring({
+		frame: frame - delay,
+		fps,
+		config: { damping: 22, stiffness: 82, mass: 1.05 },
+	})
+	const rise = interpolate(enter, [0, 1], [-1.5, 0], CLAMP)
+	const pulse = 1 + Math.sin((frame - delay) * 0.075) * 0.035
+	const rayCount = SUN_RAYS.length
+
+	return (
+		<group
+			position={[position[0], position[1] + rise, position[2]]}
+			rotation={[0.08, frame * 0.0025, frame * 0.004]}
+			scale={scale * interpolate(enter, [0, 1], [0.72, 1], CLAMP) * pulse}
+		>
+			<pointLight color="#FFD08A" intensity={4.6 * enter} distance={18} decay={1.7} />
+			{SUN_RAYS.map((index) => {
+				const angle = (index / rayCount) * Math.PI * 2
+				const length = 0.62 + hashValue(index * 7.1) * 0.48
+				return (
+					<mesh
+						key={index}
+						position={[Math.cos(angle) * 1.48, Math.sin(angle) * 1.48, -0.18]}
+						rotation={[0, 0, angle - Math.PI / 2]}
+						scale={[1, length, 1]}
+					>
+						<boxGeometry args={[0.055, 0.72, 0.045]} />
+						<meshBasicMaterial color={index % 2 === 0 ? '#FFD36A' : '#FF9F43'} transparent opacity={0.58} />
+					</mesh>
+				)
+			})}
+			<mesh rotation={[Math.PI / 2, 0, frame * -0.006]}>
+				<torusGeometry args={[1.18, 0.075, 16, 80]} />
+				<meshBasicMaterial color="#FFB44C" transparent opacity={0.32} />
+			</mesh>
+			<mesh castShadow>
+				<sphereGeometry args={[1, 64, 64]} />
+				<meshStandardMaterial
+					color="#FFB23E"
+					emissive="#FF7A1A"
+					emissiveIntensity={1.35}
+					// Fully rough and non-metallic: a sun has no specular highlight.
+					roughness={1}
+					metalness={0}
+					// A light source does not reflect its surroundings: keep the
+					// scene environment off this material or it reads as a planet.
+					envMapIntensity={0}
+				/>
+			</mesh>
+			{SUN_SPOTS.map(([x, y, z, spotScale], index) => (
+				<mesh key={index} position={[x, y, z]} scale={spotScale * 0.8}>
+					<sphereGeometry args={[1, 20, 20]} />
+					{/* Faint granulation, not planet markings. */}
+					<meshBasicMaterial color="#E8813A" transparent opacity={0.26} />
+				</mesh>
+			))}
+		</group>
+	)
+}
+
+/** A literal tree: rooted trunk, branching structure, layered canopy and wind. */
+const ProceduralTree3D: React.FC<Subject3DProps & { maturity?: number }> = ({
+	position = [-0.45, -2.2, 0.25],
+	scale = 1,
+	delay = 8,
+	maturity = 1,
+}) => {
+	const frame = useCurrentFrame()
+	const { fps } = useVideoConfig()
+	const grown = spring({
+		frame: frame - delay,
+		fps,
+		config: { damping: 24, stiffness: 64, mass: 1.15 },
+	})
+	const growth = Math.max(0.04, grown * maturity)
+	const wind = Math.sin((frame - delay) * 0.045) * 0.035
+	return (
+		<group
+			position={[position[0], position[1], position[2]]}
+			rotation={[0, -0.24 + wind, wind * 0.48]}
+			scale={[scale * growth, scale * growth, scale * growth]}
+		>
+			<mesh castShadow position={[0, 1.55, 0]}>
+				<cylinderGeometry args={[0.26, 0.52, 3.1, 14]} />
+				<meshStandardMaterial color="#7A4327" roughness={0.82} metalness={0.02} />
+			</mesh>
+			{TREE_BRANCHES.map(([x, y, z, rotation], index) => (
+				<mesh key={index} castShadow position={[x, y, z]} rotation={[0, 0, rotation]}>
+					<cylinderGeometry args={[0.09, 0.16, 1.55, 10]} />
+					<meshStandardMaterial color={index % 2 === 0 ? '#704027' : '#875034'} roughness={0.86} />
+				</mesh>
+			))}
+			<group rotation={[wind * 0.4, wind, wind]}>
+				{TREE_CANOPY.map(([x, y, z, size, color], index) => (
+					<mesh
+						key={index}
+						castShadow
+						position={[x, y + Math.sin(frame * 0.035 + index) * 0.035, z]}
+						scale={[size * 1.08, size, size * 0.9]}
+						rotation={[index * 0.18, frame * 0.0018 * (index % 2 === 0 ? 1 : -1), index * 0.12]}
+					>
+						<icosahedronGeometry args={[1, 2]} />
+						<meshStandardMaterial color={color} roughness={0.7} metalness={0.03} />
+					</mesh>
+				))}
+			</group>
+		</group>
+	)
+}
+
+const SUBJECT_VISUALS = {
+	sun: ProceduralSun3D,
+	tree: ProceduralTree3D,
+} satisfies Record<SubjectId, React.FC<Subject3DProps>>
+
+for (const beat of VISUAL_PROOF_PLAN) {
+	for (const subject of beat.mustShow) {
+		if (!SUBJECT_VISUALS[subject]) {
+			throw new Error(`VISUAL_PROOF_PLAN beat "${beat.id}" has no renderer for "${subject}".`)
+		}
+	}
+}
+
+/**
+ * Loads a texture through delayRender, so a render never captures a frame
+ * before the image is decoded. Cached per URL: repeated scenes reuse one upload.
+ *
+ * [AI: KEEP] This is the only correct way to bring an image into three.js here.
+ * useLoader()/Suspense does not tell Remotion to wait, and useFrame() is banned.
+ */
+const textureCache = new Map<string, Texture>()
+
+const useStudioTexture = (url: string, equirectangular = false): Texture | null => {
+	const [texture, setTexture] = React.useState<Texture | null>(() => textureCache.get(url) ?? null)
+
+	React.useEffect(() => {
+		const cached = textureCache.get(url)
+		if (cached) {
+			setTexture(cached)
+			return
+		}
+		const handle = delayRender(`Loading texture ${url}`)
+		let cancelled = false
+		new TextureLoader().load(
+			url,
+			(loaded) => {
+				loaded.colorSpace = SRGBColorSpace
+				if (equirectangular) loaded.mapping = EquirectangularReflectionMapping
+				textureCache.set(url, loaded)
+				if (!cancelled) setTexture(loaded)
+				continueRender(handle)
+			},
+			undefined,
+			() => continueRender(handle),
+		)
+		return () => {
+			cancelled = true
+		}
+	}, [url, equirectangular])
+
+	return texture
+}
+
+/** Image-based lighting: reflections and ambient colour come from one PNG. */
+const SceneEnvironment: React.FC<{ url: string; background?: boolean }> = ({
+	url,
+	background = false,
+}) => {
+	const scene = useThree((state) => state.scene)
+	const texture = useStudioTexture(url, true)
+
+	React.useEffect(() => {
+		if (!texture) return
+		scene.environment = texture
+		if (background) scene.background = texture
+		return () => {
+			scene.environment = null
+			if (background) scene.background = null
+		}
+	}, [scene, texture, background])
+
+	return null
+}
+
+/**
+ * Scenes that fill the upper third with copy lift the sun above the headline so
+ * the subject stays visible without competing with the text.
+ */
+const SUN_FRAMING = {
+	hero: [1.22, 2.62, -1.1],
+	aboveCopy: [1.68, 3.42, -1.1],
+} as const
+
+const NatureProofWorld3D: React.FC<{
+	treeMaturity?: number
+	cameraMove?: 'push-in' | 'orbit' | 'locked'
+	soft?: boolean
+	sunFraming?: keyof typeof SUN_FRAMING
+}> = ({ treeMaturity = 1, cameraMove = 'push-in', soft = false, sunFraming = 'hero' }) => {
+	const frame = useCurrentFrame()
+	const { width, height, durationInFrames } = useVideoConfig()
+	const sunPosition = SUN_FRAMING[sunFraming]
+	const progress = interpolate(frame, [0, Math.max(1, durationInFrames - 1)], [0, 1], CLAMP)
+	const orbit = cameraMove === 'orbit' ? (progress - 0.5) * 0.86 : 0
+	const push = cameraMove === 'push-in' ? progress * 0.65 : 0
+	const lightTravel = interpolate(frame, [8, 48], [0, 1], CLAMP)
+
+	return (
+		<AbsoluteFill style={{ pointerEvents: 'none', opacity: soft ? 0.58 : 1 }}>
+			<ThreeCanvas
+				width={width}
+				height={height}
+				shadows="basic"
+				dpr={2}
+				gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }}
+				camera={{
+					fov: 37,
+					near: 0.1,
+					far: 80,
+					position: [Math.sin(orbit) * 1.4, 0.8, 10.2 - push],
+				}}
+				style={{ position: 'absolute', inset: 0 }}
+			>
+				{/* Sunset image-based lighting: warm reflections the lights alone cannot give. */}
+				<SceneEnvironment url={TEXTURE_KIT.envSunset} />
+				<ambientLight color="#C6D8FF" intensity={0.7} />
+				{/* Warm sky over a green ground bounce keeps shadows readable instead of black. */}
+				<hemisphereLight color="#FFE6B0" groundColor="#2C5A46" intensity={0.85} />
+				<directionalLight
+					castShadow
+					color="#FFF0C9"
+					intensity={2.35}
+					position={[4.8, 7.5, 5.5]}
+					shadow-mapSize-width={2048}
+					shadow-mapSize-height={2048}
+				/>
+				{/* Rim light from the sun side so the canopy separates from the sky. */}
+				{/* Sits well clear of the sun mesh: it rims the canopy, not the disc. */}
+				<pointLight
+					color="#FFC978"
+					intensity={22}
+					distance={14}
+					decay={2}
+					position={[sunPosition[0] + 1.1, sunPosition[1] - 1.9, 1.4]}
+				/>
+				{/* Light shaft: starts under the sun and lands on the canopy. */}
+				<mesh
+					position={[sunPosition[0] - 0.8, sunPosition[1] - 0.96, -0.55]}
+					rotation={[0, 0, 0.72]}
+					scale={[1, Math.max(0.02, lightTravel), 1]}
+				>
+					<coneGeometry args={[0.68, 3.9, 32, 1, true]} />
+					<meshBasicMaterial
+						color="#FFCB6B"
+						transparent
+						opacity={0.085 * lightTravel}
+						blending={AdditiveBlending}
+						depthWrite={false}
+						depthTest={false}
+						side={DoubleSide}
+					/>
+				</mesh>
+				{LIGHT_PARTICLES.map((index) => {
+					const phase = (progress * 1.45 + index / 7) % 1
+					return (
+						<mesh
+							key={index}
+							position={[
+								sunPosition[0] + 0.23 - 1.8 * phase,
+								sunPosition[1] - 0.17 - 1.7 * phase,
+								-0.82 + 0.72 * phase,
+							]}
+							scale={0.035 + (1 - phase) * 0.045}
+						>
+							<sphereGeometry args={[1, 12, 12]} />
+							<meshBasicMaterial color="#FFF0B8" transparent opacity={0.25 + lightTravel * 0.65} />
+						</mesh>
+					)
+				})}
+				{/* Kept inside the vertical frame so the whole disc stays visible through the push-in. */}
+				<ProceduralSun3D position={sunPosition} scale={0.74} delay={2} />
+				<ProceduralTree3D position={[-0.25, -2.5, 0]} scale={0.83} maturity={treeMaturity} delay={10} />
+				<mesh receiveShadow position={[0, -2.55, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+					<circleGeometry args={[7.5, 80]} />
+					<meshStandardMaterial color="#15382D" roughness={0.96} metalness={0} />
+				</mesh>
+			</ThreeCanvas>
+		</AbsoluteFill>
+	)
+}
+
 const ParticleField: React.FC<{
 	seed: number
 	count?: number
@@ -712,8 +1457,13 @@ const Background: React.FC = () => {
 
 	return (
 		<AbsoluteFill style={{ backgroundColor: THEME.background, overflow: 'hidden' }}>
+			{/* [AI: KEEP] Inline SVG needs explicit width/height attributes, not only
+			    CSS: the browser exporter serialises the element, and one without
+			    intrinsic size is rasterised at the wrong scale. */}
 			<svg
 				aria-hidden="true"
+				width={width}
+				height={height}
 				viewBox={`0 0 ${width} ${height}`}
 				preserveAspectRatio="none"
 				style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
@@ -747,20 +1497,19 @@ const Background: React.FC = () => {
 					r="430"
 					fill="url(#ai-master-secondary-glow)"
 				/>
-				<rect width={width} height={height} fill="url(#ai-master-grid)" opacity={0.28} />
+				<rect width={width} height={height} fill="url(#ai-master-grid)" opacity={0.08} />
 				<rect width={width} height={height} fill="url(#ai-master-vignette)" />
 			</svg>
-			<ParticleField seed={17} count={30} colorA={THEME.accent} colorB={THEME.accent2} />
-			<GeoShape kind="ring" x={916} y={314} size={180} color={THEME.accent} opacity={0.12} spin={0.08} />
-			<GeoShape kind="hex" x={104} y={1450} size={112} color={THEME.accent2} opacity={0.1} spin={-0.12} />
+			<ParticleField seed={17} count={20} colorA={THEME.accent} colorB={THEME.accent2} />
 		</AbsoluteFill>
 	)
 }
 
 const ProgressRail: React.FC = () => {
 	const frame = useCurrentFrame()
-	const { durationInFrames } = useVideoConfig()
+	const { durationInFrames, width } = useVideoConfig()
 	const progress = interpolate(frame, [0, durationInFrames - 1], [0, 1], CLAMP)
+	const railWidth = width - 168
 
 	return (
 		<div
@@ -775,14 +1524,7 @@ const ProgressRail: React.FC = () => {
 				overflow: 'hidden',
 			}}
 		>
-			<div
-				style={{
-					width: `${progress * 100}%`,
-					height: '100%',
-					borderRadius: 99,
-					background: `linear-gradient(90deg, ${THEME.accent}, ${THEME.accent2})`,
-				}}
-			/>
+			<GradientRule width={railWidth * progress} height={4} from={THEME.accent} to={THEME.accent2} />
 		</div>
 	)
 }
@@ -832,13 +1574,16 @@ const HookScene: React.FC = () => {
 
 	return (
 		<SceneFrame duration={TIMELINE.hook.duration} startVisible>
+			<NatureProofWorld3D treeMaturity={0.46} cameraMove="push-in" />
 			<div
 				style={{
 					marginTop: 170,
-					fontSize: 126,
-					fontWeight: 950,
-					lineHeight: 0.92,
-					letterSpacing: -6,
+					// Anton is a single-weight display face: never ask it for a bold weight.
+					fontFamily: THEME.fontDisplay,
+					fontSize: 132,
+					fontWeight: 400,
+					lineHeight: 0.94,
+					letterSpacing: -1,
 					whiteSpace: 'pre-line',
 					opacity: entrance,
 					translate: `0 ${interpolate(entrance, [0, 1], [90, 0])}px`,
@@ -847,18 +1592,14 @@ const HookScene: React.FC = () => {
 			>
 				{BRIEF.hook}
 			</div>
-			<div
-				style={{
-					marginTop: 42,
-					width: interpolate(frame, [18, 52], [0, 720], {
-						...CLAMP,
-						easing: EASE_OUT,
-					}),
-					height: 12,
-					borderRadius: 99,
-					background: `linear-gradient(90deg, ${THEME.accent}, ${THEME.accent2})`,
-				}}
-			/>
+			<div style={{ marginTop: 42 }}>
+				<GradientRule
+					width={interpolate(frame, [18, 52], [0, 720], { ...CLAMP, easing: EASE_OUT })}
+					height={12}
+					from={THEME.accent}
+					to={THEME.accent2}
+				/>
+			</div>
 			<div
 				style={{
 					marginTop: 54,
@@ -872,25 +1613,6 @@ const HookScene: React.FC = () => {
 			>
 				{BRIEF.subhead}
 			</div>
-			<FlowArrow
-				from={[238, 1270]}
-				to={[602, 1235]}
-				bend={-82}
-				color={THEME.accent2}
-				startFrame={38}
-				drawFrames={28}
-			/>
-			<VisualCluster
-				x={760}
-				y={1235}
-				size={238}
-				color={THEME.accent}
-				secondaryColor={THEME.accent2}
-				icon="idea"
-				shape="diamond"
-				delay={22}
-				satellites={['code', 'spark']}
-			/>
 			<div
 				style={{
 					position: 'absolute',
@@ -898,10 +1620,15 @@ const HookScene: React.FC = () => {
 					bottom: 270,
 					display: 'flex',
 					gap: 14,
-					opacity: interpolate(frame, [54, 72], [0, 1], CLAMP),
+					opacity: interpolate(
+						frame,
+						[VISUAL_BEATS.hook.tagReveal, VISUAL_BEATS.hook.tagReveal + 18],
+						[0, 1],
+						CLAMP,
+					),
 				}}
 			>
-				{['BRIEF', 'STORY', 'STYLE', 'MOTION'].map((item, index) => (
+				{['LIGHT', 'LEAF', 'ENERGY', 'GROWTH'].map((item, index) => (
 					<div
 						key={item}
 						style={{
@@ -932,25 +1659,26 @@ const BriefScene: React.FC = () => {
 	const frame = useCurrentFrame()
 	const { fps } = useVideoConfig()
 	const rows: Array<{ key: string; value: string; color: string; icon: IconName }> = [
-		{ key: 'TOPIC', value: BRIEF.topic, color: THEME.accent, icon: 'idea' },
-		{ key: 'AUDIENCE', value: BRIEF.audience, color: THEME.accent2, icon: 'layers' },
-		{ key: 'GOAL', value: BRIEF.goal, color: THEME.warm, icon: 'target' },
+		{ key: 'CAPTURE', value: 'Leaves turn toward the incoming light.', color: THEME.warm, icon: 'spark' },
+		{ key: 'CONVERT', value: 'Light energy becomes stored chemical energy.', color: THEME.accent2, icon: 'bolt' },
+		{ key: 'BUILD', value: 'That energy shapes roots, wood, and new canopy.', color: '#66D47F', icon: 'layers' },
 	]
 
 	return (
 		<SceneFrame duration={TIMELINE.brief.duration}>
+			<NatureProofWorld3D treeMaturity={0.64} cameraMove="locked" soft sunFraming="aboveCopy" />
 			<div
 				style={{
 					marginTop: 80,
 					fontSize: 94,
-					fontWeight: 930,
+					fontWeight: 900,
 					lineHeight: 1,
 					letterSpacing: -4,
 				}}
 			>
-				Tell the AI what
+				Light becomes
 				<br />
-				<span style={{ color: THEME.accent2 }}>success looks like.</span>
+				<span style={{ color: THEME.accent2 }}>building material.</span>
 			</div>
 			<FlowArrow
 				from={[1012, 688]}
@@ -964,7 +1692,7 @@ const BriefScene: React.FC = () => {
 			<div style={{ marginTop: 72, display: 'flex', flexDirection: 'column', gap: 22 }}>
 				{rows.map((row, index) => {
 					const enter = spring({
-						frame: frame - index * 9,
+						frame: frame - VISUAL_BEATS.brief.rowStarts[index],
 						fps,
 						config: { damping: 18, stiffness: 105 },
 					})
@@ -985,7 +1713,12 @@ const BriefScene: React.FC = () => {
 								translate: `${interpolate(enter, [0, 1], [70, 0])}px 0`,
 							}}
 						>
-							<IconBadge name={row.icon} color={row.color} size={64} delay={index * 9 + 4} />
+							<IconBadge
+								name={row.icon}
+								color={row.color}
+								size={64}
+								delay={VISUAL_BEATS.brief.iconStarts[index]}
+							/>
 							<div>
 								<div
 									style={{
@@ -1015,7 +1748,7 @@ const BriefScene: React.FC = () => {
 					opacity: interpolate(frame, [54, 78], [0, 1], CLAMP),
 				}}
 			>
-				User prompt = source of truth. Missing detail = tasteful AI inference.
+				The visual relationship is literal: warm light reaches the leaves before growth appears.
 			</div>
 		</SceneFrame>
 	)
@@ -1032,6 +1765,7 @@ const StoryScene: React.FC = () => {
 
 	return (
 		<SceneFrame duration={TIMELINE.story.duration}>
+			<NatureProofWorld3D treeMaturity={1} cameraMove="orbit" soft sunFraming="aboveCopy" />
 			<div
 				style={{
 					marginTop: 40,
@@ -1053,9 +1787,9 @@ const StoryScene: React.FC = () => {
 					letterSpacing: -4,
 				}}
 			>
-				One file.
+				Watch life
 				<br />
-				<span style={{ color: THEME.accent }}>Three clear moves.</span>
+				<span style={{ color: THEME.accent }}>build upward.</span>
 			</div>
 			<FlowArrow
 				from={[62, 700]}
@@ -1069,7 +1803,7 @@ const StoryScene: React.FC = () => {
 			<div style={{ marginTop: 68, display: 'flex', flexDirection: 'column', gap: 18 }}>
 				{BRIEF.storyPoints.map((point, index) => {
 					const enter = spring({
-						frame: frame - 12 - index * 10,
+						frame: frame - VISUAL_BEATS.story.cardStarts[index],
 						fps,
 						config: { damping: 20, stiffness: 120 },
 					})
@@ -1093,7 +1827,7 @@ const StoryScene: React.FC = () => {
 								name={storyIcons[index] ?? 'spark'}
 								color={index === 1 ? THEME.accent2 : THEME.accent}
 								size={56}
-								delay={12 + index * 10}
+								delay={VISUAL_BEATS.story.cardStarts[index]}
 							/>
 							<div
 								style={{
@@ -1125,8 +1859,8 @@ const StoryScene: React.FC = () => {
 					opacity: interpolate(frame, [64, 84], [0, 1], CLAMP),
 				}}
 			>
-				<span>DETERMINISTIC FRAMES</span>
-				<span>SUBJECT-SPECIFIC VISUALS</span>
+				<span>LIGHT BECOMES MATTER</span>
+				<span>ROOTS · WOOD · CANOPY</span>
 			</div>
 		</SceneFrame>
 	)
@@ -1147,16 +1881,14 @@ const CtaScene: React.FC = () => {
 
 	return (
 		<SceneFrame duration={TIMELINE.cta.duration}>
-			<VisualCluster
-				x={540}
-				y={560}
-				size={278}
-				color={THEME.accent2}
-				secondaryColor={THEME.accent}
-				icon="rocket"
-				shape="hex"
-				delay={2}
-				satellites={['check', 'orbit']}
+			<NatureProofWorld3D treeMaturity={1} cameraMove="push-in" />
+			{/* Scrim: keeps the closing copy readable where it crosses the lit canopy. */}
+			<AbsoluteFill
+				style={{
+					pointerEvents: 'none',
+					background:
+						'linear-gradient(180deg, rgba(6,23,16,0) 34%, rgba(6,23,16,0.5) 46%, rgba(6,23,16,0.8) 60%, rgba(6,23,16,0.9) 100%)',
+				}}
 			/>
 			<div
 				style={{
@@ -1171,10 +1903,11 @@ const CtaScene: React.FC = () => {
 			>
 				<div
 					style={{
-						fontSize: 104,
-						fontWeight: 950,
-						lineHeight: 0.96,
-						letterSpacing: -5,
+						fontFamily: THEME.fontDisplay,
+						fontSize: 110,
+						fontWeight: 400,
+						lineHeight: 0.98,
+						letterSpacing: -0.5,
 					}}
 				>
 					{BRIEF.cta}
@@ -1205,11 +1938,23 @@ const CtaScene: React.FC = () => {
 						fontWeight: 900,
 						letterSpacing: 2,
 						color: THEME.background,
+						opacity: interpolate(
+							frame,
+							[VISUAL_BEATS.cta.brandReveal, VISUAL_BEATS.cta.brandReveal + 12],
+							[0, 1],
+							CLAMP,
+						),
+						scale: interpolate(
+							frame,
+							[VISUAL_BEATS.cta.brandReveal, VISUAL_BEATS.cta.brandReveal + 12],
+							[0.92, 1],
+							CLAMP,
+						),
 					}}
 				>
-					<span style={{ color: THEME.accent }}>AI MASTER TEMPLATE</span>
-					<VectorIcon name="play" size={20} color={THEME.background} strokeWidth={2.2} />
-					<span>YOUR VIDEO</span>
+					<span style={{ color: THEME.accent }}>SUNLIGHT</span>
+					<VectorIcon name="spark" size={20} color={THEME.background} strokeWidth={2.2} />
+					<span>BECOMES LIFE</span>
 				</div>
 			</div>
 		</SceneFrame>
@@ -1217,51 +1962,160 @@ const CtaScene: React.FC = () => {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  SOUNDTRACK [AI: RETIME CUES AFTER EDITING THE SCENE TIMELINE]             */
+/*  SOUNDTRACK [AI: KEEP ALL CUES ON THE SAME FRAME CLOCK AS THE VISUALS]      */
 /* -------------------------------------------------------------------------- */
 
 const Soundtrack: React.FC = () => (
 	<>
 		<Audio
-			src={SOUND.music}
+			src={SOUND_DESIGN.music.src}
 			loop
+			loopVolumeCurveBehavior="extend"
 			volume={(frame) =>
-				interpolate(frame, [0, 24, 416, 449], [0, 0.14, 0.14, 0], CLAMP)
+				interpolate(
+					frame,
+					[
+						0,
+						SOUND_DESIGN.music.fadeInFrames,
+						VIDEO_END_FRAME - SOUND_DESIGN.music.fadeOutFrames,
+						VIDEO_END_FRAME,
+					],
+					[0, SOUND_DESIGN.music.volume, SOUND_DESIGN.music.volume, 0],
+					CLAMP,
+				)
 			}
 		/>
 
-		{/* Hook emphasis. */}
-		<Sequence from={8} durationInFrames={32}>
-			<Audio src={SOUND.impact} volume={0.34} />
-		</Sequence>
-		<Sequence from={56} durationInFrames={24}>
-			<Audio src={SOUND.shimmer} volume={0.2} />
-		</Sequence>
-
-		{/* Scene transitions. */}
-		{[98, 218, 338].map((from) => (
-			<Sequence key={from} from={from} durationInFrames={24}>
-				<Audio src={SOUND.whoosh} volume={0.24} />
+		{/* Small UI and story sounds. */}
+		{SOUND_DESIGN.sounds.map((cue) => (
+			<Sequence
+				key={cue.id}
+				name={`Sound - ${cue.id}`}
+				from={cue.from}
+				durationInFrames={cue.durationInFrames}
+				layout="none"
+			>
+				<Audio src={cue.src} volume={cue.volume} />
 			</Sequence>
 		))}
 
-		{/* Brief/story beats and the final payoff. */}
-		{[122, 151, 180, 248, 280, 312].map((from) => (
-			<Sequence key={from} from={from} durationInFrames={12}>
-				<Audio src={SOUND.pop} volume={0.18} />
+		{/* Editorial transitions, impacts, reveals, and final branding. */}
+		{SOUND_DESIGN.sfx.map((cue) => (
+			<Sequence
+				key={cue.id}
+				name={`SFX - ${cue.id}`}
+				from={cue.from}
+				durationInFrames={cue.durationInFrames}
+				layout="none"
+			>
+				<Audio src={cue.src} volume={cue.volume} />
 			</Sequence>
 		))}
-		<Sequence from={330} durationInFrames={48}>
-			<Audio src={SOUND.riser} volume={0.18} />
-		</Sequence>
-		<Sequence from={349} durationInFrames={30}>
-			<Audio src={SOUND.impact} volume={0.3} />
-		</Sequence>
-		<Sequence from={405} durationInFrames={40}>
-			<Audio src={SOUND.stinger} volume={0.22} />
-		</Sequence>
 	</>
 )
+
+/* -------------------------------------------------------------------------- */
+/*  FINISHING LAYER [AI: KEEP SUBTLE; NEVER LET IT FLATTEN THE SUBJECT]       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A gradient bar drawn as inline SVG.
+ *
+ * [AI: KEEP] The browser exporter derives CSS gradient fills from the element
+ * box and can spill one across the frame; inline SVG rasterises exactly as
+ * drawn. Use this for small gradient artwork and keep CSS gradients for
+ * full-frame background layers.
+ */
+const GradientRule: React.FC<{
+	width: number
+	height: number
+	from: string
+	to: string
+	radius?: number
+}> = ({ width, height, from, to, radius }) => {
+	const gradientId = React.useId()
+	const barWidth = Math.max(1, Math.round(width))
+
+	return (
+		<svg
+			aria-hidden="true"
+			width={barWidth}
+			height={height}
+			viewBox={`0 0 ${barWidth} ${height}`}
+			style={{ display: 'block' }}
+		>
+			<defs>
+				<linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
+					<stop offset="0" stopColor={from} />
+					<stop offset="1" stopColor={to} />
+				</linearGradient>
+			</defs>
+			<rect
+				width={barWidth}
+				height={height}
+				rx={radius ?? height / 2}
+				fill={`url(#${gradientId})`}
+			/>
+		</svg>
+	)
+}
+
+const GRAIN_TILE = 512
+
+/**
+ * Grain plus vignette is what separates a flat render from something that looks
+ * shot. The grain plate steps every other frame so it flickers like film instead
+ * of sliding, and both layers stay light enough to keep text crisp.
+ *
+ * [AI: KEEP] Textures are drawn with <Img>, never with CSS background-image:
+ * the browser exporter rasterises images and CSS gradients, and silently drops
+ * `background-image: url(...)`, which would make the export differ from preview.
+ */
+const FilmFinish: React.FC<{ grain?: number; vignette?: number }> = ({
+	grain = 0.09,
+	vignette = 0.36,
+}) => {
+	const frame = useCurrentFrame()
+	const { width, height } = useVideoConfig()
+	const step = Math.floor(frame / 2)
+	const offsetX = -((step * 37) % GRAIN_TILE)
+	const offsetY = -((step * 71) % GRAIN_TILE)
+	const columns = Math.ceil(width / GRAIN_TILE) + 1
+	const rows = Math.ceil(height / GRAIN_TILE) + 1
+
+	return (
+		<>
+			<AbsoluteFill style={{ pointerEvents: 'none', opacity: grain, overflow: 'hidden' }}>
+				{Array.from({ length: rows }).map((_, row) =>
+					Array.from({ length: columns }).map((__, column) => (
+						<Img
+							key={`${row}-${column}`}
+							src={TEXTURE_KIT.filmGrain}
+							style={{
+								position: 'absolute',
+								left: offsetX + column * GRAIN_TILE,
+								top: offsetY + row * GRAIN_TILE,
+								width: GRAIN_TILE,
+								height: GRAIN_TILE,
+							}}
+						/>
+					)),
+				)}
+			</AbsoluteFill>
+			<Img
+				src={TEXTURE_KIT.vignette}
+				style={{
+					position: 'absolute',
+					inset: 0,
+					width: '100%',
+					height: '100%',
+					opacity: vignette,
+					pointerEvents: 'none',
+				}}
+			/>
+		</>
+	)
+}
 
 /* -------------------------------------------------------------------------- */
 /*  6. MASTER COMPOSITION [AI: ASSEMBLE ALL SCENES HERE]                      */
@@ -1289,7 +2143,9 @@ export const AiMasterTemplate: React.FC<AiMasterTemplateProps> = ({ showGuides }
 			<CtaScene />
 		</Sequence>
 
-		<ProgressRail />
+		{/* Finishing pass: one grain plate and one vignette over the whole film. */}
+		<FilmFinish grain={0.09} vignette={0.36} />
+
 		{showGuides ? <SafeAreaGuides /> : null}
 	</AbsoluteFill>
 )
@@ -1302,7 +2158,7 @@ export const Root: React.FC = () => (
 	<Composition
 		id="AiMasterTemplate"
 		component={AiMasterTemplate}
-		durationInFrames={450}
+		durationInFrames={TIMELINE_END}
 		fps={30}
 		width={1080}
 		height={1920}

@@ -56,6 +56,20 @@ export const IconPlay = (props: IconProps) => (
 	</Base>
 )
 
+export const IconVolume = (props: IconProps) => (
+	<Base {...props}>
+		<path d="M4 10h4l5-4v12l-5-4H4v-4Z" />
+		<path d="M16 9.5a4 4 0 0 1 0 5M18.5 7a7 7 0 0 1 0 10" />
+	</Base>
+)
+
+export const IconVolumeOff = (props: IconProps) => (
+	<Base {...props}>
+		<path d="M4 10h4l5-4v12l-5-4H4v-4Z" />
+		<path d="m17 10 4 4m0-4-4 4" />
+	</Base>
+)
+
 export const IconDownload = (props: IconProps) => (
 	<Base {...props}>
 		<path d="M12 4v12" />
@@ -127,6 +141,13 @@ export const IconSpinner = (props: IconProps) => (
 export const IconSparkle = (props: IconProps) => (
 	<Base {...props}>
 		<path d="M12 3.5 13.9 9l5.6 2-5.6 2-1.9 5.5L10.1 13 4.5 11l5.6-2L12 3.5Z" />
+	</Base>
+)
+
+export const IconCopy = (props: IconProps) => (
+	<Base {...props}>
+		<rect x="9" y="9" width="12" height="12" rx="2" />
+		<path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
 	</Base>
 )
 

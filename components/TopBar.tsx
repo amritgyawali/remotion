@@ -38,20 +38,26 @@ export default function TopBar({
 				className={`badge ${engine === 'server' ? 'badge--orange' : webCodecs ? 'badge--green' : 'badge--red'}`}
 				title={
 					engine === 'server'
-						? 'Rendering happens in a serverless function with headless Chrome'
+						? capabilities.provider === 'vercel-sandbox'
+							? 'Rendering happens in an isolated Vercel Sandbox VM'
+							: 'Rendering happens on the configured Node host with headless Chrome'
 						: webCodecs
-							? 'Rendering happens on your GPU with WebCodecs - free and unlimited'
+							? 'Rendering happens on this device with WebCodecs'
 							: 'This browser has no WebCodecs support'
 				}
 			>
 				{engine === 'server' ? <IconServer size={11} /> : <IconBrowser size={11} />}
-				{engine === 'server' ? 'Server engine' : 'Browser engine'}
+				{engine === 'server' && capabilities.provider === 'vercel-sandbox'
+					? 'Vercel Sandbox'
+					: engine === 'server'
+						? 'Server engine'
+						: 'Browser engine'}
 			</span>
 
 			{capabilities.enabled ? (
 				<span className="badge badge--muted" title="Server rendering is enabled on this deployment">
 					<IconBolt size={11} />
-					max power ready
+					{capabilities.provider === 'vercel-sandbox' ? 'sandbox ready' : 'server ready'}
 				</span>
 			) : null}
 

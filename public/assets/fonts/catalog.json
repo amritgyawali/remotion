@@ -1,0 +1,195 @@
+{
+	"schemaVersion": 1,
+	"packVersion": "1.0.0",
+	"title": "Remotion Studio Typography Kit",
+	"description": "Self-hosted SIL Open Font License families covering every common video typography job.",
+	"license": "OFL-1.1",
+	"attributionRequired": false,
+	"source": "https://github.com/google/fonts",
+	"cssPath": "/assets/fonts/v1/fonts.css",
+	"counts": {
+		"families": 10,
+		"variable": 8,
+		"bytes": 3244660
+	},
+	"families": [
+		{
+			"id": "font:inter",
+			"family": "Inter",
+			"slug": "inter",
+			"category": "sans",
+			"mood": "neutral, modern, screen-first",
+			"useFor": "UI, explainers, product videos, body copy at any size",
+			"weight": "100 900",
+			"variable": true,
+			"axes": [
+				"opsz",
+				"wght"
+			],
+			"path": "/assets/fonts/v1/inter/Inter[opsz,wght].ttf",
+			"staticFilePath": "assets/fonts/v1/inter/Inter[opsz,wght].ttf",
+			"licensePath": "/assets/fonts/v1/inter/OFL.txt",
+			"license": "OFL-1.1",
+			"bytes": 876576
+		},
+		{
+			"id": "font:archivo",
+			"family": "Archivo",
+			"slug": "archivo",
+			"category": "grotesk",
+			"mood": "editorial grotesk with a width axis",
+			"useFor": "headlines that must fit an exact box; condensed captions",
+			"weight": "100 900",
+			"variable": true,
+			"axes": [
+				"wdth",
+				"wght"
+			],
+			"path": "/assets/fonts/v1/archivo/Archivo[wdth,wght].ttf",
+			"staticFilePath": "assets/fonts/v1/archivo/Archivo[wdth,wght].ttf",
+			"licensePath": "/assets/fonts/v1/archivo/OFL.txt",
+			"license": "OFL-1.1",
+			"bytes": 658596
+		},
+		{
+			"id": "font:anton",
+			"family": "Anton",
+			"slug": "anton",
+			"category": "display",
+			"mood": "heavy, loud, poster-like",
+			"useFor": "social hooks, big single-word statements, sports and hype",
+			"weight": "400",
+			"variable": false,
+			"axes": [],
+			"path": "/assets/fonts/v1/anton/Anton-Regular.ttf",
+			"staticFilePath": "assets/fonts/v1/anton/Anton-Regular.ttf",
+			"licensePath": "/assets/fonts/v1/anton/OFL.txt",
+			"license": "OFL-1.1",
+			"bytes": 170812
+		},
+		{
+			"id": "font:bebas-neue",
+			"family": "Bebas Neue",
+			"slug": "bebas-neue",
+			"category": "condensed",
+			"mood": "tall, condensed, cinematic",
+			"useFor": "title cards, lower thirds, trailer-style typography",
+			"weight": "400",
+			"variable": false,
+			"axes": [],
+			"path": "/assets/fonts/v1/bebas-neue/BebasNeue-Regular.ttf",
+			"staticFilePath": "assets/fonts/v1/bebas-neue/BebasNeue-Regular.ttf",
+			"licensePath": "/assets/fonts/v1/bebas-neue/OFL.txt",
+			"license": "OFL-1.1",
+			"bytes": 61400
+		},
+		{
+			"id": "font:oswald",
+			"family": "Oswald",
+			"slug": "oswald",
+			"category": "condensed",
+			"mood": "news, sport, documentary",
+			"useFor": "stat overlays, tickers, documentary captions",
+			"weight": "200 700",
+			"variable": true,
+			"axes": [
+				"wght"
+			],
+			"path": "/assets/fonts/v1/oswald/Oswald[wght].ttf",
+			"staticFilePath": "assets/fonts/v1/oswald/Oswald[wght].ttf",
+			"licensePath": "/assets/fonts/v1/oswald/OFL.txt",
+			"license": "OFL-1.1",
+			"bytes": 172088
+		},
+		{
+			"id": "font:playfair-display",
+			"family": "Playfair Display",
+			"slug": "playfair-display",
+			"category": "serif",
+			"mood": "elegant, luxury, editorial",
+			"useFor": "fashion, food, real estate, wedding, premium brand films",
+			"weight": "400 900",
+			"variable": true,
+			"axes": [
+				"wght"
+			],
+			"path": "/assets/fonts/v1/playfair-display/PlayfairDisplay[wght].ttf",
+			"staticFilePath": "assets/fonts/v1/playfair-display/PlayfairDisplay[wght].ttf",
+			"licensePath": "/assets/fonts/v1/playfair-display/OFL.txt",
+			"license": "OFL-1.1",
+			"bytes": 300724
+		},
+		{
+			"id": "font:space-grotesk",
+			"family": "Space Grotesk",
+			"slug": "space-grotesk",
+			"category": "tech",
+			"mood": "technical, futuristic, slightly quirky",
+			"useFor": "developer tools, AI and crypto explainers, launch videos",
+			"weight": "300 700",
+			"variable": true,
+			"axes": [
+				"wght"
+			],
+			"path": "/assets/fonts/v1/space-grotesk/SpaceGrotesk[wght].ttf",
+			"staticFilePath": "assets/fonts/v1/space-grotesk/SpaceGrotesk[wght].ttf",
+			"licensePath": "/assets/fonts/v1/space-grotesk/OFL.txt",
+			"license": "OFL-1.1",
+			"bytes": 136676
+		},
+		{
+			"id": "font:jetbrains-mono",
+			"family": "JetBrains Mono",
+			"slug": "jetbrains-mono",
+			"category": "mono",
+			"mood": "code, terminal, data",
+			"useFor": "code walkthroughs, labels, timestamps, technical annotation",
+			"weight": "100 800",
+			"variable": true,
+			"axes": [
+				"wght"
+			],
+			"path": "/assets/fonts/v1/jetbrains-mono/JetBrainsMono[wght].ttf",
+			"staticFilePath": "assets/fonts/v1/jetbrains-mono/JetBrainsMono[wght].ttf",
+			"licensePath": "/assets/fonts/v1/jetbrains-mono/OFL.txt",
+			"license": "OFL-1.1",
+			"bytes": 187208
+		},
+		{
+			"id": "font:nunito",
+			"family": "Nunito",
+			"slug": "nunito",
+			"category": "rounded",
+			"mood": "friendly, soft, approachable",
+			"useFor": "education, kids, health, onboarding and community videos",
+			"weight": "200 1000",
+			"variable": true,
+			"axes": [
+				"wght"
+			],
+			"path": "/assets/fonts/v1/nunito/Nunito[wght].ttf",
+			"staticFilePath": "assets/fonts/v1/nunito/Nunito[wght].ttf",
+			"licensePath": "/assets/fonts/v1/nunito/OFL.txt",
+			"license": "OFL-1.1",
+			"bytes": 276932
+		},
+		{
+			"id": "font:caveat",
+			"family": "Caveat",
+			"slug": "caveat",
+			"category": "handwriting",
+			"mood": "handwritten, personal, annotative",
+			"useFor": "annotations, circled emphasis, personal notes and vlogs",
+			"weight": "400 700",
+			"variable": true,
+			"axes": [
+				"wght"
+			],
+			"path": "/assets/fonts/v1/caveat/Caveat[wght].ttf",
+			"staticFilePath": "assets/fonts/v1/caveat/Caveat[wght].ttf",
+			"licensePath": "/assets/fonts/v1/caveat/OFL.txt",
+			"license": "OFL-1.1",
+			"bytes": 403648
+		}
+	]
+}

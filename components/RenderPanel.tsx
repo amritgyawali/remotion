@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { computeBitrate, evenDimension, FORMAT_INFO, QUALITY_PRESETS, SCALE_OPTIONS } from '../lib/presets'
 import { formatBytes, formatSeconds } from '../lib/format'
 import type {
@@ -22,6 +23,8 @@ import {
 	IconServer,
 	IconSpinner,
 	IconStop,
+	IconVolume,
+	IconVolumeOff,
 } from './Icons'
 
 const PHASE_LABEL: Record<RenderProgress['phase'], string> = {
@@ -67,6 +70,9 @@ export default function RenderPanel({
 	onAccessKey: (value: string) => void
 	log: string[]
 }) {
+	// Server rendering is operated by the studio owner, so the button explains how
+	// to request access instead of silently doing nothing.
+	const [showServerContact, setShowServerContact] = useState(false)
 	const fps = composition?.fps ?? 30
 	const totalSeconds = composition ? composition.durationInFrames / fps : 0
 	const renderSeconds =
@@ -86,28 +92,88 @@ export default function RenderPanel({
 		<aside className="panel panel--right">
 			<div className="panel-scroll">
 				<div>
-					<h2 className="section-label">2 - Render engine</h2>
+					<h2 className="section-label">
+						2 - Music &amp; sound
+						<span className={`badge ${settings.audioEnabled ? 'badge--green' : 'badge--muted'}`}>
+							{settings.audioEnabled ? 'enabled' : 'silent'}
+						</span>
+					</h2>
+					<div className="segmented" role="group" aria-label="Music and sound">
+						<button
+							data-active={settings.audioEnabled}
+							aria-pressed={settings.audioEnabled}
+							onClick={() => onSettings({ audioEnabled: true })}
+							disabled={rendering}
+						>
+							<IconVolume size={12} /> On
+						</button>
+						<button
+							data-active={!settings.audioEnabled}
+							aria-pressed={!settings.audioEnabled}
+							onClick={() => onSettings({ audioEnabled: false })}
+							disabled={rendering}
+						>
+							<IconVolumeOff size={12} /> Off
+						</button>
+					</div>
+					<p style={{ margin: '8px 0 0', color: 'var(--text-tertiary)', fontSize: 11.5, lineHeight: 1.5 }}>
+						On/Off controls preview and export audio together. The Player volume control only
+						adjusts preview monitoring.
+					</p>
+				</div>
+
+				<div>
+					<h2 className="section-label">3 - Render engine</h2>
 					<div className="segmented">
 						<button
 							data-active={settings.engine === 'browser'}
-							onClick={() => onSettings({ engine: 'browser', format: 'mp4' })}
+							onClick={() => {
+								setShowServerContact(false)
+								onSettings({ engine: 'browser', format: 'mp4' })
+							}}
 							disabled={rendering}
 						>
-							<IconBrowser size={12} /> Browser - free
+							<IconBrowser size={12} /> Browser - local
 						</button>
 						<button
 							data-active={settings.engine === 'server'}
-							onClick={() => onSettings({ engine: 'server' })}
-							disabled={rendering || !capabilities.enabled}
+							onClick={() => {
+								setShowServerContact(true)
+								if (capabilities.enabled) onSettings({ engine: 'server' })
+							}}
+							disabled={rendering}
 							title={
 								capabilities.enabled
-									? 'Headless Chrome on the server - every core, every codec'
-									: 'Set ENABLE_SERVER_RENDER=1 to unlock server rendering'
+									? capabilities.provider === 'vercel-sandbox'
+										? 'Chrome and FFmpeg run in an isolated Vercel Sandbox VM'
+										: 'Chrome and FFmpeg run on the configured Node render host'
+									: 'Contact the studio admin to enable server rendering'
 							}
 						>
-							<IconServer size={12} /> Server - max
+							<IconServer size={12} />{' '}
+							{capabilities.provider === 'vercel-sandbox' ? 'Vercel Sandbox' : 'Server - max'}
 						</button>
 					</div>
+
+					{showServerContact ? (
+						<div className="notice notice--info" style={{ marginTop: 10 }}>
+							<span className="notice-icon">
+								<IconInfo size={14} />
+							</span>
+							<span>
+								Server rendering is managed by our team. Contact our admin on WhatsApp{' '}
+								<a
+									href="https://wa.me/9779764176714"
+									target="_blank"
+									rel="noreferrer"
+									style={{ color: 'var(--accent, #58f3e2)', fontWeight: 700 }}
+								>
+									+977 9764176714
+								</a>{' '}
+								to get access.
+							</span>
+						</div>
+					) : null}
 
 					{settings.engine === 'browser' && !webCodecs ? (
 						<div className="notice notice--error" style={{ marginTop: 10 }}>
@@ -117,18 +183,6 @@ export default function RenderPanel({
 							<span>
 								This browser has no WebCodecs support. Use Chrome, Edge or Safari 16.4+, or switch
 								to the server engine.
-							</span>
-						</div>
-					) : null}
-
-					{settings.engine === 'browser' ? (
-						<div className="notice notice--info" style={{ marginTop: 10 }}>
-							<span className="notice-icon">
-								<IconInfo size={14} />
-							</span>
-							<span>
-								Frames are drawn and encoded on your GPU. No upload, no server cost, no time limit -
-								perfect for Vercel&apos;s free tier.
 							</span>
 						</div>
 					) : null}
@@ -151,7 +205,7 @@ export default function RenderPanel({
 				</div>
 
 				<div>
-					<h2 className="section-label">3 - Quality</h2>
+					<h2 className="section-label">4 - Quality</h2>
 					<div className="preset-grid">
 						{(Object.keys(QUALITY_PRESETS) as QualityPresetId[]).map((id) => {
 							const preset = QUALITY_PRESETS[id]

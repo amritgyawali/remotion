@@ -22,14 +22,20 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const assetsRoot = path.join(root, 'public', 'assets')
 const visualRoot = path.join(assetsRoot, 'visual')
 const audioRoot = path.join(assetsRoot, 'audio')
+const textureRoot = path.join(assetsRoot, 'texture')
+const fontRoot = path.join(assetsRoot, 'fonts')
 const visualCatalogPath = path.join(visualRoot, 'v1', 'catalog.json')
 const audioCatalogPath = path.join(audioRoot, 'catalog.json')
+const textureCatalogPath = path.join(textureRoot, 'catalog.json')
+const fontCatalogPath = path.join(fontRoot, 'catalog.json')
 const combinedCatalogPath = path.join(assetsRoot, 'catalog.json')
 const galleryPath = path.join(assetsRoot, 'index.html')
 const archivePath = path.join(assetsRoot, 'production-asset-kit.zip')
 
 const EXPECTED_VISUALS = 41
-const EXPECTED_AUDIO = 13
+const EXPECTED_AUDIO = 28
+const EXPECTED_TEXTURES = 20
+const EXPECTED_FONTS = 10
 const FIXED_ZIP_DATE = new Date('2000-01-01T00:00:00.000Z')
 
 const sha256 = (buffer) => createHash('sha256').update(buffer).digest('hex')
@@ -170,6 +176,94 @@ async function normalizeAudioAssets(catalog) {
 	)
 }
 
+async function normalizeTextureAssets(catalog) {
+	if (!Array.isArray(catalog.assets) || catalog.assets.length !== EXPECTED_TEXTURES) {
+		throw new Error('Expected ' + EXPECTED_TEXTURES + ' textures, found ' + (catalog.assets?.length ?? 0))
+	}
+
+	return Promise.all(
+		catalog.assets.map(async (asset) => {
+			const relativeToAssets = asset.path.replace(/^\/assets\//, '')
+			const absolutePath = path.join(assetsRoot, relativeToAssets)
+			const contents = await readFile(absolutePath)
+			if (contents.readUInt32BE(0) !== 0x89504e47) {
+				throw new Error('Texture is not a PNG: ' + asset.id)
+			}
+			const checksum = sha256(contents)
+			if (asset.sha256 && checksum !== asset.sha256) {
+				throw new Error('Texture checksum does not match its source catalog: ' + asset.id)
+			}
+
+			return {
+				id: 'texture:' + asset.id,
+				sourceId: asset.id,
+				assetType: 'texture',
+				kind: 'texture',
+				category: asset.category,
+				title: asset.title,
+				path: asset.path,
+				staticFilePath: asset.staticFilePath,
+				format: 'png',
+				mimeType: 'image/png',
+				license: catalog.license,
+				attributionRequired: false,
+				width: asset.width,
+				height: asset.height,
+				tileable: asset.tileable,
+				usage: asset.usage,
+				tags: asset.tags,
+				sizeBytes: contents.length,
+				sha256: checksum,
+				absolutePath,
+				contents,
+			}
+		}),
+	)
+}
+
+async function normalizeFontAssets(catalog) {
+	if (!Array.isArray(catalog.families) || catalog.families.length !== EXPECTED_FONTS) {
+		throw new Error('Expected ' + EXPECTED_FONTS + ' font families, found ' + (catalog.families?.length ?? 0))
+	}
+
+	return Promise.all(
+		catalog.families.map(async (family) => {
+			const relativeToAssets = family.path.replace(/^\/assets\//, '')
+			const absolutePath = path.join(assetsRoot, relativeToAssets)
+			const contents = await readFile(absolutePath)
+			// Every OFL family must keep its licence next to the binary.
+			await readFile(path.join(assetsRoot, family.licensePath.replace(/^\/assets\//, '')))
+
+			return {
+				id: family.id,
+				sourceId: family.slug,
+				assetType: 'font',
+				kind: 'font',
+				category: family.category,
+				title: family.family,
+				family: family.family,
+				path: family.path,
+				staticFilePath: family.staticFilePath,
+				licensePath: family.licensePath,
+				format: 'ttf',
+				mimeType: 'font/ttf',
+				license: family.license,
+				attributionRequired: false,
+				variable: family.variable,
+				axes: family.axes,
+				weight: family.weight,
+				mood: family.mood,
+				usage: family.useFor,
+				tags: [family.category, ...family.mood.split(/,\s*/)],
+				sizeBytes: contents.length,
+				sha256: sha256(contents),
+				absolutePath,
+				contents,
+			}
+		}),
+	)
+}
+
 function publicAsset(asset) {
 	const { absolutePath, contents, ...entry } = asset
 	return entry
@@ -189,6 +283,58 @@ function visualCard(asset) {
 		'</div>',
 		'</article>',
 	].join('')
+}
+
+function textureCard(asset) {
+	const url = galleryUrl(asset.path)
+	const search = [asset.title, asset.category, asset.usage, ...asset.tags].join(' ').toLowerCase()
+	return [
+		"<article class='asset-card texture-card' data-kind='texture' data-search='" + escapeHtml(search) + "'>",
+		"<div class='preview-shell texture-shell'><img loading='lazy' src='" + escapeHtml(url) + "' alt='" + escapeHtml(asset.title) + "'></div>",
+		"<div class='card-body'>",
+		"<div class='eyebrow-row'><span class='pill'>" + escapeHtml(categoryLabel(asset.category)) + '</span>' +
+			(asset.tileable ? "<span class='pill loop'>Tileable</span>" : '') +
+			"<span class='file-type'>" + asset.width + '×' + asset.height + ' PNG</span></div>',
+		'<h3>' + escapeHtml(asset.title) + '</h3>',
+		"<p class='use-note'>" + escapeHtml(asset.usage) + '</p>',
+		"<div class='path-row'><code>" + escapeHtml(asset.staticFilePath) + "</code><button type='button' data-copy='" + escapeHtml(asset.staticFilePath) + "' aria-label='Copy path'>Copy</button></div>",
+		"<a class='download-link' href='" + escapeHtml(url) + "' download>Download PNG <span aria-hidden='true'>↓</span></a>",
+		'</div>',
+		'</article>',
+	].join('')
+}
+
+function fontCard(asset) {
+	const url = galleryUrl(asset.path)
+	const search = [asset.title, asset.category, asset.mood, asset.usage].join(' ').toLowerCase()
+	return [
+		"<article class='asset-card font-card' data-kind='font' data-search='" + escapeHtml(search) + "'>",
+		"<div class='font-specimen' style=\"font-family:'" + escapeHtml(asset.family) + "',sans-serif\"><span class='specimen-big'>Ag</span><span class='specimen-line'>The quick brown fox</span></div>",
+		"<div class='card-body'>",
+		"<div class='eyebrow-row'><span class='pill'>" + escapeHtml(categoryLabel(asset.category)) + '</span>' +
+			(asset.variable ? "<span class='pill loop'>Variable " + escapeHtml(asset.weight) + '</span>' : '') +
+			"<span class='file-type'>TTF · OFL</span></div>",
+		'<h3>' + escapeHtml(asset.family) + '</h3>',
+		"<p class='use-note'>" + escapeHtml(asset.usage) + '</p>',
+		"<div class='path-row'><code>" + escapeHtml(asset.staticFilePath) + "</code><button type='button' data-copy='" + escapeHtml(asset.staticFilePath) + "' aria-label='Copy path'>Copy</button></div>",
+		"<a class='download-link' href='" + escapeHtml(url) + "' download>Download TTF <span aria-hidden='true'>↓</span></a>",
+		'</div>',
+		'</article>',
+	].join('')
+}
+
+function fontFaceStyles(fonts) {
+	return fonts
+		.map((font) =>
+			"@font-face{font-family:'" +
+			font.family +
+			"';src:url('" +
+			galleryUrl(font.path) +
+			"') format('truetype');font-weight:" +
+			font.weight +
+			';font-display:swap}',
+		)
+		.join('')
 }
 
 function audioArtwork(asset) {
@@ -230,9 +376,13 @@ function makeGallery(catalog) {
 	const visuals = catalog.assets.filter((asset) => asset.assetType === 'visual')
 	const music = catalog.assets.filter((asset) => asset.kind === 'music')
 	const sfx = catalog.assets.filter((asset) => asset.kind === 'sfx')
+	const textures = catalog.assets.filter((asset) => asset.assetType === 'texture')
+	const fonts = catalog.assets.filter((asset) => asset.assetType === 'font')
 	const visualCards = visuals.map(visualCard).join('\n')
 	const musicCards = music.map(audioCard).join('\n')
 	const sfxCards = sfx.map(audioCard).join('\n')
+	const textureCards = textures.map(textureCard).join('\n')
+	const fontCards = fonts.map(fontCard).join('\n')
 
 	return [
 		'<!doctype html>',
@@ -314,6 +464,13 @@ function makeGallery(catalog) {
 		'audio{display:block;width:100%;height:38px;margin:0 0 14px;filter:saturate(.75)}',
 		'.audio-footer{display:flex;align-items:center;justify-content:space-between;color:var(--muted);font-size:10px}',
 		'.audio-footer .download-link{margin-top:12px}',
+		'.texture-shell{background-color:#0a0d16;background-image:linear-gradient(45deg,#141a26 25%,transparent 25%),linear-gradient(-45deg,#141a26 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#141a26 75%),linear-gradient(-45deg,transparent 75%,#141a26 75%);background-size:18px 18px;background-position:0 0,0 9px,9px -9px,-9px 0}',
+		'.texture-shell img{width:100%;height:100%;object-fit:cover}',
+		'.use-note{margin:0 0 13px;color:var(--muted);font-size:12px;line-height:1.5}',
+		'.font-specimen{height:150px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border-bottom:1px solid var(--line);background:radial-gradient(circle at 50% 20%,rgba(255,190,114,.12),transparent 60%),#0a0d16}',
+		'.specimen-big{font-size:60px;line-height:1;letter-spacing:-.03em}',
+		'.specimen-line{font-size:15px;color:var(--muted)}',
+		fontFaceStyles(fonts),
 		'.empty{display:none;padding:70px 24px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:20px;margin-bottom:70px}',
 		'.empty.visible{display:block}',
 		'footer{display:flex;align-items:center;justify-content:space-between;gap:30px;padding:34px 0 48px;border-top:1px solid rgba(255,255,255,.07);color:var(--muted);font-size:12px}',
@@ -326,15 +483,17 @@ function makeGallery(catalog) {
 		'<body>',
 		"<header class='wrap topbar'><div class='brand'><span class='brand-mark' aria-hidden='true'></span><span>Remotion Production Kit</span></div><nav class='top-actions'><a class='button' href='./catalog.json'>Catalog JSON</a><a class='button primary' href='./production-asset-kit.zip' download>Download full kit ↓</a></nav></header>",
 		'<main class="wrap">',
-		"<section class='hero'><div><span class='kicker'>Original · Editable · CC0</span><h1>Everything your video needs to move.</h1><p class='hero-copy'>A production-ready library of editable SVG objects, icons, arrows, neon geometry, 3D forms, original music loops, and precision sound effects. Preview everything here, copy its exact path, or download the complete kit.</p></div><div class='stats'><div class='stat'><strong>" + catalog.counts.visuals + "</strong><span>SVG visuals</span></div><div class='stat'><strong>" + catalog.counts.music + "</strong><span>Music beds</span></div><div class='stat'><strong>" + catalog.counts.sfx + "</strong><span>Sound effects</span></div><div class='stat'><strong>" + formatBytes(catalog.totalAssetBytes) + "</strong><span>Raw assets</span></div></div></section>",
+		"<section class='hero'><div><span class='kicker'>Original · Editable · CC0 + OFL fonts</span><h1>Everything your video needs to move.</h1><p class='hero-copy'>A production-ready library of editable SVG objects, grain and matcap textures, 3D environment maps, self-hosted variable fonts, original music loops, and precision sound effects. Preview everything here, copy its exact path, or download the complete kit.</p></div><div class='stats'><div class='stat'><strong>" + catalog.counts.visuals + "</strong><span>SVG visuals</span></div><div class='stat'><strong>" + catalog.counts.textures + "</strong><span>Textures</span></div><div class='stat'><strong>" + (catalog.counts.music + catalog.counts.sfx) + "</strong><span>Music &amp; SFX</span></div><div class='stat'><strong>" + catalog.counts.fonts + "</strong><span>Font families</span></div></div></section>",
 		"<aside class='usage'><p>Use any path directly from your Remotion composition. Shared assets are served locally and travel with local and server renders.</p><code>staticFile('assets/visual/v1/objects/phone.svg')</code></aside>",
-		"<section class='controls' aria-label='Asset filters'><label class='search'><span class='sr-only'></span><input id='search' type='search' placeholder='Search assets, moods, and categories…' autocomplete='off' aria-label='Search assets'></label><div class='filters' role='group' aria-label='Filter by asset type'><button class='filter active' type='button' data-filter='all'>All</button><button class='filter' type='button' data-filter='visual'>Visuals</button><button class='filter' type='button' data-filter='music'>Music</button><button class='filter' type='button' data-filter='sfx'>SFX</button></div><span class='result-count' id='result-count'>" + catalog.counts.total + ' assets</span></section>',
+		"<section class='controls' aria-label='Asset filters'><label class='search'><span class='sr-only'></span><input id='search' type='search' placeholder='Search assets, moods, and categories…' autocomplete='off' aria-label='Search assets'></label><div class='filters' role='group' aria-label='Filter by asset type'><button class='filter active' type='button' data-filter='all'>All</button><button class='filter' type='button' data-filter='visual'>Visuals</button><button class='filter' type='button' data-filter='texture'>Textures</button><button class='filter' type='button' data-filter='font'>Fonts</button><button class='filter' type='button' data-filter='music'>Music</button><button class='filter' type='button' data-filter='sfx'>SFX</button></div><span class='result-count' id='result-count'>" + catalog.counts.total + ' assets</span></section>',
 		"<section class='asset-section' data-section><div class='section-head'><div><h2>Visual production kit</h2><p>Objects, icons, arrows, neon elements, geometry, and browser-safe dimensional art.</p></div><span class='count-badge'>" + visuals.length + " SVG</span></div><div class='asset-grid'>" + visualCards + '</div></section>',
+		"<section class='asset-section' data-section><div class='section-head'><div><h2>Typography</h2><p>Self-hosted SIL Open Font License families - no network fetch at render time.</p></div><span class='count-badge'>" + fonts.length + " families</span></div><div class='asset-grid audio-grid'>" + fontCards + '</div></section>',
+		"<section class='asset-section' data-section><div class='section-head'><div><h2>Textures, sprites and environments</h2><p>Grain, paper, light leaks, glow sprites, matcaps and equirectangular 3D lighting.</p></div><span class='count-badge'>" + textures.length + " PNG</span></div><div class='asset-grid'>" + textureCards + '</div></section>',
 		"<section class='asset-section' data-section><div class='section-head'><div><h2>Original music beds</h2><p>Frame-aligned, loopable procedural tracks with mix-ready headroom.</p></div><span class='count-badge'>" + music.length + " WAV</span></div><div class='asset-grid audio-grid'>" + musicCards + '</div></section>',
 		"<section class='asset-section' data-section><div class='section-head'><div><h2>Sound effects</h2><p>UI feedback, transitions, impacts, risers, shimmers, and closing accents.</p></div><span class='count-badge'>" + sfx.length + " WAV</span></div><div class='asset-grid audio-grid'>" + sfxCards + '</div></section>',
 		"<div class='empty' id='empty'><strong>No matching assets.</strong><br>Try a broader search or select another type.</div>",
 		'</main>',
-		"<footer class='wrap'><span><strong>54 original assets</strong> · No third-party samples or stock artwork</span><span>CC0-1.0 · Attribution not required</span></footer>",
+		"<footer class='wrap'><span><strong>" + catalog.counts.total + " assets</strong> · Original artwork and audio, plus SIL Open Font License typefaces</span><span>CC0-1.0 assets · OFL-1.1 fonts · Attribution not required</span></footer>",
 		'<script>',
 		"const cards=Array.from(document.querySelectorAll('.asset-card'));",
 		"const sections=Array.from(document.querySelectorAll('[data-section]'));",
@@ -358,26 +517,51 @@ function archiveReadme(catalog) {
 	return [
 		'# Remotion Production Asset Kit',
 		'',
-		'This archive contains ' + catalog.counts.visuals + ' original editable SVG visuals, ' + catalog.counts.music + ' loopable music beds, and ' + catalog.counts.sfx + ' sound effects.',
+		'This archive contains ' +
+			catalog.counts.visuals +
+			' editable SVG visuals, ' +
+			catalog.counts.textures +
+			' textures, sprites and environment maps, ' +
+			catalog.counts.fonts +
+			' font families, ' +
+			catalog.counts.music +
+			' loopable music beds, and ' +
+			catalog.counts.sfx +
+			' sound effects.',
 		'',
 		'## Install',
 		'',
-		'Extract the contents of this archive into your Remotion project public/assets directory. The existing visual/ and audio/ paths are preserved.',
+		'Extract the contents of this archive into your Remotion project public/assets directory. The existing visual/, texture/, fonts/ and audio/ paths are preserved.',
 		'',
 		'Use assets without the public/ prefix:',
 		'',
 		"    staticFile('assets/visual/v1/objects/phone.svg')",
+		"    staticFile('assets/texture/v1/overlays/film-grain.png')",
 		"    staticFile('assets/audio/v1/music/neon-pulse-120bpm-loop.wav')",
 		'',
+		'Fonts load with @remotion/fonts so a render never waits on the network:',
+		'',
+		"    loadFont({family: 'Anton', url: staticFile('assets/fonts/v1/anton/Anton-Regular.ttf')})",
+		'',
 		'- catalog.json is the combined machine-readable catalog.',
-		'- visual/v1/catalog.json and audio/catalog.json contain pack-specific metadata.',
-		'- index.html is the searchable visual and audio gallery.',
-		'- The generated assets are CC0-1.0 and require no attribution.',
+		'- visual/v1/catalog.json, texture/catalog.json, fonts/catalog.json and audio/catalog.json contain pack-specific metadata.',
+		'- index.html is the searchable gallery.',
+		'- Generated visuals, textures and audio are CC0-1.0 and require no attribution.',
+		'- Fonts are SIL Open Font License 1.1; each family folder keeps its OFL.txt, which must travel with the font files.',
 		'',
 	].join('\n')
 }
 
-async function buildArchive({ combinedCatalogText, galleryHtml, visualCatalogText, audioCatalogText, assets }) {
+async function buildArchive({
+	combinedCatalogText,
+	galleryHtml,
+	visualCatalogText,
+	audioCatalogText,
+	textureCatalogText,
+	fontCatalogText,
+	fontAssets,
+	assets,
+}) {
 	const zip = new JSZip()
 	const expectedFiles = new Set()
 	const add = (name, contents, options = {}) => {
@@ -399,6 +583,15 @@ async function buildArchive({ combinedCatalogText, galleryHtml, visualCatalogTex
 	add('audio/catalog.json', audioCatalogText)
 	add('audio/README.md', await readFile(path.join(audioRoot, 'README.md')))
 	add('audio/LICENSE-AUDIO.md', await readFile(path.join(audioRoot, 'LICENSE-AUDIO.md')))
+	add('texture/catalog.json', textureCatalogText)
+	add('fonts/catalog.json', fontCatalogText)
+	add('fonts/v1/fonts.css', await readFile(path.join(fontRoot, 'v1', 'fonts.css')))
+
+	// The OFL requires the licence to ship with the fonts it covers.
+	for (const font of fontAssets) {
+		const licenseName = font.licensePath.replace(/^\/assets\//, '')
+		add(licenseName, await readFile(path.join(assetsRoot, licenseName)))
+	}
 
 	for (const asset of assets) {
 		const name = asset.path.replace(/^\/assets\//, '')
@@ -420,8 +613,18 @@ async function buildArchive({ combinedCatalogText, galleryHtml, visualCatalogTex
 	const archivedFiles = Object.values(reopened.files).filter((entry) => !entry.dir)
 	const svgCount = archivedFiles.filter((entry) => entry.name.endsWith('.svg')).length
 	const wavCount = archivedFiles.filter((entry) => entry.name.endsWith('.wav')).length
-	if (svgCount !== EXPECTED_VISUALS || wavCount !== EXPECTED_AUDIO) {
-		throw new Error('ZIP asset counts are wrong: ' + svgCount + ' SVG and ' + wavCount + ' WAV')
+	const pngCount = archivedFiles.filter((entry) => entry.name.endsWith('.png')).length
+	const ttfCount = archivedFiles.filter((entry) => entry.name.endsWith('.ttf')).length
+	if (
+		svgCount !== EXPECTED_VISUALS ||
+		wavCount !== EXPECTED_AUDIO ||
+		pngCount !== EXPECTED_TEXTURES ||
+		ttfCount !== EXPECTED_FONTS
+	) {
+		throw new Error(
+			'ZIP asset counts are wrong: ' +
+				svgCount + ' SVG, ' + wavCount + ' WAV, ' + pngCount + ' PNG, ' + ttfCount + ' TTF',
+		)
 	}
 	for (const name of expectedFiles) {
 		if (!reopened.file(name)) throw new Error('ZIP is missing expected file: ' + name)
@@ -430,21 +633,36 @@ async function buildArchive({ combinedCatalogText, galleryHtml, visualCatalogTex
 		throw new Error('ZIP contains an unexpected number of files')
 	}
 
-	return { output, fileCount: archivedFiles.length, svgCount, wavCount }
+	return { output, fileCount: archivedFiles.length, svgCount, wavCount, pngCount, ttfCount }
 }
 
 async function main() {
-	const [visualCatalog, audioCatalog, visualCatalogText, audioCatalogText] = await Promise.all([
+	const [
+		visualCatalog,
+		audioCatalog,
+		textureCatalog,
+		fontCatalog,
+		visualCatalogText,
+		audioCatalogText,
+		textureCatalogText,
+		fontCatalogText,
+	] = await Promise.all([
 		loadCatalog(visualCatalogPath),
 		loadCatalog(audioCatalogPath),
+		loadCatalog(textureCatalogPath),
+		loadCatalog(fontCatalogPath),
 		readFile(visualCatalogPath, 'utf8'),
 		readFile(audioCatalogPath, 'utf8'),
+		readFile(textureCatalogPath, 'utf8'),
+		readFile(fontCatalogPath, 'utf8'),
 	])
-	const [visualAssets, audioAssets] = await Promise.all([
+	const [visualAssets, audioAssets, textureAssets, fontAssets] = await Promise.all([
 		normalizeVisualAssets(visualCatalog),
 		normalizeAudioAssets(audioCatalog),
+		normalizeTextureAssets(textureCatalog),
+		normalizeFontAssets(fontCatalog),
 	])
-	const allAssets = [...visualAssets, ...audioAssets]
+	const allAssets = [...visualAssets, ...textureAssets, ...fontAssets, ...audioAssets]
 	const ids = new Set(allAssets.map((asset) => asset.id))
 	if (ids.size !== allAssets.length) throw new Error('Combined catalog contains duplicate IDs')
 
@@ -461,17 +679,23 @@ async function main() {
 		packVersion: '1.0.0',
 		generatedBy: 'scripts/build-asset-library.mjs',
 		title: 'Remotion Production Asset Kit',
-		description: 'Original editable SVG visuals, loopable music beds, and production sound effects.',
+		description:
+			'Original editable SVG visuals, generated textures and 3D environment maps, self-hosted OFL fonts, loopable music beds, and production sound effects.',
 		license: 'CC0-1.0',
+		fontLicense: 'OFL-1.1',
 		attributionRequired: false,
 		downloadPath: '/assets/production-asset-kit.zip',
 		sourceCatalogs: [
 			{ kind: 'visual', path: '/assets/visual/v1/catalog.json', assetCount: visualAssets.length },
+			{ kind: 'texture', path: '/assets/texture/catalog.json', assetCount: textureAssets.length },
+			{ kind: 'font', path: '/assets/fonts/catalog.json', assetCount: fontAssets.length },
 			{ kind: 'audio', path: '/assets/audio/catalog.json', assetCount: audioAssets.length },
 		],
 		counts: {
 			total: allAssets.length,
 			visuals: visualAssets.length,
+			textures: textureAssets.length,
+			fonts: fontAssets.length,
 			audio: audioAssets.length,
 			music: musicCount,
 			sfx: sfxCount,
@@ -487,6 +711,9 @@ async function main() {
 		galleryHtml,
 		visualCatalogText,
 		audioCatalogText,
+		textureCatalogText,
+		fontCatalogText,
+		fontAssets,
 		assets: allAssets,
 	})
 
@@ -499,7 +726,10 @@ async function main() {
 	console.log('catalog -> public/assets/catalog.json (' + combinedCatalog.counts.total + ' assets)')
 	console.log('gallery -> public/assets/index.html')
 	console.log('archive -> public/assets/production-asset-kit.zip (' + archive.fileCount + ' files, ' + formatBytes(archive.output.length) + ')')
-	console.log('verified ' + archive.svgCount + ' SVG + ' + archive.wavCount + ' WAV in archive')
+	console.log(
+		'verified ' +
+			archive.svgCount + ' SVG + ' + archive.pngCount + ' PNG + ' + archive.ttfCount + ' TTF + ' + archive.wavCount + ' WAV in archive',
+	)
 }
 
 main().catch((error) => {

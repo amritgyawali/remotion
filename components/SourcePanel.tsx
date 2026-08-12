@@ -4,9 +4,21 @@ import { useCallback, useRef, useState } from 'react'
 import { SAMPLES, type SampleDefinition } from '../lib/samples'
 import { CODE_EXTENSIONS } from '../lib/project'
 import type { VirtualProject } from '../lib/types'
-import { IconAlert, IconDownload, IconFile, IconSparkle, IconUpload } from './Icons'
+import { IconAlert, IconCheck, IconCopy, IconDownload, IconFile, IconSparkle, IconUpload } from './Icons'
 
 const ACCEPT = [...CODE_EXTENSIONS, '.zip'].join(',')
+
+const AI_MASTER_PROMPT = `You are editing the AI Master Template for a Remotion video project (ai-master-template.tsx). Generate a brand-new, complete .tsx file for the following video idea:
+
+I want to create a video for photography - there should be a cameraman and cameras, [describe the rest of your idea here: setting, mood, lighting, on-screen text, colors, pacing, music style, etc].
+
+Requirements:
+- Reuse the exact same file structure, composition metadata (fps, width, height, durationInFrames), export pattern, and animation timing approach as ai-master-template.tsx.
+- Keep the same procedural 3D (ThreeCanvas) technique, camera movement style, and audio/SFX sync logic - just swap the subjects, text, colors and motion to match my concept above.
+- Do not add new npm dependencies beyond what the template already imports.
+- Output ONE complete, self-contained .tsx file, ready to be uploaded back into the studio.
+
+Reply with the full code only.`
 
 export default function SourcePanel({
 	project,
@@ -25,6 +37,14 @@ export default function SourcePanel({
 }) {
 	const inputRef = useRef<HTMLInputElement>(null)
 	const [dragging, setDragging] = useState(false)
+	const [promptCopied, setPromptCopied] = useState(false)
+
+	const copyPrompt = useCallback(() => {
+		navigator.clipboard.writeText(AI_MASTER_PROMPT).then(() => {
+			setPromptCopied(true)
+			setTimeout(() => setPromptCopied(false), 2000)
+		})
+	}, [])
 
 	const handleDrop = useCallback(
 		(event: React.DragEvent<HTMLDivElement>) => {
@@ -158,6 +178,53 @@ export default function SourcePanel({
 							</div>
 						))}
 					</div>
+
+					<div className="card" style={{ marginTop: 8 }}>
+						<div
+							style={{
+								display: 'flex',
+								alignItems: 'center',
+								justifyContent: 'space-between',
+								gap: 8,
+							}}
+						>
+							<strong style={{ fontSize: 13 }}>AI prompt for the master template</strong>
+							<span className="badge badge--accent">copy &amp; use</span>
+						</div>
+						<p
+							style={{
+								margin: '6px 0 10px',
+								fontSize: 11.5,
+								color: 'var(--text-tertiary)',
+								lineHeight: 1.5,
+							}}
+						>
+							Download the AI Master Template above, paste this prompt into your AI with the
+							file attached, swap the bracketed idea for your own, then upload the .tsx it
+							returns back into the studio.
+						</p>
+						<pre
+							style={{
+								margin: '0 0 10px',
+								padding: 10,
+								fontSize: 11,
+								lineHeight: 1.5,
+								whiteSpace: 'pre-wrap',
+								wordBreak: 'break-word',
+								background: 'var(--surface-2, rgba(127,127,127,0.08))',
+								border: '1px solid var(--border, rgba(127,127,127,0.2))',
+								borderRadius: 8,
+								maxHeight: 220,
+								overflowY: 'auto',
+							}}
+						>
+							{AI_MASTER_PROMPT}
+						</pre>
+						<button className="btn btn--sm" onClick={copyPrompt}>
+							{promptCopied ? <IconCheck size={12} /> : <IconCopy size={12} />}
+							{promptCopied ? 'Copied' : 'Copy prompt'}
+						</button>
+					</div>
 				</div>
 
 				<div>
@@ -185,8 +252,8 @@ export default function SourcePanel({
 								lineHeight: 1.5,
 							}}
 						>
-							41 editable SVG objects, icons, arrows, neon, geometry and depth graphics;
-							 plus 3 music loops and 10 sound effects.
+							41 editable SVGs, 20 textures (grain, matcaps, 3D environment maps), 10
+							 self-hosted fonts, 8 music loops and 20 sound effects.
 						</p>
 						<div style={{ display: 'flex', gap: 6 }}>
 							<a className="btn btn--sm" href="/assets/index.html" target="_blank" rel="noreferrer">
@@ -257,6 +324,9 @@ export default function SourcePanel({
 							'@remotion/motion-blur',
 							'@remotion/media',
 							'@remotion/gif',
+							'@remotion/fonts',
+							'@remotion/three',
+							'three',
 							'react',
 						].map((name) => (
 							<span key={name} className="chip chip--static">

@@ -378,6 +378,24 @@ function master(track, { targetRmsDb = null, peakDb = -1.5, fadeMilliseconds = 3
 	return track
 }
 
+/**
+ * Per-style mix decisions. Adding a mood means adding a row here plus a case in
+ * the rhythm section below - the harmony, delay and mastering stay shared so
+ * every bed sits at the same broadcast level under speech.
+ */
+const slowDelayStyles = new Set(['cinematic', 'ambient', 'tension', 'epic'])
+
+const MUSIC_STYLE = {
+	neon: { pad: 0.085, arp: 0.075, arpInstrument: 'pluck', arpOctave: 24, bass: 0.17, rms: -20 },
+	warm: { pad: 0.1, arp: 0.085, arpInstrument: 'pluck', arpOctave: 24, bass: 0.17, rms: -20 },
+	cinematic: { pad: 0.115, arp: 0.055, arpInstrument: 'bell', arpOctave: 12, bass: 0.21, rms: -21 },
+	ambient: { pad: 0.135, arp: 0.038, arpInstrument: 'bell', arpOctave: 12, bass: 0.12, rms: -23 },
+	epic: { pad: 0.125, arp: 0.05, arpInstrument: 'bell', arpOctave: 12, bass: 0.24, rms: -19 },
+	lofi: { pad: 0.095, arp: 0.07, arpInstrument: 'pluck', arpOctave: 12, bass: 0.15, rms: -21 },
+	corporate: { pad: 0.078, arp: 0.082, arpInstrument: 'pluck', arpOctave: 24, bass: 0.15, rms: -20 },
+	tension: { pad: 0.12, arp: 0.026, arpInstrument: 'pulse', arpOctave: 12, bass: 0.2, rms: -22 },
+}
+
 function renderMusicBed({ id, durationSeconds, bpm, chords, roots, style }) {
 	const track = createTrack(durationSeconds)
 	const beat = 60 / bpm
@@ -385,14 +403,17 @@ function renderMusicBed({ id, durationSeconds, bpm, chords, roots, style }) {
 	if (Math.abs(bar * chords.length - durationSeconds) > 1 / SAMPLE_RATE) {
 		throw new Error(`${id}: chord bars do not exactly fill the loop`)
 	}
+	const mix = MUSIC_STYLE[style]
+	if (!mix) throw new Error(`${id}: unknown music style "${style}"`)
 
 	const arpPattern = [0, 2, 1, 3, 2, 1, 0, 2]
 	for (let barIndex = 0; barIndex < chords.length; barIndex++) {
 		const barStart = barIndex * bar
 		const chord = chords[barIndex]
 		const root = roots[barIndex]
-		const padAmplitude = style === 'cinematic' ? 0.115 : style === 'warm' ? 0.1 : 0.085
+		const padAmplitude = mix.pad
 
+		const slow = style === 'cinematic' || style === 'ambient' || style === 'tension'
 		chord.forEach((midi, noteIndex) => {
 			addNote(track, {
 				start: barStart,
@@ -401,33 +422,37 @@ function renderMusicBed({ id, durationSeconds, bpm, chords, roots, style }) {
 				amplitude: padAmplitude,
 				pan: lerp(-0.55, 0.55, noteIndex / Math.max(1, chord.length - 1)),
 				instrument: 'pad',
-				attack: style === 'cinematic' ? 0.22 : 0.12,
-				release: style === 'cinematic' ? 0.34 : 0.2,
+				attack: slow ? 0.22 : 0.12,
+				release: slow ? 0.34 : 0.2,
 				detune: noteIndex % 2 === 0 ? -2 : 2,
 			})
 		})
 
-		for (const beatIndex of [0, 2]) {
+		const bassBeats = style === 'ambient' || style === 'tension' ? [0] : [0, 2]
+		for (const beatIndex of bassBeats) {
 			addNote(track, {
 				start: barStart + beatIndex * beat,
-				duration: beat * 1.62,
+				duration: style === 'ambient' || style === 'tension' ? bar * 0.92 : beat * 1.62,
 				midi: root,
-				amplitude: style === 'cinematic' ? 0.21 : 0.17,
+				amplitude: mix.bass,
 				instrument: 'bass',
 				attack: 0.02,
 				release: beat * 0.28,
 			})
 		}
 
-		for (let step = 0; step < 8; step++) {
-			const midi = chord[arpPattern[step] % chord.length] + (style === 'cinematic' ? 12 : 24)
+		// Sparse beds keep the melody on a few steps so speech stays on top.
+		const arpSteps =
+			style === 'ambient' ? [0, 3, 5] : style === 'tension' ? [0, 4] : [0, 1, 2, 3, 4, 5, 6, 7]
+		for (const step of arpSteps) {
+			const midi = chord[arpPattern[step] % chord.length] + mix.arpOctave
 			addNote(track, {
 				start: barStart + step * (beat / 2),
-				duration: beat * (style === 'warm' ? 0.7 : 0.48),
+				duration: beat * (style === 'warm' || style === 'lofi' ? 0.7 : 0.48),
 				midi,
-				amplitude: style === 'warm' ? 0.085 : style === 'cinematic' ? 0.055 : 0.075,
+				amplitude: mix.arp,
 				pan: step % 2 === 0 ? -0.36 : 0.36,
-				instrument: style === 'cinematic' ? 'bell' : 'pluck',
+				instrument: mix.arpInstrument,
 				attack: 0.008,
 				release: beat * 0.2,
 			})
@@ -445,6 +470,65 @@ function renderMusicBed({ id, durationSeconds, bpm, chords, roots, style }) {
 			for (let beatIndex = 0; beatIndex < 4; beatIndex++) {
 				addHat(track, barStart + beatIndex * beat, 0.025, `${id}-soft-hat-${barIndex}-${beatIndex}`, beatIndex % 2 ? 0.45 : -0.45)
 			}
+		} else if (style === 'lofi') {
+			// Behind-the-beat kick and rim: the tape-style swing of a lofi loop.
+			addKick(track, barStart + beat * 0.02, 0.22, 0.36, 46)
+			addKick(track, barStart + beat * 2.06, 0.16, 0.32, 46)
+			for (const beatIndex of [1, 3]) addRim(track, barStart + beatIndex * beat + beat * 0.03, 0.07, beatIndex === 1 ? -0.26 : 0.26)
+			for (let step = 0; step < 8; step++) {
+				const swing = step % 2 ? beat * 0.08 : 0
+				addHat(track, barStart + step * (beat / 2) + swing, step % 2 ? 0.03 : 0.042, `${id}-lofi-hat-${barIndex}-${step}`, step % 2 ? 0.34 : -0.34)
+			}
+		} else if (style === 'corporate') {
+			for (const beatIndex of [0, 1, 2, 3]) addKick(track, barStart + beatIndex * beat, beatIndex % 2 ? 0.14 : 0.24, 0.28, 48)
+			for (const beatIndex of [1, 3]) addSnare(track, barStart + beatIndex * beat, 0.07, `${id}-clap-${barIndex}-${beatIndex}`)
+			for (let step = 0; step < 8; step++) {
+				addHat(track, barStart + step * (beat / 2), step % 2 ? 0.045 : 0.03, `${id}-corp-hat-${barIndex}-${step}`, step % 2 ? 0.3 : -0.3)
+			}
+		} else if (style === 'epic') {
+			addKick(track, barStart, 0.52, 0.7, 34)
+			addKick(track, barStart + beat * 2, 0.42, 0.62, 36)
+			addKick(track, barStart + beat * 3.5, 0.24, 0.4, 40)
+			for (const beatIndex of [1, 3]) {
+				addFilteredNoise(track, {
+					seed: `${id}-taiko-${barIndex}-${beatIndex}`,
+					start: barStart + beatIndex * beat,
+					duration: 0.42,
+					amplitude: 0.16,
+					lowCutFrom: 90,
+					lowCutTo: 60,
+					highCutFrom: 1_600,
+					highCutTo: 520,
+					shape: 'decay',
+				})
+			}
+		} else if (style === 'ambient') {
+			// No percussion at all - this bed is for narration and slow visuals.
+			addFilteredNoise(track, {
+				seed: `${id}-air-${barIndex}`,
+				start: barStart,
+				duration: bar,
+				amplitude: 0.05,
+				lowCutFrom: 900,
+				lowCutTo: 1_400,
+				highCutFrom: 6_000,
+				highCutTo: 9_000,
+				panFrom: barIndex % 2 ? -0.4 : 0.4,
+				panTo: barIndex % 2 ? 0.4 : -0.4,
+			})
+		} else if (style === 'tension') {
+			for (let beatIndex = 0; beatIndex < 4; beatIndex++) {
+				addRim(track, barStart + beatIndex * beat, 0.048, beatIndex % 2 ? 0.32 : -0.32)
+			}
+			addToneSweep(track, {
+				start: barStart,
+				duration: bar,
+				startFrequency: midiToFrequency(root),
+				endFrequency: midiToFrequency(root) * 1.02,
+				amplitude: 0.1,
+				curve: 'bell',
+				harmonic: 0.1,
+			})
 		} else {
 			addKick(track, barStart, 0.36, 0.55, 38)
 			addKick(track, barStart + beat * 2, 0.2, 0.45, 42)
@@ -466,13 +550,13 @@ function renderMusicBed({ id, durationSeconds, bpm, chords, roots, style }) {
 	applyDelay(
 		track,
 		[
-			{ seconds: beat * 0.5, gain: style === 'cinematic' ? 0.12 : 0.1, crossfeed: true },
-			{ seconds: beat * 1.5, gain: style === 'warm' ? 0.08 : 0.055, crossfeed: false },
+			{ seconds: beat * 0.5, gain: slowDelayStyles.has(style) ? 0.12 : 0.1, crossfeed: true },
+			{ seconds: beat * 1.5, gain: style === 'warm' || style === 'lofi' ? 0.08 : 0.055, crossfeed: false },
 		],
 		true,
 	)
 
-	return master(track, { targetRmsDb: style === 'cinematic' ? -21 : -20, peakDb: -2.5, fadeMilliseconds: 6 })
+	return master(track, { targetRmsDb: mix.rms, peakDb: -2.5, fadeMilliseconds: 6 })
 }
 
 function renderSfx(id, durationSeconds) {
@@ -515,6 +599,54 @@ function renderSfx(id, durationSeconds) {
 		}
 		addFilteredNoise(track, { seed: id, start: 0.03, duration: 0.62, amplitude: 0.28, lowCutFrom: 1_700, lowCutTo: 5_500, highCutFrom: 12_000, highCutTo: 16_000, shape: 'decay' })
 		applyDelay(track, [{ seconds: 0.14, gain: 0.11, crossfeed: true }])
+	} else if (id === 'ui-typewriter') {
+		addFilteredNoise(track, { seed: id, duration: 0.05, amplitude: 0.85, lowCutFrom: 1_800, lowCutTo: 900, highCutFrom: 12_000, highCutTo: 5_200, shape: 'decay' })
+		addToneSweep(track, { duration: 0.045, startFrequency: 420, endFrequency: 180, amplitude: 0.4, curve: 'decay' })
+	} else if (id === 'ui-tick') {
+		addToneSweep(track, { duration: 0.035, startFrequency: 2_400, endFrequency: 1_500, amplitude: 0.55, curve: 'decay', harmonic: 0.05 })
+	} else if (id === 'ui-swipe') {
+		addFilteredNoise(track, { seed: id, duration: 0.22, amplitude: 0.7, lowCutFrom: 800, lowCutTo: 3_400, highCutFrom: 5_000, highCutTo: 13_000, panFrom: -0.5, panTo: 0.5 })
+	} else if (id === 'transition-glitch') {
+		for (let index = 0; index < 7; index++) {
+			addFilteredNoise(track, {
+				seed: `${id}-${index}`,
+				start: index * 0.042,
+				duration: 0.03,
+				amplitude: 0.62 + (index % 3) * 0.12,
+				lowCutFrom: 600 + index * 700,
+				lowCutTo: 400 + index * 500,
+				highCutFrom: 9_000 + index * 900,
+				highCutTo: 14_000,
+				panFrom: index % 2 ? 0.6 : -0.6,
+				panTo: index % 2 ? -0.4 : 0.4,
+				shape: 'decay',
+			})
+		}
+		addToneSweep(track, { start: 0.2, duration: 0.12, startFrequency: 1_100, endFrequency: 240, amplitude: 0.34, curve: 'decay', harmonic: 0.3 })
+	} else if (id === 'transition-sub-drop') {
+		addToneSweep(track, { duration: 1.1, startFrequency: 420, endFrequency: 28, amplitude: 0.95, curve: 'decay', harmonic: 0.06 })
+		addFilteredNoise(track, { seed: id, duration: 0.55, amplitude: 0.28, lowCutFrom: 160, lowCutTo: 60, highCutFrom: 3_200, highCutTo: 600, shape: 'decay' })
+	} else if (id === 'transition-riser-organic') {
+		addFilteredNoise(track, { seed: id, duration: 1.9, amplitude: 0.8, lowCutFrom: 120, lowCutTo: 2_600, highCutFrom: 900, highCutTo: 11_000, panFrom: 0.3, panTo: -0.3, shape: 'rise' })
+		addToneSweep(track, { duration: 1.9, startFrequency: 110, endFrequency: 620, amplitude: 0.4, curve: 'rise', harmonic: 0.16 })
+	} else if (id === 'impact-snap') {
+		addFilteredNoise(track, { seed: id, duration: 0.13, amplitude: 0.9, lowCutFrom: 1_400, lowCutTo: 800, highCutFrom: 16_000, highCutTo: 6_000, shape: 'decay' })
+		addToneSweep(track, { duration: 0.12, startFrequency: 320, endFrequency: 120, amplitude: 0.5, curve: 'decay' })
+	} else if (id === 'impact-boom-tail') {
+		addKick(track, 0.006, 1.15, 0.85, 30)
+		addToneSweep(track, { start: 0.01, duration: 1.6, startFrequency: 70, endFrequency: 26, amplitude: 0.5, curve: 'decay', harmonic: 0.04 })
+		addFilteredNoise(track, { seed: id, start: 0.02, duration: 1.5, amplitude: 0.24, lowCutFrom: 200, lowCutTo: 80, highCutFrom: 4_200, highCutTo: 700, shape: 'decay' })
+		applyDelay(track, [{ seconds: 0.22, gain: 0.16, crossfeed: true }])
+	} else if (id === 'accent-chime-sparkle') {
+		for (const [offset, midi, pan] of [[0.01, 84, -0.4], [0.09, 91, 0.35], [0.18, 96, -0.22], [0.28, 88, 0.45], [0.4, 100, 0]]) {
+			addNote(track, { start: offset, duration: 0.5, midi, amplitude: 0.36, pan, instrument: 'bell', attack: 0.005, release: 0.22 })
+		}
+		applyDelay(track, [{ seconds: 0.13, gain: 0.16, crossfeed: true }])
+	} else if (id === 'accent-power-up') {
+		addToneSweep(track, { duration: 0.62, startFrequency: 180, endFrequency: 1_600, amplitude: 0.6, curve: 'rise', harmonic: 0.22 })
+		for (const [offset, midi] of [[0.14, 72], [0.3, 79], [0.46, 84]]) {
+			addNote(track, { start: offset, duration: 0.3, midi, amplitude: 0.32, instrument: 'pluck', attack: 0.005, release: 0.12 })
+		}
 	} else {
 		throw new Error(`Unknown SFX renderer: ${id}`)
 	}
@@ -574,6 +706,91 @@ const MUSIC = [
 			roots: [26, 22, 29, 24],
 		}),
 	},
+	{
+		id: 'ambient-calm',
+		title: 'Ambient Calm',
+		kind: 'music',
+		category: 'ambient',
+		file: 'music/ambient-calm-70bpm-loop.wav',
+		durationSeconds: 13.714285714285714,
+		bpm: 70,
+		loopable: true,
+		recommendedVolume: 0.14,
+		tags: ['ambient', 'calm', 'nature', 'meditation', 'narration', 'documentary'],
+		render: () => renderMusicBed({
+			id: 'ambient-calm', durationSeconds: 13.714285714285714, bpm: 70, style: 'ambient',
+			chords: [[45, 52, 57, 64], [43, 50, 55, 62], [41, 48, 53, 60], [40, 47, 52, 59]],
+			roots: [33, 31, 29, 28],
+		}),
+	},
+	{
+		id: 'epic-cinematic',
+		title: 'Epic Cinematic',
+		kind: 'music',
+		category: 'cinematic',
+		file: 'music/epic-cinematic-88bpm-loop.wav',
+		durationSeconds: 10.909090909090908,
+		bpm: 88,
+		loopable: true,
+		recommendedVolume: 0.16,
+		tags: ['epic', 'trailer', 'heroic', 'sport', 'launch', 'drums'],
+		render: () => renderMusicBed({
+			id: 'epic-cinematic', durationSeconds: 10.909090909090908, bpm: 88, style: 'epic',
+			chords: [[40, 47, 52, 55], [38, 45, 50, 53], [43, 50, 55, 59], [36, 43, 48, 52]],
+			roots: [28, 26, 31, 24],
+		}),
+	},
+	{
+		id: 'lofi-chill',
+		title: 'Lofi Chill',
+		kind: 'music',
+		category: 'lofi',
+		file: 'music/lofi-chill-84bpm-loop.wav',
+		durationSeconds: 11.428571428571429,
+		bpm: 84,
+		loopable: true,
+		recommendedVolume: 0.17,
+		tags: ['lofi', 'chill', 'study', 'vlog', 'relaxed', 'jazzy'],
+		render: () => renderMusicBed({
+			id: 'lofi-chill', durationSeconds: 11.428571428571429, bpm: 84, style: 'lofi',
+			chords: [[47, 53, 58, 62], [45, 52, 57, 60], [43, 50, 55, 59], [40, 47, 52, 57]],
+			roots: [35, 33, 31, 28],
+		}),
+	},
+	{
+		id: 'corporate-clean',
+		title: 'Corporate Clean',
+		kind: 'music',
+		category: 'corporate',
+		file: 'music/corporate-clean-112bpm-loop.wav',
+		durationSeconds: 8.571428571428571,
+		bpm: 112,
+		loopable: true,
+		recommendedVolume: 0.16,
+		tags: ['corporate', 'saas', 'explainer', 'optimistic', 'business', 'demo'],
+		render: () => renderMusicBed({
+			id: 'corporate-clean', durationSeconds: 8.571428571428571, bpm: 112, style: 'corporate',
+			chords: [[52, 59, 64, 68], [50, 57, 62, 66], [47, 54, 59, 63], [45, 52, 57, 61]],
+			roots: [40, 38, 35, 33],
+		}),
+	},
+	{
+		id: 'tension-drone',
+		title: 'Tension Drone',
+		kind: 'music',
+		category: 'tension',
+		file: 'music/tension-drone-72bpm-loop.wav',
+		durationSeconds: 13.333333333333334,
+		bpm: 72,
+		loopable: true,
+		recommendedVolume: 0.15,
+		tags: ['tension', 'suspense', 'problem', 'thriller', 'before-after', 'drone'],
+		render: () => renderMusicBed({
+			id: 'tension-drone', durationSeconds: 13.333333333333334, bpm: 72, style: 'tension',
+			chords: [[38, 44, 49, 51], [38, 45, 49, 52], [37, 44, 48, 51], [38, 44, 49, 50]],
+			roots: [26, 26, 25, 26],
+		}),
+	},
 ]
 
 const SFX = [
@@ -587,6 +804,16 @@ const SFX = [
 	{ id: 'impact-deep', title: 'Deep Impact', category: 'impacts', file: 'sfx/impacts/impact-deep.wav', durationSeconds: 0.8, recommendedVolume: 0.42, tags: ['impact', 'bass', 'cinematic', 'payoff'] },
 	{ id: 'reveal-shimmer', title: 'Reveal Shimmer', category: 'accents', file: 'sfx/accents/reveal-shimmer.wav', durationSeconds: 1, recommendedVolume: 0.34, tags: ['shimmer', 'sparkle', 'reveal', 'premium'] },
 	{ id: 'logo-stinger', title: 'Logo Stinger', category: 'accents', file: 'sfx/accents/logo-stinger.wav', durationSeconds: 1.2, recommendedVolume: 0.4, tags: ['logo', 'stinger', 'ending', 'brand'] },
+	{ id: 'ui-typewriter', title: 'Typewriter Key', category: 'ui', file: 'sfx/ui/typewriter.wav', durationSeconds: 0.08, recommendedVolume: 0.3, tags: ['type', 'keyboard', 'caption', 'text'] },
+	{ id: 'ui-tick', title: 'Counter Tick', category: 'ui', file: 'sfx/ui/tick.wav', durationSeconds: 0.06, recommendedVolume: 0.28, tags: ['tick', 'counter', 'number', 'chart'] },
+	{ id: 'ui-swipe', title: 'Swipe', category: 'ui', file: 'sfx/ui/swipe.wav', durationSeconds: 0.25, recommendedVolume: 0.32, tags: ['swipe', 'card', 'slide', 'mobile'] },
+	{ id: 'transition-glitch', title: 'Glitch Cut', category: 'transitions', file: 'sfx/transitions/glitch.wav', durationSeconds: 0.4, recommendedVolume: 0.36, tags: ['glitch', 'cut', 'digital', 'error'] },
+	{ id: 'transition-sub-drop', title: 'Sub Drop', category: 'transitions', file: 'sfx/transitions/sub-drop.wav', durationSeconds: 1.2, recommendedVolume: 0.4, tags: ['drop', 'bass', 'scene-change', 'cinematic'] },
+	{ id: 'transition-riser-organic', title: 'Organic Riser', category: 'transitions', file: 'sfx/transitions/riser-organic.wav', durationSeconds: 2, recommendedVolume: 0.34, tags: ['riser', 'build', 'nature', 'documentary'] },
+	{ id: 'impact-snap', title: 'Snap Impact', category: 'impacts', file: 'sfx/impacts/impact-snap.wav', durationSeconds: 0.16, recommendedVolume: 0.4, tags: ['snap', 'cut', 'text', 'fast'] },
+	{ id: 'impact-boom-tail', title: 'Boom With Tail', category: 'impacts', file: 'sfx/impacts/impact-boom-tail.wav', durationSeconds: 2, recommendedVolume: 0.44, tags: ['boom', 'trailer', 'title', 'payoff'] },
+	{ id: 'accent-chime-sparkle', title: 'Chime Sparkle', category: 'accents', file: 'sfx/accents/chime-sparkle.wav', durationSeconds: 1, recommendedVolume: 0.32, tags: ['chime', 'magic', 'sparkle', 'success'] },
+	{ id: 'accent-power-up', title: 'Power Up', category: 'accents', file: 'sfx/accents/power-up.wav', durationSeconds: 0.8, recommendedVolume: 0.34, tags: ['power', 'upgrade', 'level-up', 'game'] },
 ].map((asset) => ({ ...asset, kind: 'sfx', loopable: false, bpm: null, render: () => renderSfx(asset.id, asset.durationSeconds) }))
 
 const ASSETS = [...MUSIC, ...SFX]

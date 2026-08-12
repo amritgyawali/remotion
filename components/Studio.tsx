@@ -32,8 +32,9 @@ import TopBar from './TopBar'
 
 const INITIAL_SETTINGS: RenderSettings = {
 	engine: 'browser',
-	preset: 'high',
+	preset: 'max',
 	format: 'mp4',
+	audioEnabled: true,
 	scale: 1,
 	previewSeconds: 0,
 }
@@ -281,6 +282,7 @@ export default function Studio() {
 				<StagePanel
 					compileResult={compileResult}
 					composition={composition}
+					audioEnabled={settings.audioEnabled}
 					selectedId={selectedId}
 					onSelect={setSelectedId}
 					compiling={compiling}

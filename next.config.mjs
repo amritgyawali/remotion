@@ -4,13 +4,15 @@ const nextConfig = {
 
 	/**
 	 * The Remotion server renderer spawns a real headless browser and must never be
-	 * bundled by webpack/turbopack. Keeping these external is what makes
-	 * `/api/render` work on Vercel Functions and on a normal Node server.
+	 * bundled by webpack/turbopack. A normal Node host uses the renderer directly;
+	 * Vercel Functions orchestrate an isolated Vercel Sandbox instead.
 	 */
 	serverExternalPackages: [
 		'@remotion/bundler',
 		'@remotion/renderer',
+		'@remotion/vercel',
 		'@remotion/compositor-linux-x64-gnu',
+		'@vercel/sandbox',
 		'esbuild',
 	],
 

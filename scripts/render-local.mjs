@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
- * MAX POWER local renderer.
+ * High-quality local renderer.
  *
- * The browser and the serverless function both have ceilings. This script has
- * none: it uses every CPU core, hardware acceleration when the machine offers
- * it, lossless PNG frames and near-lossless encoding.
+ * Local rendering avoids browser memory limits and cloud-function timeouts,
+ * while still respecting the machine's CPU, memory, disk and codec limits.
+ * The Max preset uses PNG frames and near-lossless encoding. Remotion
+ * auto-tunes concurrency unless --concurrency is supplied.
  *
  *   node scripts/render-local.mjs samples/code-becomes-geometry.tsx --preset max
  *   node scripts/render-local.mjs my-video.tsx --composition Main --scale 2 --codec h265
@@ -16,8 +17,9 @@
  *   --codec <name>       h264 | h265 | vp9 | prores | gif   (default: h264)
  *   --scale <number>     resolution multiplier        (default: 1)
  *   --crf <number>       overrides the preset quality
- *   --concurrency <n>    overrides "use every core"
+ *   --concurrency <n>    overrides Remotion's auto-tuned worker count
  *   --frames <a-b>       render a frame range, e.g. 0-119
+ *   --muted              render without music, SFX, narration or source audio
  *   --out <path>         output file                  (default: out/<id>.<ext>)
  */
 
@@ -39,6 +41,10 @@ function parseArgs(argv) {
 	const args = { entry: null }
 	for (let index = 0; index < argv.length; index++) {
 		const token = argv[index]
+		if (token === '--muted') {
+			args.muted = true
+			continue
+		}
 		if (token.startsWith('--')) {
 			const key = token.slice(2)
 			const value = argv[index + 1]
@@ -49,6 +55,16 @@ function parseArgs(argv) {
 		}
 	}
 	return args
+}
+
+/**
+ * WebGL scenes need ANGLE. A headless Linux box (CI, container, VM) has no
+ * graphics stack, so it uses ANGLE's SwiftShader backend instead of failing.
+ */
+function openGlRenderer() {
+	const configured = process.env.REMOTION_GL?.trim()
+	if (configured) return configured
+	return os.platform() === 'linux' ? 'swangle' : 'angle'
 }
 
 function bar(ratio) {
@@ -72,11 +88,13 @@ async function main() {
 	const cores = os.cpus().length
 	const concurrency = args.concurrency ? Number(args.concurrency) : null
 
-	console.log(`\n  Remotion max-power render`)
+	console.log(`\n  Remotion high-quality render`)
 	console.log(`  entry       ${args.entry}`)
 	console.log(`  preset      ${presetName} (crf ${args.crf ?? preset.crf}, ${preset.imageFormat} frames)`)
 	console.log(`  codec       ${codec}`)
-	console.log(`  cores       ${concurrency ?? `${cores} (all)`}\n`)
+	console.log(`  audio       ${args.muted ? 'off' : 'on'}`)
+	console.log(`  webgl       ${openGlRenderer()}`)
+	console.log(`  workers     ${concurrency ?? `auto-tuned on ${cores} logical cores`}\n`)
 
 	const serveUrl = await bundle({
 		entryPoint,
@@ -97,16 +115,12 @@ async function main() {
 		}
 	}
 
-	const base = await selectComposition({ serveUrl, id: compositionId, inputProps: {} })
-	const even = (value) => {
-		const rounded = Math.round(value)
-		return rounded % 2 === 0 ? rounded : rounded + 1
-	}
-	const composition = {
-		...base,
-		width: even(base.width * scale),
-		height: even(base.height * scale),
-	}
+	// The composition keeps its authored size. `scale` multiplies the raster
+	// resolution only, so a 2x render is the same design with more pixels -
+	// resizing the composition instead would re-flow every layout.
+	const composition = await selectComposition({ serveUrl, id: compositionId, inputProps: {} })
+	const outputWidth = Math.round(composition.width * scale)
+	const outputHeight = Math.round(composition.height * scale)
 
 	const extension = EXTENSIONS[codec] ?? 'mp4'
 	const outputLocation = path.resolve(
@@ -129,14 +143,16 @@ async function main() {
 		x264Preset: codec === 'h264' ? preset.x264Preset : undefined,
 		// yuv420p is what every social platform and QuickTime expects.
 		pixelFormat: codec === 'h264' || codec === 'h265' ? 'yuv420p' : undefined,
+		muted: Boolean(args.muted),
 		audioCodec: codec === 'h264' || codec === 'h265' ? 'aac' : undefined,
 		audioBitrate: codec === 'h264' || codec === 'h265' ? '320k' : undefined,
 		imageFormat: preset.imageFormat,
 		jpegQuality: preset.imageFormat === 'jpeg' ? preset.jpegQuality : undefined,
 		proResProfile: codec === 'prores' ? '4444' : undefined,
 		frameRange,
+		scale,
 		concurrency,
-		chromiumOptions: { gl: process.env.REMOTION_GL ?? 'angle' },
+		chromiumOptions: { gl: openGlRenderer() },
 		hardwareAcceleration: 'if-possible',
 		offthreadVideoCacheSizeInBytes: 1024 * 1024 * 1024,
 		timeoutInMilliseconds: 300_000,
@@ -150,7 +166,7 @@ async function main() {
 
 	const seconds = ((Date.now() - started) / 1000).toFixed(1)
 	console.log(`\n\n  done in ${seconds}s -> ${outputLocation}`)
-	console.log(`  ${composition.width}x${composition.height} @ ${composition.fps}fps\n`)
+	console.log(`  ${outputWidth}x${outputHeight} @ ${composition.fps}fps (${composition.width}x${composition.height} at ${scale}x)\n`)
 }
 
 main().catch((error) => {
