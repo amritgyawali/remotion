@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Layered hexagon</title>
+  <defs>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#5FF4E5"/><stop offset="1" stop-color="#9678FF"/>
+    </linearGradient>
+    <radialGradient id="orb"><stop stop-color="#F8FAFF"/><stop offset=".28" stop-color="#5FF4E5"/><stop offset="1" stop-color="#9678FF"/></radialGradient>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="13" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    
+  </defs>
+  
+  <path d="M256 52l178 102v204L256 460 78 358V154z" fill="none" stroke="url(#accent)" stroke-width="24"/><path d="M256 128l112 64v128l-112 64-112-64V192z" fill="none" stroke="#F8FAFF" stroke-width="8" opacity=".65"/>
+</svg>

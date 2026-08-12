@@ -1,0 +1,336 @@
+{
+  "version": 1,
+  "license": "CC0-1.0",
+  "generated": true,
+  "description": "Original editable SVG assets generated from basic geometry by this project.",
+  "assets": [
+    {
+      "id": "icons/spark",
+      "category": "icons",
+      "name": "spark",
+      "title": "Spark icon",
+      "path": "/assets/visual/v1/icons/spark.svg",
+      "format": "svg"
+    },
+    {
+      "id": "icons/play",
+      "category": "icons",
+      "name": "play",
+      "title": "Play icon",
+      "path": "/assets/visual/v1/icons/play.svg",
+      "format": "svg"
+    },
+    {
+      "id": "icons/bolt",
+      "category": "icons",
+      "name": "bolt",
+      "title": "Lightning bolt icon",
+      "path": "/assets/visual/v1/icons/bolt.svg",
+      "format": "svg"
+    },
+    {
+      "id": "icons/target",
+      "category": "icons",
+      "name": "target",
+      "title": "Target icon",
+      "path": "/assets/visual/v1/icons/target.svg",
+      "format": "svg"
+    },
+    {
+      "id": "icons/chart",
+      "category": "icons",
+      "name": "chart",
+      "title": "Growth chart icon",
+      "path": "/assets/visual/v1/icons/chart.svg",
+      "format": "svg"
+    },
+    {
+      "id": "icons/layers",
+      "category": "icons",
+      "name": "layers",
+      "title": "Layers icon",
+      "path": "/assets/visual/v1/icons/layers.svg",
+      "format": "svg"
+    },
+    {
+      "id": "icons/cube",
+      "category": "icons",
+      "name": "cube",
+      "title": "Cube icon",
+      "path": "/assets/visual/v1/icons/cube.svg",
+      "format": "svg"
+    },
+    {
+      "id": "icons/code",
+      "category": "icons",
+      "name": "code",
+      "title": "Code brackets icon",
+      "path": "/assets/visual/v1/icons/code.svg",
+      "format": "svg"
+    },
+    {
+      "id": "icons/cursor",
+      "category": "icons",
+      "name": "cursor",
+      "title": "Cursor icon",
+      "path": "/assets/visual/v1/icons/cursor.svg",
+      "format": "svg"
+    },
+    {
+      "id": "icons/check",
+      "category": "icons",
+      "name": "check",
+      "title": "Check icon",
+      "path": "/assets/visual/v1/icons/check.svg",
+      "format": "svg"
+    },
+    {
+      "id": "icons/rocket",
+      "category": "icons",
+      "name": "rocket",
+      "title": "Rocket icon",
+      "path": "/assets/visual/v1/icons/rocket.svg",
+      "format": "svg"
+    },
+    {
+      "id": "icons/sound",
+      "category": "icons",
+      "name": "sound",
+      "title": "Sound icon",
+      "path": "/assets/visual/v1/icons/sound.svg",
+      "format": "svg"
+    },
+    {
+      "id": "arrows/arrow-right",
+      "category": "arrows",
+      "name": "arrow-right",
+      "title": "Straight right arrow",
+      "path": "/assets/visual/v1/arrows/arrow-right.svg",
+      "format": "svg"
+    },
+    {
+      "id": "arrows/arrow-up-right",
+      "category": "arrows",
+      "name": "arrow-up-right",
+      "title": "Up-right arrow",
+      "path": "/assets/visual/v1/arrows/arrow-up-right.svg",
+      "format": "svg"
+    },
+    {
+      "id": "arrows/arrow-curve",
+      "category": "arrows",
+      "name": "arrow-curve",
+      "title": "Curved flow arrow",
+      "path": "/assets/visual/v1/arrows/arrow-curve.svg",
+      "format": "svg"
+    },
+    {
+      "id": "arrows/arrow-loop",
+      "category": "arrows",
+      "name": "arrow-loop",
+      "title": "Loop arrow",
+      "path": "/assets/visual/v1/arrows/arrow-loop.svg",
+      "format": "svg"
+    },
+    {
+      "id": "arrows/chevrons",
+      "category": "arrows",
+      "name": "chevrons",
+      "title": "Forward chevrons",
+      "path": "/assets/visual/v1/arrows/chevrons.svg",
+      "format": "svg"
+    },
+    {
+      "id": "neon/neon-ring",
+      "category": "neon",
+      "name": "neon-ring",
+      "title": "Neon energy ring",
+      "path": "/assets/visual/v1/neon/neon-ring.svg",
+      "format": "svg"
+    },
+    {
+      "id": "neon/neon-portal",
+      "category": "neon",
+      "name": "neon-portal",
+      "title": "Neon portal",
+      "path": "/assets/visual/v1/neon/neon-portal.svg",
+      "format": "svg"
+    },
+    {
+      "id": "neon/neon-bolt",
+      "category": "neon",
+      "name": "neon-bolt",
+      "title": "Neon bolt",
+      "path": "/assets/visual/v1/neon/neon-bolt.svg",
+      "format": "svg"
+    },
+    {
+      "id": "neon/neon-rays",
+      "category": "neon",
+      "name": "neon-rays",
+      "title": "Neon radial rays",
+      "path": "/assets/visual/v1/neon/neon-rays.svg",
+      "format": "svg"
+    },
+    {
+      "id": "geometry/triangle",
+      "category": "geometry",
+      "name": "triangle",
+      "title": "Gradient triangle",
+      "path": "/assets/visual/v1/geometry/triangle.svg",
+      "format": "svg"
+    },
+    {
+      "id": "geometry/hexagon",
+      "category": "geometry",
+      "name": "hexagon",
+      "title": "Layered hexagon",
+      "path": "/assets/visual/v1/geometry/hexagon.svg",
+      "format": "svg"
+    },
+    {
+      "id": "geometry/diamond",
+      "category": "geometry",
+      "name": "diamond",
+      "title": "Faceted diamond",
+      "path": "/assets/visual/v1/geometry/diamond.svg",
+      "format": "svg"
+    },
+    {
+      "id": "geometry/orbit",
+      "category": "geometry",
+      "name": "orbit",
+      "title": "Orbital geometry",
+      "path": "/assets/visual/v1/geometry/orbit.svg",
+      "format": "svg"
+    },
+    {
+      "id": "geometry/grid",
+      "category": "geometry",
+      "name": "grid",
+      "title": "Perspective grid",
+      "path": "/assets/visual/v1/geometry/grid.svg",
+      "format": "svg"
+    },
+    {
+      "id": "geometry/star",
+      "category": "geometry",
+      "name": "star",
+      "title": "Geometric star",
+      "path": "/assets/visual/v1/geometry/star.svg",
+      "format": "svg"
+    },
+    {
+      "id": "depth-3d/isometric-cube",
+      "category": "depth-3d",
+      "name": "isometric-cube",
+      "title": "Isometric cube",
+      "path": "/assets/visual/v1/depth-3d/isometric-cube.svg",
+      "format": "svg"
+    },
+    {
+      "id": "depth-3d/pyramid",
+      "category": "depth-3d",
+      "name": "pyramid",
+      "title": "Faceted pyramid",
+      "path": "/assets/visual/v1/depth-3d/pyramid.svg",
+      "format": "svg"
+    },
+    {
+      "id": "depth-3d/prism",
+      "category": "depth-3d",
+      "name": "prism",
+      "title": "Glass prism",
+      "path": "/assets/visual/v1/depth-3d/prism.svg",
+      "format": "svg"
+    },
+    {
+      "id": "depth-3d/wire-sphere",
+      "category": "depth-3d",
+      "name": "wire-sphere",
+      "title": "Wireframe sphere",
+      "path": "/assets/visual/v1/depth-3d/wire-sphere.svg",
+      "format": "svg"
+    },
+    {
+      "id": "depth-3d/torus",
+      "category": "depth-3d",
+      "name": "torus",
+      "title": "3D torus",
+      "path": "/assets/visual/v1/depth-3d/torus.svg",
+      "format": "svg"
+    },
+    {
+      "id": "depth-3d/steps",
+      "category": "depth-3d",
+      "name": "steps",
+      "title": "Isometric steps",
+      "path": "/assets/visual/v1/depth-3d/steps.svg",
+      "format": "svg"
+    },
+    {
+      "id": "objects/phone",
+      "category": "objects",
+      "name": "phone",
+      "title": "Smartphone object",
+      "path": "/assets/visual/v1/objects/phone.svg",
+      "format": "svg"
+    },
+    {
+      "id": "objects/laptop",
+      "category": "objects",
+      "name": "laptop",
+      "title": "Laptop object",
+      "path": "/assets/visual/v1/objects/laptop.svg",
+      "format": "svg"
+    },
+    {
+      "id": "objects/lightbulb",
+      "category": "objects",
+      "name": "lightbulb",
+      "title": "Idea lightbulb object",
+      "path": "/assets/visual/v1/objects/lightbulb.svg",
+      "format": "svg"
+    },
+    {
+      "id": "objects/trophy",
+      "category": "objects",
+      "name": "trophy",
+      "title": "Trophy object",
+      "path": "/assets/visual/v1/objects/trophy.svg",
+      "format": "svg"
+    },
+    {
+      "id": "objects/camera",
+      "category": "objects",
+      "name": "camera",
+      "title": "Camera object",
+      "path": "/assets/visual/v1/objects/camera.svg",
+      "format": "svg"
+    },
+    {
+      "id": "objects/microphone",
+      "category": "objects",
+      "name": "microphone",
+      "title": "Microphone object",
+      "path": "/assets/visual/v1/objects/microphone.svg",
+      "format": "svg"
+    },
+    {
+      "id": "objects/planet",
+      "category": "objects",
+      "name": "planet",
+      "title": "Ringed planet object",
+      "path": "/assets/visual/v1/objects/planet.svg",
+      "format": "svg"
+    },
+    {
+      "id": "objects/package",
+      "category": "objects",
+      "name": "package",
+      "title": "Product package object",
+      "path": "/assets/visual/v1/objects/package.svg",
+      "format": "svg"
+    }
+  ]
+}

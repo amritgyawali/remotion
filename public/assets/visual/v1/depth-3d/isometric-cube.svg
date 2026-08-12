@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Isometric cube</title>
+  <defs>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#5FF4E5"/><stop offset="1" stop-color="#9678FF"/>
+    </linearGradient>
+    <radialGradient id="orb"><stop stop-color="#F8FAFF"/><stop offset=".28" stop-color="#5FF4E5"/><stop offset="1" stop-color="#9678FF"/></radialGradient>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="13" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    
+  </defs>
+  
+  <path d="M256 48L68 154v210l188 104 188-104V154z" fill="#121735" stroke="#F8FAFF" stroke-width="10"/><path d="M68 154l188 104 188-104-188-106z" fill="url(#accent)"/><path d="M68 154v210l188 104V258z" fill="#4DA3FF" opacity=".55"/><path d="M444 154v210L256 468V258z" fill="#9678FF" opacity=".62"/>
+</svg>

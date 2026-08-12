@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Faceted pyramid</title>
+  <defs>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#5FF4E5"/><stop offset="1" stop-color="#9678FF"/>
+    </linearGradient>
+    <radialGradient id="orb"><stop stop-color="#F8FAFF"/><stop offset=".28" stop-color="#5FF4E5"/><stop offset="1" stop-color="#9678FF"/></radialGradient>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="13" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    
+  </defs>
+  
+  <path d="M256 40L52 426h408z" fill="#10142D"/><path d="M256 40L52 426h204z" fill="#4DA3FF" opacity=".68"/><path d="M256 40l204 386H256z" fill="#9678FF" opacity=".66"/><path d="M52 426h408L256 330z" fill="#5FF4E5" opacity=".46"/><path d="M256 40L52 426h408z" fill="none" stroke="#F8FAFF" stroke-width="10"/>
+</svg>

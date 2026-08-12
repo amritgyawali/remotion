@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Camera object</title>
+  <defs>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#5FF4E5"/><stop offset="1" stop-color="#9678FF"/>
+    </linearGradient>
+    <radialGradient id="orb"><stop stop-color="#F8FAFF"/><stop offset=".28" stop-color="#5FF4E5"/><stop offset="1" stop-color="#9678FF"/></radialGradient>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="13" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    
+  </defs>
+  
+  <rect x="58" y="132" width="396" height="286" rx="38" fill="#11162E" stroke="url(#accent)" stroke-width="14"/><path d="M144 132l34-60h156l34 60" fill="#252C50" stroke="#F8FAFF" stroke-width="12"/><circle cx="256" cy="274" r="96" fill="#080A16" stroke="#F8FAFF" stroke-width="14"/><circle cx="256" cy="274" r="58" fill="url(#orb)"/><circle cx="402" cy="184" r="16" fill="#FF6EC7"/>
+</svg>

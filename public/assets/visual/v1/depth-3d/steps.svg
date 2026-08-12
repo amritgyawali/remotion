@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Isometric steps</title>
+  <defs>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#5FF4E5"/><stop offset="1" stop-color="#9678FF"/>
+    </linearGradient>
+    <radialGradient id="orb"><stop stop-color="#F8FAFF"/><stop offset=".28" stop-color="#5FF4E5"/><stop offset="1" stop-color="#9678FF"/></radialGradient>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="13" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    
+  </defs>
+  
+  <path d="M66 374l104 60 278-160-104-60z" fill="#31266A"/><path d="M66 304l104 60 214-124-104-60z" fill="#3E6FC2"/><path d="M66 234l104 60 150-86-104-60z" fill="#5CBBC4"/><path d="M66 164l104 60 86-50-104-60z" fill="#F8FAFF"/><path d="M66 164v210l104 60V224z" fill="#182044" opacity=".9"/><g fill="none" stroke="#F8FAFF" stroke-width="8" stroke-linejoin="round"><path d="M66 164l86-50 104 60 64 34 64 32 64 34v70L170 434 66 374z"/></g>
+</svg>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Wireframe sphere</title>
+  <defs>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#5FF4E5"/><stop offset="1" stop-color="#9678FF"/>
+    </linearGradient>
+    <radialGradient id="orb"><stop stop-color="#F8FAFF"/><stop offset=".28" stop-color="#5FF4E5"/><stop offset="1" stop-color="#9678FF"/></radialGradient>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="13" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    
+  </defs>
+  
+  <circle cx="256" cy="256" r="202" fill="#0B1024" stroke="url(#accent)" stroke-width="14"/><g fill="none" stroke="#F8FAFF" stroke-width="7" opacity=".72"><ellipse cx="256" cy="256" rx="92" ry="202"/><ellipse cx="256" cy="256" rx="202" ry="78"/><path d="M91 140c100 60 230 60 330 0M91 372c100-60 230-60 330 0"/></g>
+</svg>

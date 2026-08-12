@@ -1,6 +1,6 @@
 # Remotion Video Studio
 
-Upload a code file, get a rendered video. A Next.js 15 App Router app that
+Upload a code file, get a rendered video. A Next.js 16 App Router app that
 compiles a Remotion composition **in the browser**, previews it frame-accurately
 and encodes a finished MP4/WebM with WebCodecs - including music and sound -
 with no render server or queue.
@@ -13,6 +13,8 @@ upload .tsx / .zip  ->  sucrase compile  ->  <Player> preview  ->  browser video
 ```
 
 ## Quick start
+
+Requires Node.js 20.9 or newer.
 
 ```bash
 npm install
@@ -67,6 +69,7 @@ renderer disabled for the simplest free public deployment.
 | `MAX_RENDER_PIXELS` | `8294400` | Resolution ceiling (4K) for a single server render. |
 | `REMOTION_CONCURRENCY` | `max` | `max` uses every core; a number pins it. |
 | `REMOTION_GL` | `swangle` | Chrome GL backend used on the server. |
+| `NEXT_PUBLIC_REMOTION_LICENSE_KEY` | `free-license` | Set a purchased Remotion key if the Free License does not cover your team. |
 | `BLOB_READ_WRITE_TOKEN` | unset | Finished server renders are uploaded to Vercel Blob instead of streamed back inline. |
 
 Copy `.env.example` to `.env.local` to try them locally.
@@ -84,7 +87,7 @@ Copy `.env.example` to `.env.local` to try them locally.
 | Limits | browser codec/RAM support | `maxDuration` 300s, frame/pixel caps | machine resources |
 | Formats | MP4 (H.264 + AAC), WebM (VP9/VP8 + Opus), PNG | + GIF, ProRes 4444 | + H.265, any Remotion codec |
 | Quality | up to 160 Mbps, 2x scale | crf 9, PNG frames, veryslow x264 | crf 9, PNG frames, every core |
-| Needs | Chrome / Edge / Safari 16.4+ | `ENABLE_SERVER_RENDER=1` | Node on your machine |
+| Needs | Chrome / Edge recommended; Safari 16.4+ | `ENABLE_SERVER_RENDER=1` | Node 20.9+ on your machine |
 
 **Max power, locally:**
 
@@ -201,8 +204,9 @@ from the macroblock rate so Chrome accepts 4K, and the encoder runs in
 
 ## Troubleshooting
 
-* **"This browser has no WebCodecs support"** - use Chrome/Edge 94+, Safari
-  16.4+, or enable the server engine.
+* **"This browser has no WebCodecs support"** - use current Chrome/Edge for the
+  fullest effects support, Safari 16.4+ for compatible projects, or enable the
+  server engine.
 * **"That file did not compile"** - the stage shows the exact error and file.
   Check that every import is in the supported list above.
 * **Server render 503** - `ENABLE_SERVER_RENDER` is not `1` on that deployment.
@@ -216,5 +220,3 @@ from the macroblock rate so Chrome accepts 4K, and the encoder runs in
 MIT for this app. Generated visual/audio assets are CC0-1.0. Remotion and your
 hosting provider have their own usage/license terms; review them before a public
 commercial launch: <https://remotion.dev/license> and <https://vercel.com/pricing>.
-#   r e m o t i o n  
- 

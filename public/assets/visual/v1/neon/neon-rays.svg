@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Neon radial rays</title>
+  <defs>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#5FF4E5"/><stop offset="1" stop-color="#9678FF"/>
+    </linearGradient>
+    <radialGradient id="orb"><stop stop-color="#F8FAFF"/><stop offset=".28" stop-color="#5FF4E5"/><stop offset="1" stop-color="#9678FF"/></radialGradient>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="13" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    
+  </defs>
+  <rect width="512" height="512" rx="72" fill="#080A16"/>
+  <g stroke="url(#accent)" stroke-width="12" stroke-linecap="round" filter="url(#glow)"><path d="M256 62v72" transform="rotate(0 256 256)"/><path d="M256 62v72" transform="rotate(22.5 256 256)"/><path d="M256 62v72" transform="rotate(45 256 256)"/><path d="M256 62v72" transform="rotate(67.5 256 256)"/><path d="M256 62v72" transform="rotate(90 256 256)"/><path d="M256 62v72" transform="rotate(112.5 256 256)"/><path d="M256 62v72" transform="rotate(135 256 256)"/><path d="M256 62v72" transform="rotate(157.5 256 256)"/><path d="M256 62v72" transform="rotate(180 256 256)"/><path d="M256 62v72" transform="rotate(202.5 256 256)"/><path d="M256 62v72" transform="rotate(225 256 256)"/><path d="M256 62v72" transform="rotate(247.5 256 256)"/><path d="M256 62v72" transform="rotate(270 256 256)"/><path d="M256 62v72" transform="rotate(292.5 256 256)"/><path d="M256 62v72" transform="rotate(315 256 256)"/><path d="M256 62v72" transform="rotate(337.5 256 256)"/></g><circle cx="256" cy="256" r="62" fill="url(#orb)"/>
+</svg>

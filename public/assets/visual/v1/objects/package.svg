@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Product package object</title>
+  <defs>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#5FF4E5"/><stop offset="1" stop-color="#9678FF"/>
+    </linearGradient>
+    <radialGradient id="orb"><stop stop-color="#F8FAFF"/><stop offset=".28" stop-color="#5FF4E5"/><stop offset="1" stop-color="#9678FF"/></radialGradient>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="13" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    
+  </defs>
+  
+  <path d="M256 44L70 146v220l186 102 186-102V146z" fill="#151A36" stroke="#F8FAFF" stroke-width="10"/><path d="M70 146l186 104 186-104-186-102z" fill="url(#accent)" opacity=".8"/><path d="M70 146v220l186 102V250z" fill="#4DA3FF" opacity=".5"/><path d="M442 146v220L256 468V250z" fill="#9678FF" opacity=".55"/><path d="M164 94l188 104v76" fill="none" stroke="#F8FAFF" stroke-width="10" opacity=".8"/>
+</svg>

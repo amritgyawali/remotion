@@ -1,0 +1,18 @@
+{
+  "name": "kinetic-quote-remotion",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "remotion studio",
+    "render": "remotion render KineticQuote out.mp4 --codec=h264 --crf=14"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.360",
+    "remotion": "4.0.360",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.2"
+  }
+}
