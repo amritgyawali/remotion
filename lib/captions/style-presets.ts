@@ -1,4 +1,5 @@
 import type {
+	CaptionDevanagariFontId,
 	CaptionFontId,
 	CaptionLayoutOptions,
 	CaptionStyle,
@@ -88,11 +89,44 @@ export const CAPTION_FONTS: Record<
 
 export const CAPTION_FONT_IDS = Object.keys(CAPTION_FONTS) as CaptionFontId[]
 
+/**
+ * Devanagari companions.
+ *
+ * Not one of the Latin families above contains a Devanagari glyph, so Nepali
+ * text set in them renders as tofu boxes. The composition loads a companion
+ * face and puts it second in the font stack: the browser resolves the family
+ * per character, so "यो feature धेरै राम्रो छ" keeps the Latin words in the
+ * chosen display face and the Nepali words in a face that can actually draw
+ * them - one caption, one visual voice.
+ */
+export const DEVANAGARI_FONTS: Record<
+	CaptionDevanagariFontId,
+	{ family: string; file: string; weight: string; fallback: string; label: string }
+> = {
+	notoSansDevanagari: {
+		family: 'Noto Sans Devanagari',
+		file: 'noto-sans-devanagari/NotoSansDevanagari[wdth,wght].ttf',
+		weight: '100 900',
+		fallback: '"Mangal", "Kokila", sans-serif',
+		label: 'Noto Sans Devanagari - complete, highly legible',
+	},
+	anekDevanagari: {
+		family: 'Anek Devanagari',
+		file: 'anek-devanagari/AnekDevanagari[wdth,wght].ttf',
+		weight: '100 800',
+		fallback: '"Mangal", "Kokila", sans-serif',
+		label: 'Anek Devanagari - condensed, display-ready',
+	},
+}
+
+export const DEVANAGARI_FONT_IDS = Object.keys(DEVANAGARI_FONTS) as CaptionDevanagariFontId[]
+
 export const DEFAULT_LAYOUT: CaptionLayoutOptions = {
 	maxWordsPerCue: 4,
 	maxCharactersPerCue: 32,
 	maxCueDurationMs: 2400,
 	splitOnGapMs: 420,
+	minCueMs: 700,
 }
 
 const BASE: CaptionStyle = {
@@ -117,6 +151,11 @@ const BASE: CaptionStyle = {
 	offsetPercent: 16,
 	maxWidthPercent: 82,
 	animation: 'pop',
+	reveal: 'word',
+	maxLines: 2,
+	scrim: 0.18,
+	devanagari: false,
+	devanagariFontId: 'notoSansDevanagari',
 }
 
 export type CaptionPresetDefinition = {
@@ -150,8 +189,17 @@ export const CAPTION_PRESETS: CaptionPresetDefinition[] = [
 			shadow: 0.6,
 			animation: 'pop',
 			offsetPercent: 17,
+			reveal: 'word',
+			maxLines: 2,
+			scrim: 0.16,
 		},
-		layout: { maxWordsPerCue: 3, maxCharactersPerCue: 24, maxCueDurationMs: 1800, splitOnGapMs: 380 },
+		layout: {
+			maxWordsPerCue: 3,
+			maxCharactersPerCue: 24,
+			maxCueDurationMs: 1800,
+			splitOnGapMs: 380,
+			minCueMs: 620,
+		},
 	},
 	{
 		id: 'karaoke',
@@ -171,8 +219,17 @@ export const CAPTION_PRESETS: CaptionPresetDefinition[] = [
 			shadow: 0.45,
 			animation: 'fade',
 			offsetPercent: 14,
+			reveal: 'line',
+			maxLines: 2,
+			scrim: 0.22,
 		},
-		layout: { maxWordsPerCue: 6, maxCharactersPerCue: 38, maxCueDurationMs: 2800, splitOnGapMs: 500 },
+		layout: {
+			maxWordsPerCue: 6,
+			maxCharactersPerCue: 38,
+			maxCueDurationMs: 2800,
+			splitOnGapMs: 500,
+			minCueMs: 780,
+		},
 	},
 	{
 		id: 'broadcast',
@@ -196,8 +253,17 @@ export const CAPTION_PRESETS: CaptionPresetDefinition[] = [
 			animation: 'fade',
 			offsetPercent: 9,
 			maxWidthPercent: 76,
+			reveal: 'line',
+			maxLines: 2,
+			scrim: 0,
 		},
-		layout: { maxWordsPerCue: 9, maxCharactersPerCue: 46, maxCueDurationMs: 3600, splitOnGapMs: 600 },
+		layout: {
+			maxWordsPerCue: 9,
+			maxCharactersPerCue: 46,
+			maxCueDurationMs: 3600,
+			splitOnGapMs: 600,
+			minCueMs: 900,
+		},
 	},
 	{
 		id: 'minimal',
@@ -219,8 +285,17 @@ export const CAPTION_PRESETS: CaptionPresetDefinition[] = [
 			animation: 'slide',
 			offsetPercent: 11,
 			maxWidthPercent: 74,
+			reveal: 'line',
+			maxLines: 2,
+			scrim: 0.26,
 		},
-		layout: { maxWordsPerCue: 6, maxCharactersPerCue: 40, maxCueDurationMs: 3000, splitOnGapMs: 520 },
+		layout: {
+			maxWordsPerCue: 6,
+			maxCharactersPerCue: 40,
+			maxCueDurationMs: 3000,
+			splitOnGapMs: 520,
+			minCueMs: 820,
+		},
 	},
 	{
 		id: 'neon',
@@ -242,8 +317,17 @@ export const CAPTION_PRESETS: CaptionPresetDefinition[] = [
 			shadow: 1,
 			animation: 'pop',
 			offsetPercent: 15,
+			reveal: 'word',
+			maxLines: 2,
+			scrim: 0.3,
 		},
-		layout: { maxWordsPerCue: 4, maxCharactersPerCue: 28, maxCueDurationMs: 2000, splitOnGapMs: 420 },
+		layout: {
+			maxWordsPerCue: 4,
+			maxCharactersPerCue: 28,
+			maxCueDurationMs: 2000,
+			splitOnGapMs: 420,
+			minCueMs: 700,
+		},
 	},
 	{
 		id: 'boxed',
@@ -263,8 +347,17 @@ export const CAPTION_PRESETS: CaptionPresetDefinition[] = [
 			shadow: 0.4,
 			animation: 'slide',
 			offsetPercent: 15,
+			reveal: 'word',
+			maxLines: 2,
+			scrim: 0.12,
 		},
-		layout: { maxWordsPerCue: 4, maxCharactersPerCue: 30, maxCueDurationMs: 2200, splitOnGapMs: 440 },
+		layout: {
+			maxWordsPerCue: 4,
+			maxCharactersPerCue: 30,
+			maxCueDurationMs: 2200,
+			splitOnGapMs: 440,
+			minCueMs: 700,
+		},
 	},
 ]
 

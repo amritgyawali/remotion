@@ -24,8 +24,8 @@
 			"bytes": 170812
 		},
 		"v1/anton/OFL.txt": {
-			"sha256": "ee67e6ee22790b7929f1a3769ca2801d565c64b5a9096942c1adf5596de9c9e4",
-			"bytes": 4484
+			"sha256": "eee1d24ff8f553eb732237c7dd9b945a78313ed49ad6de02872a47277741b44a",
+			"bytes": 4391
 		},
 		"v1/bebas-neue/BebasNeue-Regular.ttf": {
 			"sha256": "08e4623805102d819f58601e46e345648846075e363b2ceb23313c2d1c83ec73",
@@ -40,8 +40,8 @@
 			"bytes": 172088
 		},
 		"v1/oswald/OFL.txt": {
-			"sha256": "0fd731a904b729a4e02eaf5e8ebd06783edd9abe400e8882760160230675b652",
-			"bytes": 4483
+			"sha256": "0687c51a3126ae6963389181135a2eaea02f2e88f31230d27409952f28e84da5",
+			"bytes": 4390
 		},
 		"v1/playfair-display/PlayfairDisplay[wght].ttf": {
 			"sha256": "c40f2293766a503bc70cce9e512ef844a4ccb7cbcde792fe2ea31d191917d8d6",
@@ -56,8 +56,8 @@
 			"bytes": 136676
 		},
 		"v1/space-grotesk/OFL.txt": {
-			"sha256": "564ce565c371c5e5bbf286006565a7c9aa55a9f56e7ca58d56e05d649dd61a72",
-			"bytes": 4495
+			"sha256": "c6dec685825f73b18c20926fddc65e8315642e12986f15db0699170940a09efc",
+			"bytes": 4402
 		},
 		"v1/jetbrains-mono/JetBrainsMono[wght].ttf": {
 			"sha256": "48715a42ec242c21e9f02692891e147d022299a52e48d5e413e1a942193ffeda",
@@ -82,6 +82,22 @@
 		"v1/caveat/OFL.txt": {
 			"sha256": "1f9d81d094273d82f3898a1ee8b598a717d050ecbf5ff7bede105b704880157b",
 			"bytes": 4385
+		},
+		"v1/noto-sans-devanagari/NotoSansDevanagari[wdth,wght].ttf": {
+			"sha256": "9ce7b04f60e363d8870e5997744cf85cf69d38a4d7d129d364d92a3b14b461d7",
+			"bytes": 647144
+		},
+		"v1/noto-sans-devanagari/OFL.txt": {
+			"sha256": "a216f6f8d85c7228093e0ee5e258d9d377e6671f68acb4db1930b29583d0f331",
+			"bytes": 4386
+		},
+		"v1/anek-devanagari/AnekDevanagari[wdth,wght].ttf": {
+			"sha256": "b88cf0ff5705599b2f16fce4ba9ce2029f76106dd24f0419976c417d89f20888",
+			"bytes": 2190532
+		},
+		"v1/anek-devanagari/OFL.txt": {
+			"sha256": "de62be758bba267e653a5f457dfebb4680957e2c343eb3e7de15aff4746bed05",
+			"bytes": 4379
 		}
 	}
 }

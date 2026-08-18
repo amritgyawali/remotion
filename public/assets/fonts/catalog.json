@@ -8,9 +8,9 @@
 	"source": "https://github.com/google/fonts",
 	"cssPath": "/assets/fonts/v1/fonts.css",
 	"counts": {
-		"families": 10,
-		"variable": 8,
-		"bytes": 3244660
+		"families": 12,
+		"variable": 10,
+		"bytes": 6082336
 	},
 	"families": [
 		{
@@ -190,6 +190,44 @@
 			"licensePath": "/assets/fonts/v1/caveat/OFL.txt",
 			"license": "OFL-1.1",
 			"bytes": 403648
+		},
+		{
+			"id": "font:noto-sans-devanagari",
+			"family": "Noto Sans Devanagari",
+			"slug": "noto-sans-devanagari",
+			"category": "devanagari",
+			"mood": "neutral, complete, highly legible",
+			"useFor": "Nepali and Hindi subtitles, body copy and lower thirds",
+			"weight": "100 900",
+			"variable": true,
+			"axes": [
+				"wdth",
+				"wght"
+			],
+			"path": "/assets/fonts/v1/noto-sans-devanagari/NotoSansDevanagari[wdth,wght].ttf",
+			"staticFilePath": "assets/fonts/v1/noto-sans-devanagari/NotoSansDevanagari[wdth,wght].ttf",
+			"licensePath": "/assets/fonts/v1/noto-sans-devanagari/OFL.txt",
+			"license": "OFL-1.1",
+			"bytes": 647144
+		},
+		{
+			"id": "font:anek-devanagari",
+			"family": "Anek Devanagari",
+			"slug": "anek-devanagari",
+			"category": "devanagari",
+			"mood": "contemporary, condensed, display-ready",
+			"useFor": "loud Nepali social captions, titles and hooks",
+			"weight": "100 800",
+			"variable": true,
+			"axes": [
+				"wdth",
+				"wght"
+			],
+			"path": "/assets/fonts/v1/anek-devanagari/AnekDevanagari[wdth,wght].ttf",
+			"staticFilePath": "assets/fonts/v1/anek-devanagari/AnekDevanagari[wdth,wght].ttf",
+			"licensePath": "/assets/fonts/v1/anek-devanagari/OFL.txt",
+			"license": "OFL-1.1",
+			"bytes": 2190532
 		}
 	]
 }

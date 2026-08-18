@@ -1,16 +1,25 @@
 'use client'
 
-import { CAPTION_FONTS, CAPTION_FONT_IDS, CAPTION_PRESETS } from '../../lib/captions/style-presets'
+import {
+	CAPTION_FONTS,
+	CAPTION_FONT_IDS,
+	CAPTION_PRESETS,
+	DEVANAGARI_FONTS,
+	DEVANAGARI_FONT_IDS,
+} from '../../lib/captions/style-presets'
 import type {
 	CaptionAnimation,
 	CaptionBackground,
+	CaptionDevanagariFontId,
 	CaptionFontId,
 	CaptionHighlight,
 	CaptionPlacement,
+	CaptionReveal,
 	CaptionStyle,
 	CaptionStylePresetId,
+	ScriptMix,
 } from '../../lib/captions/types'
-import { IconSparkle } from '../Icons'
+import { IconInfo, IconSparkle, IconType } from '../Icons'
 
 /** <input type="color"> only speaks hex, so rgb()/rgba() values are converted. */
 function toHexColor(value: string): string {
@@ -110,14 +119,18 @@ function ColorField({
 export default function CaptionDesignPanel({
 	style,
 	disabled,
+	scriptMix,
 	onStyle,
 	onPreset,
 }: {
 	style: CaptionStyle
 	disabled: boolean
+	scriptMix: ScriptMix
 	onStyle: (patch: Partial<CaptionStyle>) => void
 	onPreset: (id: CaptionStylePresetId) => void
 }) {
+	const mixed = scriptMix.devanagari && scriptMix.latin
+
 	return (
 		<div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 			<div>
@@ -145,11 +158,84 @@ export default function CaptionDesignPanel({
 			</div>
 
 			<div>
+				<h2 className="section-label">
+					Script
+					<span className={`badge ${style.devanagari ? 'badge--green' : 'badge--muted'}`}>
+						{mixed
+							? 'Devanagari + Latin'
+							: scriptMix.devanagari
+								? 'Devanagari'
+								: scriptMix.latin
+									? 'Latin'
+									: 'no text yet'}
+					</span>
+				</h2>
+				<div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+					<div className="segmented" role="group" aria-label="Devanagari support">
+						<button
+							data-active={style.devanagari}
+							disabled={disabled}
+							onClick={() => onStyle({ devanagari: true })}
+						>
+							<IconType size={12} /> Devanagari on
+						</button>
+						<button
+							data-active={!style.devanagari}
+							disabled={disabled}
+							onClick={() => onStyle({ devanagari: false })}
+						>
+							Latin only
+						</button>
+					</div>
+
+					{style.devanagari ? (
+						<div className="field">
+							<label className="field-label" htmlFor="caption-devanagari-font">
+								Devanagari face
+							</label>
+							<select
+								id="caption-devanagari-font"
+								className="select"
+								value={style.devanagariFontId}
+								disabled={disabled}
+								onChange={(event) =>
+									onStyle({ devanagariFontId: event.target.value as CaptionDevanagariFontId })
+								}
+							>
+								{DEVANAGARI_FONT_IDS.map((id) => (
+									<option key={id} value={id}>
+										{DEVANAGARI_FONTS[id].label}
+									</option>
+								))}
+							</select>
+						</div>
+					) : null}
+
+					{scriptMix.devanagari && !style.devanagari ? (
+						<div className="notice notice--warn">
+							<span className="notice-icon">
+								<IconInfo size={14} />
+							</span>
+							<span>
+								This transcript contains Devanagari. With the companion face off, those words
+								render as empty boxes in the export.
+							</span>
+						</div>
+					) : (
+						<p className="hint-text" style={{ margin: 0 }}>
+							The Latin face below draws English words and the Devanagari face draws Nepali ones,
+							chosen per character - so a mixed line stays in one visual voice.
+						</p>
+					)}
+				</div>
+			</div>
+
+			<div>
 				<h2 className="section-label">Typography</h2>
 				<div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 					<div className="field">
 						<label className="field-label" htmlFor="caption-font">
-							Font
+							{style.devanagari ? 'Latin font' : 'Font'}
 						</label>
 						<select
 							id="caption-font"
@@ -358,6 +444,50 @@ export default function CaptionDesignPanel({
 			<div>
 				<h2 className="section-label">Placement &amp; motion</h2>
 				<div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+					<div className="field">
+						<span className="field-label">Word reveal</span>
+						<div className="segmented" role="group" aria-label="Reveal mode">
+							{(['word', 'line'] as CaptionReveal[]).map((option) => (
+								<button
+									key={option}
+									data-active={style.reveal === option}
+									disabled={disabled}
+									onClick={() => onStyle({ reveal: option })}
+								>
+									{option === 'word' ? 'Word by word' : 'Whole line'}
+								</button>
+							))}
+						</div>
+						<p className="hint-text" style={{ margin: 0 }}>
+							{style.reveal === 'word'
+								? 'Each word pops in on its own timestamp - the social-caption look.'
+								: 'The full line arrives at once, then the spoken word is marked - the broadcast look.'}
+						</p>
+					</div>
+					<Slider
+						id="caption-max-lines"
+						label="Lines per caption"
+						value={style.maxLines}
+						min={1}
+						max={3}
+						step={1}
+						disabled={disabled}
+						onChange={(value) => onStyle({ maxLines: value })}
+					/>
+					<Slider
+						id="caption-scrim"
+						label="Legibility scrim"
+						value={style.scrim}
+						min={0}
+						max={0.6}
+						step={0.02}
+						disabled={disabled}
+						onChange={(value) => onStyle({ scrim: value })}
+					/>
+					<p className="hint-text" style={{ margin: 0 }}>
+						A gradient wash that fades in behind the caption zone - the fix for white type
+						disappearing over sky, snow or a bright background.
+					</p>
 					<div className="segmented" role="group" aria-label="Placement">
 						{(['top', 'center', 'bottom'] as CaptionPlacement[]).map((option) => (
 							<button

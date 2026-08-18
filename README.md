@@ -63,20 +63,27 @@ Open **Subtitle a video** in the top bar, or go straight to
    size, frame rate and whether it has an audio track come from mediabunny, the
    same demuxer Remotion renders with. A public video URL works too.
 2. **Get the transcript**, three ways:
-   * **Auto** - Whisper runs inside the tab as WebAssembly. The model is
-     downloaded once (77 MB for tiny, 148 MB for base, 488 MB for small) into
-     IndexedDB and reused afterwards. Nothing is uploaded and no API key is
-     involved. Every word gets its own timestamp.
+   * **Auto** - Whisper runs inside the tab as WebAssembly. Six models from
+     tiny to small, English-only or multilingual (77 MB - 488 MB), downloaded
+     once into IndexedDB and reused afterwards. Nothing is uploaded and no API
+     key is involved. Every word gets its own timestamp, threads scale to the
+     device's cores, and a cleanup pass drops music/silence hallucinations and
+     the credit-loop lines Whisper sometimes falls into on long clips.
    * **Write** - paste the script and it is spread across the clip, weighted by
-     word length, with a blank line acting as a hard block break.
+     word length (Devanagari clusters count as one syllable, not one code
+     point, so Nepali timing reads naturally), with a blank line acting as a
+     hard block break.
    * **Import** - bring an existing `.srt` or `.vtt`; word timing is filled in so
      the karaoke styles still work.
 3. **Edit the lines** in the track under the preview: retime, retype, split,
    merge, delete, add, or nudge every cue at once. Line length is re-cut without
-   losing a single word timing.
+   losing a single word timing. A readability pass stretches any cue shorter
+   than ~0.7s into the following silence, never over the next line, so a quick
+   word never flashes past unread.
 4. **Style them** with six finished looks - social pop, karaoke fill, broadcast
    bar, clean minimal, neon glow, accent box - then adjust font, size, colour,
-   spoken-word highlight, outline, backdrop, placement and entrance.
+   spoken-word highlight, outline, backdrop, placement, entrance, word-by-word
+   vs. whole-line reveal, line count and a legibility scrim.
 5. **Render** with the same browser or server engine the code studio uses. The
    output carries the original audio unless you mute it.
 
@@ -85,6 +92,57 @@ clip and compiled in the tab. **Download the .tsx** to keep it: it is a
 self-contained file with your cues and style baked in, ready for Remotion Studio,
 CI, or a re-upload into the code studio. Captions also export as `.srt` and
 `.vtt`.
+
+### Nepali + English (code-switched) subtitles
+
+Built for the way people actually speak: one sentence mixing Nepali and
+English, à la *"यो feature धेरै राम्रो छ"*.
+
+* **Speech profile: Nepali + English** is the default in the Auto tab. It
+  selects Whisper's `small` multilingual model with `language: 'ne'` - the
+  largest model this studio can run on-device, which is what code-switched,
+  low-resource-language speech needs to transcribe reliably. English words in
+  the audio still come out as English; Nepali words come out in Devanagari.
+  English-only and "other language" profiles are also available, and picking
+  an `.en`-only model against a non-English profile is flagged before you
+  transcribe.
+* **Devanagari rendering is automatic.** The moment a transcript contains
+  Devanagari - from Whisper, a pasted script, or an imported subtitle file -
+  the studio turns on a companion Devanagari face (Noto Sans Devanagari or Anek
+  Devanagari) and puts it second in the CSS font stack. The browser resolves
+  the family per character, so "यो feature धेरै राम्रो छ" renders the English
+  words in your chosen display face and the Nepali words in a face that
+  actually has those glyphs - one caption, one visual voice, no tofu boxes.
+* **Line breaking measures visual width, not code points.** Devanagari matras,
+  anusvara, virama and joiners stack on the letter they belong to instead of
+  taking their own space; counting them literally would make "छेउ" look five
+  characters wide and leave every Nepali line ragged. Sentence-ending
+  `।` / `॥` (purna viram / deergh viram) end a cue exactly the way `.`/`!`/`?`
+  end an English one.
+* **Balanced line wrapping.** Rather than filling the first row and dropping
+  whatever's left onto the second, captions are linear-partitioned into up to
+  three rows of near-equal width - the same thing a typesetter does by eye,
+  computed with a binary search over row widths.
+
+### Fonts, on-device speech and readability, in depth
+
+* **Typography kit**: 12 self-hosted OFL families ship with the app - the 10
+  Latin faces plus **Noto Sans Devanagari** and **Anek Devanagari** for Nepali
+  and Hindi. `npm run assets:fonts` re-downloads and hash-locks all of them;
+  `npm run assets:verify` checks the lock without any network access.
+* **On-device speech recognition** uses `@remotion/whisper-web` -
+  whisper.cpp compiled to WebAssembly, running entirely in the tab.
+  `getLoadedModels()` tells the UI which models are already cached so it can
+  say "ready" instead of a download size, and threading is capped at
+  `hardwareConcurrency - 1` so the UI thread keeps painting the progress bar.
+* **Transcript hygiene**: bracketed sound events (`[Music]`, `(applause)`),
+  subtitle-credit lines (`Subtitles by...`, `अनुवाद:`, `सदस्यता लिनुहोस्`) and the
+  repeat-loops Whisper produces on long silence are filtered before a single
+  cue is created.
+* **Readability floor**: subtitling practice puts the shortest comfortable cue
+  around 0.7-1s. `enforceReadability()` stretches short cues into the silence
+  that follows them - never into the next line, never past the clip - so
+  fast speech never produces an unreadable flash of text.
 
 The route is served with `Cross-Origin-Opener-Policy: same-origin` and
 `Cross-Origin-Embedder-Policy: credentialless` because the speech model needs a
@@ -206,7 +264,7 @@ Open `/assets/index.html` in the running app, or click **Browse** under
 | --- | --- | --- |
 | Visuals | 41 editable SVGs: objects, icons, arrows, neon graphics, geometry, depth art | CC0-1.0 |
 | Textures | 20 PNGs: film grain, paper, halftone, scanlines, vignette, light leaks, glow/bokeh/spark/smoke sprites, 4 matcaps, 3 equirectangular environment maps | CC0-1.0 |
-| Typography | 10 self-hosted families (Inter, Archivo, Anton, Bebas Neue, Oswald, Playfair Display, Space Grotesk, JetBrains Mono, Nunito, Caveat) - 8 of them variable | OFL-1.1 |
+| Typography | 12 self-hosted families (Inter, Archivo, Anton, Bebas Neue, Oswald, Playfair Display, Space Grotesk, JetBrains Mono, Nunito, Caveat, Noto Sans Devanagari, Anek Devanagari) - 10 of them variable | OFL-1.1 |
 | Audio | 8 loopable music beds (neon, warm, cinematic, ambient, epic, lofi, corporate, tension) and 20 SFX | CC0-1.0 |
 
 ```tsx

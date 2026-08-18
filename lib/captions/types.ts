@@ -50,6 +50,9 @@ export type CaptionFontId =
 	| 'nunito'
 	| 'caveat'
 
+/** Companion face that draws Devanagari when a caption mixes scripts. */
+export type CaptionDevanagariFontId = 'notoSansDevanagari' | 'anekDevanagari'
+
 export type CaptionPlacement = 'bottom' | 'center' | 'top'
 
 /** How the word being spoken is marked. */
@@ -58,6 +61,13 @@ export type CaptionHighlight = 'color' | 'box' | 'scale' | 'none'
 export type CaptionBackground = 'none' | 'pill' | 'block'
 
 export type CaptionAnimation = 'pop' | 'fade' | 'slide' | 'none'
+
+/**
+ * `line` brings the whole caption in at once - the readable, broadcast way.
+ * `word` holds the line's layout and lets each word arrive on its own
+ * timestamp, which is the look social edits are built on.
+ */
+export type CaptionReveal = 'line' | 'word'
 
 export type CaptionStylePresetId =
 	| 'tiktok'
@@ -95,6 +105,14 @@ export type CaptionStyle = {
 	/** caption block width, percentage of composition width */
 	maxWidthPercent: number
 	animation: CaptionAnimation
+	reveal: CaptionReveal
+	/** how many balanced lines one caption may occupy, 1 - 3 */
+	maxLines: number
+	/** darkening behind the caption zone for legibility on bright footage, 0 - 1 */
+	scrim: number
+	/** load a Devanagari companion face - set automatically when Nepali is detected */
+	devanagari: boolean
+	devanagariFontId: CaptionDevanagariFontId
 }
 
 /** Controls how the word stream is cut into on-screen lines. */
@@ -104,9 +122,23 @@ export type CaptionLayoutOptions = {
 	maxCueDurationMs: number
 	/** a silence longer than this always starts a new cue */
 	splitOnGapMs: number
+	/**
+	 * Readability floor. Subtitle practice puts the shortest comfortable cue at
+	 * around 0.7 - 1s: anything briefer registers as a flash, however short the
+	 * words are. Cues are only extended into silence, never over the next line.
+	 */
+	minCueMs: number
 }
 
 export type WhisperModelId = 'tiny' | 'tiny.en' | 'base' | 'base.en' | 'small' | 'small.en'
+
+/** Which scripts a transcript actually contains, measured not guessed. */
+export type ScriptMix = {
+	latin: boolean
+	devanagari: boolean
+	/** share of Devanagari words, 0 - 1 */
+	devanagariShare: number
+}
 
 export type TranscribeStage =
 	| 'idle'

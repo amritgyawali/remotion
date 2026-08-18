@@ -35,7 +35,7 @@ const archivePath = path.join(assetsRoot, 'production-asset-kit.zip')
 const EXPECTED_VISUALS = 41
 const EXPECTED_AUDIO = 28
 const EXPECTED_TEXTURES = 20
-const EXPECTED_FONTS = 10
+const EXPECTED_FONTS = 12
 const FIXED_ZIP_DATE = new Date('2000-01-01T00:00:00.000Z')
 
 const sha256 = (buffer) => createHash('sha256').update(buffer).digest('hex')

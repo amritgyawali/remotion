@@ -12,10 +12,12 @@ import {
 	cuesToPlainText,
 	cuesToSrt,
 	cuesToVtt,
+	enforceReadability,
 	makeCue,
 	mergeCues,
 	normalizeCues,
 	regroupCues,
+	scriptMixOf,
 	shiftCues,
 	splitCue,
 	updateCue,
@@ -25,8 +27,10 @@ import { DEFAULT_CAPTION_STYLE, DEFAULT_LAYOUT, presetById } from '../lib/captio
 import {
 	checkWhisperSupport,
 	loadedWhisperModels,
+	profileById,
 	transcribeToCues,
 	TranscriptionCancelled,
+	type SpeechProfile,
 	type WhisperSupport,
 } from '../lib/captions/transcribe'
 import { isVideoFile, probeVideo, releaseVideoSource } from '../lib/captions/video-source'
@@ -36,6 +40,7 @@ import type {
 	CaptionStyle,
 	CaptionStylePresetId,
 	CaptionVideoSource,
+	ScriptMix,
 	TranscribeProgress,
 	TranscriptOrigin,
 	WhisperModelId,
@@ -102,8 +107,12 @@ export default function CaptionStudio() {
 
 	const [mode, setMode] = useState<TranscriptMode>('auto')
 	const [transcriptText, setTranscriptText] = useState('')
-	const [whisperModel, setWhisperModel] = useState<WhisperModelId>('base.en')
-	const [whisperLanguage, setWhisperLanguage] = useState('auto')
+	// Nepali + English code-switching is this studio's primary case, so the
+	// multilingual small model - the one that actually holds up on Nepali - is
+	// the default rather than something the user has to discover.
+	const [speechProfile, setSpeechProfile] = useState<SpeechProfile['id']>('nepali-english')
+	const [whisperModel, setWhisperModel] = useState<WhisperModelId>(profileById('nepali-english').model)
+	const [whisperLanguage, setWhisperLanguage] = useState(profileById('nepali-english').language)
 	const [whisperSupport, setWhisperSupport] = useState<WhisperSupport | null>(null)
 	const [loadedModels, setLoadedModels] = useState<WhisperModelId[]>([])
 	const [transcribing, setTranscribing] = useState(false)
@@ -195,6 +204,10 @@ export default function CaptionStudio() {
 		}
 	}, [compiled, cues, style, video])
 
+	// What the transcript is actually made of, measured rather than assumed -
+	// drives both the font-stack warning and the auto-enable below.
+	const scriptMix = useMemo<ScriptMix>(() => scriptMixOf(cues), [cues])
+
 	const currentMs = composition ? (currentFrame / composition.fps) * 1000 : 0
 
 	const seekToMsRef = useRef<(ms: number) => void>(() => {})
@@ -220,17 +233,33 @@ export default function CaptionStudio() {
 	 */
 	const applyCues = useCallback(
 		(next: CaptionCue[], nextOrigin: TranscriptOrigin) => {
-			const normalized = normalizeCues(next, durationMs || Number.MAX_SAFE_INTEGER)
+			const bounded = normalizeCues(next, durationMs || Number.MAX_SAFE_INTEGER)
+			// Readability pass: a transcriber-timed cue can be 150ms long, which
+			// reads as a flash. Stretch into the following silence, never into the
+			// next line, so short lines get a comfortable hold.
+			const normalized = normalizeCues(
+				enforceReadability(bounded, {
+					minCueMs: layout.minCueMs,
+					durationMs: durationMs || Number.MAX_SAFE_INTEGER,
+				}),
+				durationMs || Number.MAX_SAFE_INTEGER,
+			)
 			setCues(normalized)
 			setOrigin(nextOrigin)
 			setHandEdited(false)
 			// The written script keeps the author's own paragraphs; the other two
 			// paths fill the box so the transcript is there to copy or rework.
 			if (nextOrigin !== 'text') setTranscriptText(cuesToPlainText(normalized))
+			// Devanagari detected in the transcript but the companion face is off:
+			// turn it on so the export never ships tofu boxes for Nepali text.
+			const mix = scriptMixOf(normalized)
+			if (mix.devanagari) {
+				setStyle((current) => (current.devanagari ? current : { ...current, devanagari: true }))
+			}
 			const first = normalized[0]
 			if (first) seekToMsRef.current(first.startMs + (first.endMs - first.startMs) / 2)
 		},
-		[durationMs],
+		[durationMs, layout.minCueMs],
 	)
 
 	/* ------------------------------------------------------------- video */
@@ -386,6 +415,13 @@ export default function CaptionStudio() {
 		setCues((current) => normalizeCues(regroupCues(current, layout), durationMs))
 		setHandEdited(false)
 	}, [durationMs, layout])
+
+	const handleSpeechProfile = useCallback((id: SpeechProfile['id']) => {
+		const profile = profileById(id)
+		setSpeechProfile(id)
+		setWhisperModel(profile.model)
+		setWhisperLanguage(profile.language)
+	}, [])
 
 	/* --------------------------------------------------------- cue edits */
 
@@ -545,6 +581,7 @@ export default function CaptionStudio() {
 					layout={layout}
 					mode={mode}
 					transcriptText={transcriptText}
+					speechProfile={speechProfile}
 					whisperModel={whisperModel}
 					whisperLanguage={whisperLanguage}
 					whisperSupport={whisperSupport}
@@ -560,6 +597,7 @@ export default function CaptionStudio() {
 					onTranscriptText={setTranscriptText}
 					onAutoTime={handleAutoTime}
 					onImportSubtitles={(file) => void handleImportSubtitles(file)}
+					onSpeechProfile={handleSpeechProfile}
 					onWhisperModel={setWhisperModel}
 					onWhisperLanguage={setWhisperLanguage}
 					onTranscribe={() => void handleTranscribe()}
@@ -691,6 +729,7 @@ export default function CaptionStudio() {
 							<CaptionDesignPanel
 								style={style}
 								disabled={render.rendering}
+								scriptMix={scriptMix}
 								onStyle={handleStyle}
 								onPreset={handlePreset}
 							/>
