@@ -35,6 +35,14 @@ export const SAMPLES: SampleDefinition[] = [
 		badge: 'ai-starter',
 	},
 	{
+		id: 'ai-caption-template',
+		file: 'ai-caption-template.tsx',
+		name: 'AI Caption Template',
+		description: '1080x1920 - burned-in subtitle contract with word timing, Nepali + English support.',
+		technique: 'Balanced line breaking, per-word highlight, mixed Devanagari/Latin fonts, legibility scrim.',
+		badge: 'ai-starter',
+	},
+	{
 		id: 'star-forge-3d',
 		file: 'star-forge-3d.tsx',
 		name: 'Star Forge 3D',

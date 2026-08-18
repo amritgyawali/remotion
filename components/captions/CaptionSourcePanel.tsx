@@ -22,12 +22,16 @@ import type {
 } from '../../lib/captions/types'
 import {
 	IconAlert,
+	IconCheck,
 	IconClock,
+	IconCopy,
+	IconDownload,
 	IconFilm,
 	IconInfo,
 	IconLink,
 	IconMic,
 	IconScissors,
+	IconSparkle,
 	IconSpinner,
 	IconStop,
 	IconTrash,
@@ -37,6 +41,27 @@ import {
 } from '../Icons'
 
 export type TranscriptMode = 'auto' | 'write' | 'import'
+
+/**
+ * A copy-paste handoff to any AI coding assistant: attach ai-caption-template.tsx
+ * (downloadable right below), fill in the brackets, and get back a complete,
+ * self-contained captioned-video .tsx built on the exact same rendering engine
+ * this studio uses - word timing, balanced line breaks, mixed Devanagari/Latin
+ * fonts, the legibility scrim. Useful when a user already has a transcript
+ * from elsewhere, or wants a bespoke look the design panel can't produce.
+ */
+const AI_CAPTION_PROMPT = `You are editing the AI Caption Template for a Remotion video project (ai-caption-template.tsx). Generate a complete, ready-to-render .tsx file that burns subtitles into my video.
+
+My video: [a public https:// URL, or staticFile('your-file.mp4') if you will upload the video file alongside this one]
+Dimensions: [WIDTH]x[HEIGHT] at [FPS] fps, [DURATION] seconds long
+
+Transcript (paste an .srt or .vtt with timestamps if you have one - this studio's Auto or Write tab can export one - otherwise paste plain text and time it for me):
+[PASTE YOUR TRANSCRIPT HERE]
+
+Spoken language(s): [e.g. English / Nepali / Nepali+English code-switched]
+Caption style: [e.g. bold social captions with word-by-word yellow highlight, Anton font, bottom third / clean broadcast subtitles on a translucent bar, Inter font / karaoke-style with the current word glowing]
+
+Follow the AI EDITING CONTRACT in the attached file exactly. Reply with ONE complete, runnable .tsx file - no diff, no explanation.`
 
 const STAGE_LABEL: Record<TranscribeProgress['stage'], string> = {
 	idle: 'Ready',
@@ -124,6 +149,14 @@ export default function CaptionSourcePanel({
 	const [dragging, setDragging] = useState(false)
 	const [showUrl, setShowUrl] = useState(false)
 	const [urlValue, setUrlValue] = useState('')
+	const [promptCopied, setPromptCopied] = useState(false)
+
+	const copyPrompt = useCallback(() => {
+		navigator.clipboard.writeText(AI_CAPTION_PROMPT).then(() => {
+			setPromptCopied(true)
+			setTimeout(() => setPromptCopied(false), 2000)
+		})
+	}, [])
 
 	const handleDrop = useCallback(
 		(event: React.DragEvent<HTMLDivElement>) => {
@@ -514,6 +547,67 @@ export default function CaptionSourcePanel({
 							<span>{transcribeError}</span>
 						</div>
 					) : null}
+				</div>
+
+				<div>
+					<h2 className="section-label">
+						AI shortcut
+						<IconSparkle size={12} />
+					</h2>
+					<div className="card">
+						<div
+							style={{
+								display: 'flex',
+								alignItems: 'center',
+								justifyContent: 'space-between',
+								gap: 8,
+							}}
+						>
+							<strong style={{ fontSize: 13 }}>AI Caption Template</strong>
+							<span className="badge badge--accent">copy &amp; use</span>
+						</div>
+						<p
+							style={{
+								margin: '6px 0 10px',
+								fontSize: 11.5,
+								color: 'var(--text-tertiary)',
+								lineHeight: 1.5,
+							}}
+						>
+							Already have a transcript, or want a bespoke look the panels below can't produce?
+							Download this template, paste it and your transcript into an AI, and upload the
+							.tsx it returns. It runs the same rendering engine as this studio - word timing,
+							balanced line breaks, mixed Devanagari/Latin fonts, the legibility scrim - so the
+							result looks and behaves exactly like a caption built here.
+						</p>
+						<pre
+							style={{
+								margin: '0 0 10px',
+								padding: 10,
+								fontSize: 11,
+								lineHeight: 1.5,
+								whiteSpace: 'pre-wrap',
+								wordBreak: 'break-word',
+								background: 'var(--surface-2, rgba(127,127,127,0.08))',
+								border: '1px solid var(--border, rgba(127,127,127,0.2))',
+								borderRadius: 8,
+								maxHeight: 200,
+								overflowY: 'auto',
+							}}
+						>
+							{AI_CAPTION_PROMPT}
+						</pre>
+						<div style={{ display: 'flex', gap: 6 }}>
+							<button className="btn btn--sm" onClick={copyPrompt}>
+								{promptCopied ? <IconCheck size={12} /> : <IconCopy size={12} />}
+								{promptCopied ? 'Copied' : 'Copy prompt'}
+							</button>
+							<a className="btn btn--ghost btn--sm" href="/samples/ai-caption-template.tsx" download>
+								<IconDownload size={12} />
+								Template
+							</a>
+						</div>
+					</div>
 				</div>
 
 				{cues.length > 0 ? (
