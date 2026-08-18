@@ -159,3 +159,73 @@ export const IconGrid = (props: IconProps) => (
 		<rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
 	</Base>
 )
+
+export const IconCaptions = (props: IconProps) => (
+	<Base {...props}>
+		<rect x="2.5" y="5" width="19" height="14" rx="2.5" />
+		<path d="M9.5 10.2a2.6 2.6 0 1 0 0 3.6" />
+		<path d="M16.5 10.2a2.6 2.6 0 1 0 0 3.6" />
+	</Base>
+)
+
+export const IconMic = (props: IconProps) => (
+	<Base {...props}>
+		<rect x="9" y="2.5" width="6" height="11" rx="3" />
+		<path d="M5.5 11a6.5 6.5 0 0 0 13 0" />
+		<path d="M12 17.5V21" />
+	</Base>
+)
+
+export const IconWand = (props: IconProps) => (
+	<Base {...props}>
+		<path d="m4 20 10-10" />
+		<path d="m14.5 3.5 1 2.5 2.5 1-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1 1-2.5Z" />
+		<path d="m19 14 .7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7.7-1.8Z" />
+	</Base>
+)
+
+export const IconScissors = (props: IconProps) => (
+	<Base {...props}>
+		<circle cx="6" cy="6" r="2.5" />
+		<circle cx="6" cy="18" r="2.5" />
+		<path d="M8 7.5 20 18" />
+		<path d="M8 16.5 20 6" />
+	</Base>
+)
+
+export const IconPlus = (props: IconProps) => (
+	<Base {...props}>
+		<path d="M12 5v14" />
+		<path d="M5 12h14" />
+	</Base>
+)
+
+export const IconMerge = (props: IconProps) => (
+	<Base {...props}>
+		<path d="M7 3v5a4 4 0 0 0 4 4h6" />
+		<path d="M7 21v-5a4 4 0 0 1 4-4" />
+		<path d="m14 9 3 3-3 3" />
+	</Base>
+)
+
+export const IconLink = (props: IconProps) => (
+	<Base {...props}>
+		<path d="M10 13.5a4 4 0 0 0 5.7 0l2.8-2.8a4 4 0 0 0-5.7-5.7L11.5 6.4" />
+		<path d="M14 10.5a4 4 0 0 0-5.7 0l-2.8 2.8a4 4 0 0 0 5.7 5.7l1.3-1.4" />
+	</Base>
+)
+
+export const IconClock = (props: IconProps) => (
+	<Base {...props}>
+		<circle cx="12" cy="12" r="9" />
+		<path d="M12 7v5.2l3.2 2" />
+	</Base>
+)
+
+export const IconType = (props: IconProps) => (
+	<Base {...props}>
+		<path d="M4 6.5V4.5h16v2" />
+		<path d="M12 4.5V20" />
+		<path d="M8.5 20h7" />
+	</Base>
+)

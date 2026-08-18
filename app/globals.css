@@ -772,6 +772,339 @@ textarea {
 	border: 0;
 }
 
+/* ------------------------------------------------------- subtitle studio */
+
+.workspace--captions {
+	grid-template-columns: 340px minmax(0, 1fr) 360px;
+}
+
+.steps {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.step {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	padding: 5px 11px 5px 6px;
+	border-radius: 999px;
+	border: 1px solid transparent;
+	font-size: 12px;
+	color: var(--text-tertiary);
+	white-space: nowrap;
+}
+
+.step[data-active='true'] {
+	border-color: var(--accent);
+	background: var(--accent-soft);
+	color: var(--text);
+}
+
+.step[data-done='true'] {
+	color: var(--text-secondary);
+}
+
+.step-dot {
+	width: 19px;
+	height: 19px;
+	border-radius: 50%;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--surface-2);
+	border: 1px solid var(--border);
+	font-size: 11px;
+	font-weight: 600;
+	color: inherit;
+}
+
+.step[data-done='true'] .step-dot {
+	background: var(--green-soft);
+	border-color: rgba(114, 188, 143, 0.5);
+	color: var(--green);
+}
+
+.step[data-active='true'] .step-dot {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+.panel-tabs {
+	padding: 12px 16px 0;
+	flex-shrink: 0;
+}
+
+.stage--captions {
+	padding: 18px;
+}
+
+.stage-fps {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 12px;
+	color: var(--text-tertiary);
+}
+
+.stage-fps .select {
+	width: auto;
+	padding: 4px 8px;
+	font-size: 12px;
+}
+
+.hint-text {
+	margin: 8px 0 0;
+	font-size: 11.5px;
+	line-height: 1.5;
+	color: var(--text-tertiary);
+}
+
+.textarea {
+	resize: vertical;
+	min-height: 120px;
+	line-height: 1.55;
+	font-size: 13px;
+}
+
+.media-card-head {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.media-card-icon {
+	width: 34px;
+	height: 34px;
+	border-radius: var(--radius);
+	background: var(--raised);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-secondary);
+	flex-shrink: 0;
+}
+
+.media-card-title {
+	display: block;
+	font-size: 13px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.media-card-sub {
+	display: block;
+	font-size: 11.5px;
+	color: var(--text-tertiary);
+	margin-top: 2px;
+}
+
+.stat-row {
+	display: flex;
+	justify-content: space-between;
+	font-size: 12px;
+	color: var(--text-secondary);
+}
+
+.stat-row + .stat-row {
+	margin-top: 6px;
+}
+
+.segmented--wrap {
+	grid-auto-flow: row;
+	grid-template-columns: repeat(4, 1fr);
+	grid-auto-columns: unset;
+}
+
+.color-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px;
+}
+
+.color-field {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 12px;
+	color: var(--text-secondary);
+	cursor: pointer;
+}
+
+.color-input {
+	width: 30px;
+	height: 26px;
+	padding: 0;
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius-sm);
+	background: var(--surface-2);
+	cursor: pointer;
+}
+
+.color-input::-webkit-color-swatch-wrapper {
+	padding: 3px;
+}
+
+.color-input::-webkit-color-swatch {
+	border: none;
+	border-radius: 3px;
+}
+
+.color-input:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
+/* --------------------------------------------------------- caption track */
+
+.cue-track {
+	border-top: 1px solid var(--border);
+	background: var(--surface);
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	max-height: 42%;
+	flex-shrink: 0;
+}
+
+.cue-track-bar {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 10px 14px;
+	border-bottom: 1px solid var(--border);
+	flex-wrap: wrap;
+}
+
+.cue-track-spacer {
+	flex: 1;
+}
+
+.cue-nudge {
+	padding: 3px;
+}
+
+.cue-nudge button {
+	padding: 4px 9px;
+	font-size: 11.5px;
+	font-family: var(--mono);
+}
+
+.cue-ruler {
+	position: relative;
+	height: 26px;
+	margin: 10px 14px 4px;
+	border-radius: var(--radius-sm);
+	background: var(--surface-2);
+	border: 1px solid var(--border);
+	cursor: pointer;
+	overflow: hidden;
+	flex-shrink: 0;
+}
+
+.cue-block {
+	position: absolute;
+	top: 5px;
+	bottom: 5px;
+	border-radius: 3px;
+	background: rgba(94, 159, 232, 0.42);
+	min-width: 2px;
+}
+
+.cue-block[data-active='true'] {
+	background: var(--accent);
+}
+
+.cue-playhead {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	width: 2px;
+	margin-left: -1px;
+	background: var(--green);
+	pointer-events: none;
+}
+
+.cue-list {
+	overflow-y: auto;
+	padding: 6px 10px 12px;
+	min-height: 0;
+}
+
+.cue-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 5px 4px;
+	border-radius: var(--radius);
+	border: 1px solid transparent;
+}
+
+.cue-row[data-active='true'] {
+	border-color: var(--accent);
+	background: var(--accent-soft);
+}
+
+.cue-index {
+	width: 26px;
+	height: 26px;
+	flex-shrink: 0;
+	border-radius: var(--radius-sm);
+	border: 1px solid var(--border);
+	background: var(--surface-2);
+	color: var(--text-tertiary);
+	font-family: var(--mono);
+	font-size: 11px;
+	cursor: pointer;
+}
+
+.cue-index:hover {
+	color: var(--text);
+	border-color: var(--border-strong);
+}
+
+.cue-times {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	flex-shrink: 0;
+}
+
+.cue-times-dash {
+	color: var(--text-tertiary);
+	font-size: 11px;
+}
+
+.input--time {
+	width: 74px;
+	padding: 5px 6px;
+	font-family: var(--mono);
+	font-size: 11.5px;
+	text-align: center;
+}
+
+.cue-text {
+	flex: 1;
+	min-width: 0;
+	padding: 6px 9px;
+	font-size: 13px;
+}
+
+.cue-actions {
+	display: flex;
+	gap: 2px;
+	flex-shrink: 0;
+}
+
+.cue-actions .btn {
+	padding: 5px 7px;
+}
+
 /* ---------------------------------------------------------------- responsive */
 
 @media (max-width: 1180px) {
@@ -828,5 +1161,38 @@ textarea {
 	.log {
 		white-space: pre-wrap;
 		word-break: break-word;
+	}
+}
+
+@media (max-width: 1180px) {
+	.workspace--captions {
+		grid-template-columns: 300px minmax(0, 1fr) 320px;
+	}
+
+	.steps {
+		display: none;
+	}
+}
+
+@media (max-width: 940px) {
+	.workspace--captions {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.cue-track {
+		max-height: none;
+	}
+
+	.cue-list {
+		max-height: 340px;
+	}
+
+	.cue-row {
+		flex-wrap: wrap;
+	}
+
+	.cue-text {
+		order: 3;
+		flex-basis: 100%;
 	}
 }

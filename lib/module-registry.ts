@@ -29,6 +29,7 @@ import * as RemotionMediaUtils from '@remotion/media-utils'
 import * as RemotionMedia from '@remotion/media'
 import * as RemotionGif from '@remotion/gif'
 import * as RemotionFonts from '@remotion/fonts'
+import * as RemotionCaptions from '@remotion/captions'
 
 export const MODULE_REGISTRY: Record<string, unknown> = {
 	react: React,
@@ -53,6 +54,8 @@ export const MODULE_REGISTRY: Record<string, unknown> = {
 	'@remotion/gif': RemotionGif,
 	// Self-hosted typography: loadFont() blocks the render until the face is ready.
 	'@remotion/fonts': RemotionFonts,
+	// Caption helpers - parseSrt, serializeSrt and TikTok-style page building.
+	'@remotion/captions': RemotionCaptions,
 }
 
 const OPTIONAL_MODULES = ['@remotion/three', '@react-three/fiber', 'three'] as const

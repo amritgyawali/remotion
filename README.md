@@ -14,6 +14,14 @@ upload .tsx / .zip  ->  sucrase compile  ->  <Player> preview  ->  browser video
                                                                   Node or Vercel Sandbox -> Blob
 ```
 
+It also captions video you already have. The **Subtitle Studio** at `/captions`
+transcribes an uploaded clip on-device, lets you edit and style the lines, and
+renders the video back out with the subtitles burned in.
+
+```
+upload .mp4  ->  Whisper (WASM, on-device)  ->  editable cues  ->  generated .tsx  ->  captioned video + .srt
+```
+
 ## Quick start
 
 Requires Node.js 20.9 or newer.
@@ -45,6 +53,47 @@ lighting, materials, responsive layout, sound, performance, and final quality.
 The **Music & sound** control applies one master setting to both the Player and
 the exported file. Turn it off for a silent cut, or leave it on to mix all
 authored music, sounds, narration, SFX and source-video audio.
+
+## Subtitle a video you already have
+
+Open **Subtitle a video** in the top bar, or go straight to
+<http://localhost:3000/captions>.
+
+1. **Drop in a video** (MP4, MOV, WebM). It is read on your device - duration,
+   size, frame rate and whether it has an audio track come from mediabunny, the
+   same demuxer Remotion renders with. A public video URL works too.
+2. **Get the transcript**, three ways:
+   * **Auto** - Whisper runs inside the tab as WebAssembly. The model is
+     downloaded once (77 MB for tiny, 148 MB for base, 488 MB for small) into
+     IndexedDB and reused afterwards. Nothing is uploaded and no API key is
+     involved. Every word gets its own timestamp.
+   * **Write** - paste the script and it is spread across the clip, weighted by
+     word length, with a blank line acting as a hard block break.
+   * **Import** - bring an existing `.srt` or `.vtt`; word timing is filled in so
+     the karaoke styles still work.
+3. **Edit the lines** in the track under the preview: retime, retype, split,
+   merge, delete, add, or nudge every cue at once. Line length is re-cut without
+   losing a single word timing.
+4. **Style them** with six finished looks - social pop, karaoke fill, broadcast
+   bar, clean minimal, neon glow, accent box - then adjust font, size, colour,
+   spoken-word highlight, outline, backdrop, placement and entrance.
+5. **Render** with the same browser or server engine the code studio uses. The
+   output carries the original audio unless you mute it.
+
+Everything the preview shows is one real Remotion composition, written for your
+clip and compiled in the tab. **Download the .tsx** to keep it: it is a
+self-contained file with your cues and style baked in, ready for Remotion Studio,
+CI, or a re-upload into the code studio. Captions also export as `.srt` and
+`.vtt`.
+
+The route is served with `Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: credentialless` because the speech model needs a
+`SharedArrayBuffer`, which browsers only hand to a cross-origin isolated
+document. Those headers are scoped to `/captions`, so the code studio keeps
+loading third-party assets unchanged - and the links between the two studios are
+plain `<a>` tags on purpose, since a client-side navigation would not pick the
+headers up. Where isolation is unavailable (Safari today), the studio says so and
+the Write and Import paths still work.
 
 ## Deploy to GitHub + Vercel
 
@@ -143,7 +192,8 @@ missing - no system FFmpeg required.
 Bundled modules: `remotion`, `react`, `@remotion/player`, `@remotion/shapes`,
 `@remotion/paths`, `@remotion/noise`, `@remotion/motion-blur`,
 `@remotion/transitions` (+ fade/slide/wipe/flip/clock-wipe), `@remotion/media`,
-`@remotion/media-utils`, `@remotion/gif`, `@remotion/fonts`, `@remotion/three`,
+`@remotion/media-utils`, `@remotion/gif`, `@remotion/fonts`, `@remotion/captions`,
+`@remotion/three`,
 `@react-three/fiber`, and `three`. Anything else has to come with your upload as
 source.
 
@@ -217,6 +267,7 @@ and you have your own video.
 ```
 app/
   api/render/route.ts   server engine: bundle -> selectComposition -> renderMedia, streamed as SSE
+  captions/page.tsx     the subtitle studio, served cross-origin isolated
   layout.tsx  page.tsx  globals.css
 components/
   Studio.tsx            state machine: project -> compile -> preview -> render
@@ -224,13 +275,22 @@ components/
   StagePanel.tsx        <Player> stage + composition metadata
   RenderPanel.tsx       audio, engine, quality preset, format, scale, progress, output
   PlayerCanvas.tsx      dynamic({ ssr: false }) wrapper around @remotion/player
+  CaptionStudio.tsx     subtitle state machine: video -> transcript -> cues -> render
+  captions/             source, design and export panels, cue track, preview player
 lib/
   compiler.ts           sucrase + a tiny CommonJS module graph, runs in the tab
   module-registry.ts    the modules an upload may import
   browser-render.ts     high-fidelity visual path + audio-aware Remotion web renderer
+  use-render-controller.ts  the render pipeline both studios drive
   server-render-client.ts  SSE client for /api/render
   presets.ts            bitrate maths, crf table, H.264 level picker, formats
   project.ts            zip/file ingestion, entry detection
+  captions/
+    transcribe.ts       on-device Whisper: model download, resample, word timings
+    cues.ts             grouping, retiming, editing, .srt/.vtt in and out
+    composition-source.ts  writes the captioned-video .tsx the studio compiles
+    video-source.ts     duration, display size, fps and audio-track probing
+    style-presets.ts    the six caption looks and the studio font kit
 samples/                the uploadable examples
 scripts/
   generate-audio-assets.mjs   deterministic original WAV library + verifier
@@ -296,6 +356,17 @@ warning when an uploaded file forgets it.
 * **A texture is missing from a browser export** - it was set with
   `background-image: url(...)`, which the browser exporter does not draw. Use
   `<Img>` from `remotion` instead; CSS gradients are supported.
+* **"speech model unavailable" in the Subtitle Studio** - the page is not
+  cross-origin isolated, so the browser withholds `SharedArrayBuffer`. Reload
+  `/captions` directly (a client-side navigation keeps the previous document's
+  headers), and check that no proxy strips COOP/COEP. Safari does not support
+  `credentialless` isolation yet; write or import the transcript there.
+* **The Subtitle Studio cannot use the server engine** - an uploaded file lives
+  only in that browser tab, so a render host cannot read it. Render on the
+  device, or load the video from a public URL first.
+* **A downloaded caption `.tsx` renders a black video elsewhere** - its
+  `VIDEO_SRC` is the `blob:` address from your session. Replace it with a public
+  URL or a `staticFile()` path before rendering the file outside the studio.
 
 ## License
 

@@ -40,6 +40,21 @@ const nextConfig = {
 			],
 		},
 		{
+			/**
+			 * The subtitle studio transcribes speech with Whisper compiled to
+			 * WebAssembly, and its worker pool only gets a SharedArrayBuffer in a
+			 * cross-origin isolated document. `credentialless` buys that isolation
+			 * without demanding a CORP header from every remote image or video the
+			 * page might load. Scoped to this route so the code studio keeps
+			 * embedding third-party assets unchanged.
+			 */
+			source: '/captions',
+			headers: [
+				{ key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+				{ key: 'Cross-Origin-Embedder-Policy', value: 'credentialless' },
+			],
+		},
+		{
 			source: '/samples/:path*',
 			headers: [{ key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' }],
 		},

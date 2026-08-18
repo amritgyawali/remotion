@@ -232,7 +232,12 @@ export function analyzeSources(files: SourceFile[]): string[] {
 			'For audio in browser exports, import <Audio> from @remotion/media instead of the legacy remotion Audio/Html5Audio component.',
 		)
 	}
-	if (/<\s*(Video|OffthreadVideo)[\s/>]/.test(code)) {
+	// <Video> from @remotion/media is decoded by Remotion's web renderer, which
+	// is exactly the supported path - only the legacy remotion/OffthreadVideo
+	// tags fall back to the DOM screenshot renderer.
+	const mediaVideoImported =
+		/import\s*{[^}]*\bVideo\b[^}]*}\s*from\s*['"]@remotion\/media['"]/.test(code)
+	if (/<\s*(Video|OffthreadVideo)[\s/>]/.test(code) && !mediaVideoImported) {
 		warnings.add(
 			'Video layers may not rasterise reliably in the legacy browser path. Use @remotion/media or the server renderer for media-heavy projects.',
 		)
