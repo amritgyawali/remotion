@@ -1,6 +1,6 @@
 'use client'
 
-import { IconBolt, IconBrowser, IconLogo, IconServer, IconTrash } from './Icons'
+import { IconBolt, IconBrowser, IconCaptions, IconLogo, IconServer, IconTrash } from './Icons'
 import type { RenderEngine, ServerCapabilities, VirtualProject } from '../lib/types'
 
 export default function TopBar({
@@ -60,6 +60,13 @@ export default function TopBar({
 					{capabilities.provider === 'vercel-sandbox' ? 'sandbox ready' : 'server ready'}
 				</span>
 			) : null}
+
+			{/* A plain link, not next/link: /captions is served with cross-origin
+			    isolation headers that a client-side navigation would not pick up. */}
+			<a className="btn btn--ghost btn--sm" href="/captions" title="Add subtitles to a video you upload">
+				<IconCaptions size={13} />
+				Subtitle a video
+			</a>
 
 			<button className="btn btn--ghost btn--sm" onClick={onReset} disabled={!project}>
 				<IconTrash size={13} />

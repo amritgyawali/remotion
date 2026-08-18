@@ -402,7 +402,11 @@ async function renderMediaWithSound(args: BrowserRenderArgs): Promise<RenderOutp
 			audioBitrate,
 			frameRange: totalFrames < composition.durationInFrames ? [0, totalFrames - 1] : null,
 			scale: settings.scale,
-			hardwareAcceleration: 'prefer-hardware',
+			// Chrome treats 'prefer-hardware' as a requirement, not a hint: on a
+			// machine with no hardware encoder (most Linux desktops, VMs, CI) the
+			// encoder configuration is rejected outright and the render fails.
+			// 'no-preference' still picks the hardware encoder where one exists.
+			hardwareAcceleration: 'no-preference',
 			keyframeIntervalInSeconds: preset.keyframeIntervalSeconds,
 			pageResponsiveness: 'medium',
 			// Let Remotion use OPFS when available so long 4K renders are not held
