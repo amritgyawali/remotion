@@ -10,7 +10,7 @@
  * document - /captions ships the COOP/COEP headers for exactly this reason.
  */
 
-import type { WhisperWebLanguage } from '@remotion/whisper-web'
+import type { TranscriptionItemWithTimestamp, WhisperWebLanguage } from '@remotion/whisper-web'
 import { groupWordsIntoCues, type WordTiming } from './cues'
 import type {
 	CaptionCue,
@@ -72,6 +72,66 @@ export const WHISPER_MODELS: WhisperModelInfo[] = [
 		englishOnly: false,
 	},
 ]
+
+/**
+ * Speech profiles.
+ *
+ * Whisper is one model with two very different personalities: the `.en` builds
+ * are faster and better at English but cannot produce any other language, and
+ * the multilingual builds get dramatically better at low-resource languages as
+ * they grow. Nepali is a low-resource language, and Nepali speech in practice
+ * is code-switched - "यो feature धेरै राम्रो छ" - so it wants the largest
+ * multilingual model this studio can run on-device, told that the base
+ * language is Nepali. English words in the audio still come out as English.
+ */
+export type SpeechProfile = {
+	id: 'nepali-english' | 'nepali' | 'english' | 'other'
+	label: string
+	language: string
+	model: WhisperModelId
+	note: string
+}
+
+export const SPEECH_PROFILES: SpeechProfile[] = [
+	{
+		id: 'nepali-english',
+		label: 'Nepali + English',
+		language: 'ne',
+		model: 'small',
+		note: 'Code-switched speech. Nepali is transcribed in Devanagari, English words stay in Latin - the studio loads a Devanagari face so both render.',
+	},
+	{
+		id: 'nepali',
+		label: 'Nepali',
+		language: 'ne',
+		model: 'small',
+		note: 'Nepali throughout, written in Devanagari.',
+	},
+	{
+		id: 'english',
+		label: 'English',
+		language: 'en',
+		model: 'base.en',
+		note: 'English-only model: faster, and more accurate on English than a multilingual build of the same size.',
+	},
+	{
+		id: 'other',
+		label: 'Other language',
+		language: 'auto',
+		model: 'base',
+		note: 'Pick the spoken language below. Detection also works, but naming the language is more reliable on short or noisy clips.',
+	},
+]
+
+export function profileById(id: SpeechProfile['id']): SpeechProfile {
+	return SPEECH_PROFILES.find((profile) => profile.id === id) ?? SPEECH_PROFILES[0]
+}
+
+/** `.en` builds cannot produce Devanagari - or anything but English. */
+export function modelSupportsLanguage(model: WhisperModelId, language: string): boolean {
+	if (!model.endsWith('.en')) return true
+	return language === 'en'
+}
 
 export const WHISPER_LANGUAGES: { value: string; label: string }[] = [
 	{ value: 'auto', label: 'Detect automatically' },
@@ -159,6 +219,60 @@ export async function deleteWhisperModel(model: WhisperModelId): Promise<void> {
 	await deleteModel(model)
 }
 
+/* ------------------------------------------------------- transcript hygiene */
+
+/** Bracketed sound events: [Music], (applause), ♪ ... ♪, 【音楽】. */
+const NON_SPEECH_SEGMENT = /^\s*[[(♪【][^\])♪】]*[\])♪】]?\s*$/
+
+/**
+ * Whisper fills silence with whatever its training data put after silence:
+ * subtitle credits, channel sign-offs and translation-site plugs. They arrive
+ * as complete segments, which is exactly where they are cheapest to drop.
+ */
+const CREDIT_SEGMENT =
+	/(subtitle[sd]?\s+by|subtitling by|transcription by|amara\.org|subscribe|thanks for watching|उपशीर्षक|अनुवाद\s*:|सदस्यता)/i
+
+function isJunkSegment(text: string): boolean {
+	const trimmed = text.trim()
+	if (trimmed.length === 0) return true
+	if (NON_SPEECH_SEGMENT.test(trimmed)) return true
+	if (CREDIT_SEGMENT.test(trimmed)) return true
+	// A segment of pure punctuation carries no words to caption.
+	return !/[\p{L}\p{N}]/u.test(trimmed)
+}
+
+/**
+ * Cleans the raw model output before it becomes captions: drops non-speech and
+ * credit segments, and collapses the repeat loops Whisper falls into on music
+ * or long silence (the same line emitted five times in a row).
+ */
+export function cleanTranscription(
+	segments: TranscriptionItemWithTimestamp[],
+): TranscriptionItemWithTimestamp[] {
+	const kept: TranscriptionItemWithTimestamp[] = []
+	let repeats = 0
+
+	for (const segment of segments) {
+		if (isJunkSegment(segment.text)) continue
+		if (segment.offsets.to <= segment.offsets.from) continue
+
+		const previous = kept[kept.length - 1]
+		const sameAsPrevious =
+			previous !== undefined && previous.text.trim() === segment.text.trim()
+		if (sameAsPrevious) {
+			repeats++
+			// One repetition can be real speech; three in a row is the model looping.
+			if (repeats >= 2) continue
+		} else {
+			repeats = 0
+		}
+
+		kept.push(segment)
+	}
+
+	return kept
+}
+
 export type TranscribeArgs = {
 	/** the uploaded video, or any blob holding the audio to read */
 	source: Blob
@@ -231,9 +345,13 @@ export async function transcribeToCues(args: TranscribeArgs): Promise<CaptionCue
 
 	onProgress({ stage: 'transcribing', progress: 0, message: 'Listening to the audio' })
 	let heard = 0
+	// Whisper.cpp scales well across cores but pays for oversubscription; the
+	// browser also needs a core left over to keep painting the progress bar.
+	const threads = Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 4) - 1))
 	const result = await transcribe({
 		channelWaveform,
 		model,
+		threads,
 		language: language === 'auto' ? undefined : (language as WhisperWebLanguage),
 		onProgress: (progress) => {
 			if (signal.aborted) return
@@ -249,18 +367,21 @@ export async function transcribeToCues(args: TranscribeArgs): Promise<CaptionCue
 	})
 	assertLive(signal)
 
-	const { captions } = toCaptions({ whisperWebOutput: result })
+	const segments = cleanTranscription(result.transcription)
+	const { captions } = toCaptions({ whisperWebOutput: segments })
 	const words: WordTiming[] = captions
 		.map((caption) => ({
 			text: caption.text.trim(),
 			startMs: caption.startMs,
 			endMs: Math.max(caption.startMs + 1, caption.endMs),
 		}))
-		.filter((word) => word.text.length > 0 && !/^\[.*\]$/.test(word.text))
+		.filter((word) => word.text.length > 0 && /[\p{L}\p{N}]/u.test(word.text))
 
 	if (words.length === 0) {
 		throw new Error(
-			'No speech was found in that video. Check that it has an audio track, or write the transcript by hand.',
+			result.transcription.length > 0
+				? 'Only music or silence was recognised in that video. Try a larger model, or write the transcript by hand.'
+				: 'No speech was found in that video. Check that it has an audio track, or write the transcript by hand.',
 		)
 	}
 

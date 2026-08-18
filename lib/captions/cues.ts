@@ -4,7 +4,46 @@
  * can highlight the word that is being spoken.
  */
 
-import type { CaptionCue, CaptionLayoutOptions, CaptionToken } from './types'
+import type { CaptionCue, CaptionLayoutOptions, CaptionToken, ScriptMix } from './types'
+
+/* ----------------------------------------------------------------- script */
+
+const DEVANAGARI = /[\u0900-\u097F]/
+/**
+ * Matras, anusvara, virama and the joiners take no horizontal room of their
+ * own - they stack on the consonant they belong to. Counting them as
+ * characters makes "छ" and "छेउ" look the same width to the line breaker and
+ * pushes Nepali captions into ragged, half-empty rows.
+ */
+const DEVANAGARI_COMBINING = /[\u0900-\u0902\u093A-\u094F\u0951-\u0957\u0962\u0963\u200C\u200D]/g
+
+export function hasDevanagari(text: string): boolean {
+	return DEVANAGARI.test(text)
+}
+
+/** Roughly how wide a word sets, in Latin character units. */
+export function visualWidth(text: string): number {
+	return text.replace(DEVANAGARI_COMBINING, '').length
+}
+
+/** What a transcript is actually made of - drives the font stack and the model hint. */
+export function scriptMixOf(cues: CaptionCue[]): ScriptMix {
+	let devanagariWords = 0
+	let latinWords = 0
+	let total = 0
+	for (const cue of cues) {
+		for (const token of cue.tokens) {
+			total++
+			if (DEVANAGARI.test(token.text)) devanagariWords++
+			else if (/[A-Za-z]/.test(token.text)) latinWords++
+		}
+	}
+	return {
+		latin: latinWords > 0,
+		devanagari: devanagariWords > 0,
+		devanagariShare: total === 0 ? 0 : devanagariWords / total,
+	}
+}
 
 export type WordTiming = {
 	text: string
@@ -29,8 +68,11 @@ export function splitWords(text: string): string[] {
 
 /** Punctuation deserves a longer beat than a short word, hence the weighting. */
 function weightOf(word: string): number {
-	const base = Math.max(1, word.replace(/[^\p{L}\p{N}]/gu, '').length)
-	const pause = /[.!?]$/.test(word) ? 3 : /[,;:]$/.test(word) ? 1.5 : 0
+	const letters = word.replace(/[^\p{L}\p{N}]/gu, '')
+	// A Devanagari cluster is one spoken syllable, so its stripped length maps to
+	// speaking time better than its raw code-point count does.
+	const base = Math.max(1, DEVANAGARI.test(letters) ? visualWidth(letters) * 1.6 : letters.length)
+	const pause = /[.!?।॥]$/.test(word) ? 3 : /[,;:]$/.test(word) ? 1.5 : 0
 	return base + pause
 }
 
@@ -102,9 +144,10 @@ export function groupWordsIntoCues(
 
 		const previous = words[index - 1]
 		const gap = previous ? word.startMs - previous.endMs : 0
+		const width = visualWidth(text)
 		const wouldOverflow =
 			current.length >= layout.maxWordsPerCue ||
-			characters + text.length + 1 > layout.maxCharactersPerCue ||
+			characters + width + 1 > layout.maxCharactersPerCue ||
 			(current.length > 0 && word.endMs - current[0].fromMs > layout.maxCueDurationMs)
 
 		if (current.length > 0 && (wouldOverflow || gap >= layout.splitOnGapMs)) flush()
@@ -114,9 +157,11 @@ export function groupWordsIntoCues(
 			fromMs: Math.max(0, Math.round(word.startMs)),
 			toMs: Math.max(Math.round(word.startMs) + 1, Math.round(word.endMs)),
 		})
-		characters += text.length + 1
+		characters += width + 1
 
-		if (/[.!?]$/.test(text) && current.length >= Math.min(2, layout.maxWordsPerCue)) flush()
+		// "।" (danda) and "॥" end a Nepali sentence the way a full stop ends an
+		// English one, so they deserve the same line break.
+		if (/[.!?।॥]$/.test(text) && current.length >= Math.min(2, layout.maxWordsPerCue)) flush()
 	}
 
 	flush()
@@ -356,6 +401,41 @@ export function shiftCues(cues: CaptionCue[], deltaMs: number, durationMs: numbe
 		})),
 		durationMs,
 	)
+}
+
+/**
+ * Subtitle readability pass.
+ *
+ * Transcribers happily emit 180ms cues, which read as a flash rather than a
+ * line. This stretches a cue into the silence that follows it - never over the
+ * next line, never past the video - so short lines get a comfortable hold
+ * without the timings drifting away from the speech.
+ */
+export function enforceReadability(
+	cues: CaptionCue[],
+	options: { minCueMs: number; gapMs?: number; durationMs: number },
+): CaptionCue[] {
+	const gapMs = options.gapMs ?? 40
+	const sorted = [...cues].sort((a, b) => a.startMs - b.startMs)
+
+	return sorted.map((cue, index) => {
+		const next = sorted[index + 1]
+		const ceiling = next ? next.startMs - gapMs : options.durationMs
+		const wanted = cue.startMs + options.minCueMs
+		const endMs = Math.max(cue.endMs, Math.min(wanted, Math.max(cue.endMs, ceiling)))
+		if (endMs === cue.endMs) return cue
+		// Word timings stay exactly where the transcriber put them; only the last
+		// word's tail is stretched, which is what the eye is actually holding on.
+		const tokens = cue.tokens.map((token, tokenIndex) =>
+			tokenIndex === cue.tokens.length - 1 ? { ...token, toMs: Math.max(token.toMs, endMs) } : token,
+		)
+		return { ...cue, endMs, tokens }
+	})
+}
+
+/** How long the eye has per character - a rough legibility score for the UI. */
+export function readabilityWarnings(cues: CaptionCue[], minCueMs: number): number {
+	return cues.filter((cue) => cue.endMs - cue.startMs < minCueMs).length
 }
 
 export function cueAtMs(cues: CaptionCue[], ms: number): CaptionCue | null {

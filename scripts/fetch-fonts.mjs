@@ -150,6 +150,35 @@ const FAMILIES = [
 		mood: 'handwritten, personal, annotative',
 		useFor: 'annotations, circled emphasis, personal notes and vlogs',
 	},
+	/**
+	 * Devanagari coverage. None of the Latin families above carry a single
+	 * Devanagari glyph, so Nepali or Hindi text set in them renders as tofu
+	 * boxes. These two are loaded alongside the Latin face and the browser
+	 * picks per character, which is how a mixed Nepali + English caption stays
+	 * in one visual voice.
+	 */
+	{
+		slug: 'noto-sans-devanagari',
+		family: 'Noto Sans Devanagari',
+		source: 'notosansdevanagari',
+		file: 'NotoSansDevanagari[wdth,wght].ttf',
+		category: 'devanagari',
+		weight: '100 900',
+		axes: ['wdth', 'wght'],
+		mood: 'neutral, complete, highly legible',
+		useFor: 'Nepali and Hindi subtitles, body copy and lower thirds',
+	},
+	{
+		slug: 'anek-devanagari',
+		family: 'Anek Devanagari',
+		source: 'anekdevanagari',
+		file: 'AnekDevanagari[wdth,wght].ttf',
+		category: 'devanagari',
+		weight: '100 800',
+		axes: ['wdth', 'wght'],
+		mood: 'contemporary, condensed, display-ready',
+		useFor: 'loud Nepali social captions, titles and hooks',
+	},
 ]
 
 const args = new Set(process.argv.slice(2))

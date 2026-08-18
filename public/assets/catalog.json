@@ -22,7 +22,7 @@
     {
       "kind": "font",
       "path": "/assets/fonts/catalog.json",
-      "assetCount": 10
+      "assetCount": 12
     },
     {
       "kind": "audio",
@@ -31,10 +31,10 @@
     }
   ],
   "counts": {
-    "total": 99,
+    "total": 101,
     "visuals": 41,
     "textures": 20,
-    "fonts": 10,
+    "fonts": 12,
     "audio": 28,
     "music": 8,
     "sfx": 20,
@@ -58,6 +58,7 @@
       "mono": 1,
       "rounded": 1,
       "handwriting": 1,
+      "devanagari": 2,
       "electronic": 1,
       "uplifting": 1,
       "cinematic": 2,
@@ -71,7 +72,7 @@
       "accents": 4
     }
   },
-  "totalAssetBytes": 25361668,
+  "totalAssetBytes": 28199344,
   "assets": [
     {
       "id": "visual:icons/spark",
@@ -1839,6 +1840,70 @@
       ],
       "sizeBytes": 403648,
       "sha256": "0bdb6b660482d31531b3945849fba5916b3ef8695da7024a9e6b9ee3c4157988"
+    },
+    {
+      "id": "font:noto-sans-devanagari",
+      "sourceId": "noto-sans-devanagari",
+      "assetType": "font",
+      "kind": "font",
+      "category": "devanagari",
+      "title": "Noto Sans Devanagari",
+      "family": "Noto Sans Devanagari",
+      "path": "/assets/fonts/v1/noto-sans-devanagari/NotoSansDevanagari[wdth,wght].ttf",
+      "staticFilePath": "assets/fonts/v1/noto-sans-devanagari/NotoSansDevanagari[wdth,wght].ttf",
+      "licensePath": "/assets/fonts/v1/noto-sans-devanagari/OFL.txt",
+      "format": "ttf",
+      "mimeType": "font/ttf",
+      "license": "OFL-1.1",
+      "attributionRequired": false,
+      "variable": true,
+      "axes": [
+        "wdth",
+        "wght"
+      ],
+      "weight": "100 900",
+      "mood": "neutral, complete, highly legible",
+      "usage": "Nepali and Hindi subtitles, body copy and lower thirds",
+      "tags": [
+        "devanagari",
+        "neutral",
+        "complete",
+        "highly legible"
+      ],
+      "sizeBytes": 647144,
+      "sha256": "9ce7b04f60e363d8870e5997744cf85cf69d38a4d7d129d364d92a3b14b461d7"
+    },
+    {
+      "id": "font:anek-devanagari",
+      "sourceId": "anek-devanagari",
+      "assetType": "font",
+      "kind": "font",
+      "category": "devanagari",
+      "title": "Anek Devanagari",
+      "family": "Anek Devanagari",
+      "path": "/assets/fonts/v1/anek-devanagari/AnekDevanagari[wdth,wght].ttf",
+      "staticFilePath": "assets/fonts/v1/anek-devanagari/AnekDevanagari[wdth,wght].ttf",
+      "licensePath": "/assets/fonts/v1/anek-devanagari/OFL.txt",
+      "format": "ttf",
+      "mimeType": "font/ttf",
+      "license": "OFL-1.1",
+      "attributionRequired": false,
+      "variable": true,
+      "axes": [
+        "wdth",
+        "wght"
+      ],
+      "weight": "100 800",
+      "mood": "contemporary, condensed, display-ready",
+      "usage": "loud Nepali social captions, titles and hooks",
+      "tags": [
+        "devanagari",
+        "contemporary",
+        "condensed",
+        "display-ready"
+      ],
+      "sizeBytes": 2190532,
+      "sha256": "b88cf0ff5705599b2f16fce4ba9ce2029f76106dd24f0419976c417d89f20888"
     },
     {
       "id": "audio:neon-pulse",

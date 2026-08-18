@@ -79,3 +79,19 @@
 	font-style: normal;
 	font-display: block;
 }
+
+@font-face {
+	font-family: 'Noto Sans Devanagari';
+	src: url('/assets/fonts/v1/noto-sans-devanagari/NotoSansDevanagari%5Bwdth%2Cwght%5D.ttf') format('truetype');
+	font-weight: 100 900;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Anek Devanagari';
+	src: url('/assets/fonts/v1/anek-devanagari/AnekDevanagari%5Bwdth%2Cwght%5D.ttf') format('truetype');
+	font-weight: 100 800;
+	font-style: normal;
+	font-display: block;
+}

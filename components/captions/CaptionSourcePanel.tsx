@@ -2,7 +2,15 @@
 
 import { useCallback, useRef, useState } from 'react'
 import { formatBytes, formatSeconds } from '../../lib/format'
-import { WHISPER_LANGUAGES, WHISPER_MODELS, type WhisperSupport } from '../../lib/captions/transcribe'
+import {
+	modelSupportsLanguage,
+	profileById,
+	SPEECH_PROFILES,
+	WHISPER_LANGUAGES,
+	WHISPER_MODELS,
+	type SpeechProfile,
+	type WhisperSupport,
+} from '../../lib/captions/transcribe'
 import { ACCEPTED_VIDEO_TYPES } from '../../lib/captions/video-source'
 import type {
 	CaptionCue,
@@ -56,6 +64,7 @@ export default function CaptionSourcePanel({
 	layout,
 	mode,
 	transcriptText,
+	speechProfile,
 	whisperModel,
 	whisperLanguage,
 	whisperSupport,
@@ -71,6 +80,7 @@ export default function CaptionSourcePanel({
 	onTranscriptText,
 	onAutoTime,
 	onImportSubtitles,
+	onSpeechProfile,
 	onWhisperModel,
 	onWhisperLanguage,
 	onTranscribe,
@@ -85,6 +95,7 @@ export default function CaptionSourcePanel({
 	layout: CaptionLayoutOptions
 	mode: TranscriptMode
 	transcriptText: string
+	speechProfile: SpeechProfile['id']
 	whisperModel: WhisperModelId
 	whisperLanguage: string
 	whisperSupport: WhisperSupport | null
@@ -100,6 +111,7 @@ export default function CaptionSourcePanel({
 	onTranscriptText: (value: string) => void
 	onAutoTime: () => void
 	onImportSubtitles: (file: File) => void
+	onSpeechProfile: (profile: SpeechProfile['id']) => void
 	onWhisperModel: (model: WhisperModelId) => void
 	onWhisperLanguage: (language: string) => void
 	onTranscribe: () => void
@@ -125,6 +137,9 @@ export default function CaptionSourcePanel({
 
 	const model = WHISPER_MODELS.find((entry) => entry.id === whisperModel) ?? WHISPER_MODELS[0]
 	const modelReady = loadedModels.includes(whisperModel)
+	const profile = profileById(speechProfile)
+	const effectiveLanguage = model.englishOnly ? 'en' : whisperLanguage
+	const languageMismatch = !modelSupportsLanguage(whisperModel, profile.language)
 	const words = cues.reduce((sum, cue) => sum + cue.tokens.length, 0)
 
 	return (
@@ -274,6 +289,40 @@ export default function CaptionSourcePanel({
 					{mode === 'auto' ? (
 						<div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
 							<div className="field">
+								<span className="field-label">
+									What is spoken
+									<span className="field-value">{profile.language}</span>
+								</span>
+								<div className="segmented segmented--wrap" role="group" aria-label="Speech profile">
+									{SPEECH_PROFILES.map((entry) => (
+										<button
+											key={entry.id}
+											data-active={speechProfile === entry.id}
+											disabled={transcribing}
+											onClick={() => onSpeechProfile(entry.id)}
+										>
+											{entry.label}
+										</button>
+									))}
+								</div>
+								<span style={{ fontSize: 11.5, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+									{profile.note}
+								</span>
+							</div>
+
+							{languageMismatch ? (
+								<div className="notice notice--warn">
+									<span className="notice-icon">
+										<IconAlert size={14} />
+									</span>
+									<span>
+										The {model.label} model only writes English. Choose a multilingual model
+										below, or this profile will transcribe {profile.label} as English.
+									</span>
+								</div>
+							) : null}
+
+							<div className="field">
 								<label className="field-label" htmlFor="whisper-model">
 									Speech model
 									<span className="field-value">
@@ -306,7 +355,7 @@ export default function CaptionSourcePanel({
 								<select
 									id="whisper-language"
 									className="select"
-									value={model.englishOnly ? 'en' : whisperLanguage}
+									value={effectiveLanguage}
 									disabled={transcribing || model.englishOnly}
 									onChange={(event) => onWhisperLanguage(event.target.value)}
 								>
