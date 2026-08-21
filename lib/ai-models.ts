@@ -2,7 +2,7 @@ export const AI_MODEL_OPTIONS = [
 	{
 		id: 'auto',
 		label: 'Auto - best available',
-		description: 'Starts with a frontier NVIDIA model and falls back automatically.',
+		description: 'Starts with NVIDIA\'s fast coding model and preserves time for automatic fallbacks.',
 	},
 	{
 		id: 'nvidia/nemotron-3-ultra-550b-a55b',
@@ -39,11 +39,11 @@ export const NVIDIA_MODEL_IDS = AI_MODEL_OPTIONS.filter(
 ).map((option) => option.id)
 
 export const AUTO_MODEL_ORDER: Exclude<AiModelId, 'auto'>[] = [
-	'nvidia/nemotron-3-ultra-550b-a55b',
-	'nvidia/nemotron-3-super-120b-a12b',
-	'openai/gpt-oss-120b',
 	'nvidia/nemotron-3.5-lightning-30b-a3b',
+	'nvidia/nemotron-3-super-120b-a12b',
+	'nvidia/nemotron-3-ultra-550b-a55b',
 	'nvidia/nemotron-3-nano-30b-a3b',
+	'openai/gpt-oss-120b',
 ]
 
 export function isAiModelId(value: unknown): value is AiModelId {
