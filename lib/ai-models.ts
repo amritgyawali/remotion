@@ -1,38 +1,46 @@
+/**
+ * NVIDIA-hosted models the AI director can use.
+ *
+ * They plan a compact JSON storyboard - the Studio composes the Remotion TSX
+ * itself - so speed and instruction following matter far more than raw coding
+ * ability, and every model here can answer well inside one request.
+ */
+
 export const AI_MODEL_OPTIONS = [
 	{
 		id: 'auto',
 		label: 'Auto - best available',
-		description: 'Starts with NVIDIA\'s fast coding model and preserves time for automatic fallbacks.',
-	},
-	{
-		id: 'stepfun-ai/step-3.7-flash',
-		label: 'Step 3.7 Flash',
-		description: 'Fast NVIDIA-hosted coding model for complete creative TSX files.',
-	},
-	{
-		id: 'poolside/laguna-xs-2.1',
-		label: 'Laguna XS 2.1',
-		description: 'Efficient coding specialist and reliable automatic fallback.',
-	},
-	{
-		id: 'mistralai/mistral-medium-3.5-128b',
-		label: 'Mistral Medium 3.5',
-		description: 'Strong design, instruction-following and frontend coding model.',
+		description: 'Fastest planner first, then automatic fallbacks, then the local Studio director.',
 	},
 	{
 		id: 'nvidia/nemotron-3.5-lightning-30b-a3b',
 		label: 'Nemotron 3.5 Lightning',
-		description: 'Fast long-context coding and iteration.',
+		description: 'Quickest storyboards. Best default for iterating on an idea.',
+	},
+	{
+		id: 'stepfun-ai/step-3.7-flash',
+		label: 'Step 3.7 Flash',
+		description: 'Fast and structured. Strong at scene breakdowns and copywriting.',
+	},
+	{
+		id: 'mistralai/mistral-medium-3.5-128b',
+		label: 'Mistral Medium 3.5',
+		description: 'Richer art direction and sharper on-screen copy.',
 	},
 	{
 		id: 'minimaxai/minimax-m3',
 		label: 'MiniMax M3',
-		description: 'Creative design and long-horizon coding model hosted by NVIDIA.',
+		description: 'Creative concepts and unusual scene orders.',
+	},
+	{
+		id: 'poolside/laguna-xs-2.1',
+		label: 'Laguna XS 2.1',
+		description: 'Efficient specialist. Occasionally rate limited on the free tier.',
 	},
 	{
 		id: 'nvidia/nemotron-3-ultra-550b-a55b',
 		label: 'Nemotron 3 Ultra',
-		description: 'Frontier model for manual high-complexity attempts.',
+		description: 'Frontier model for the most demanding briefs. Slowest option.',
 	},
 ] as const
 
@@ -43,10 +51,11 @@ export const NVIDIA_MODEL_IDS = AI_MODEL_OPTIONS.filter(
 		option.id !== 'auto',
 ).map((option) => option.id)
 
+/** Ordered fastest-first so the automatic fallbacks all fit in one request. */
 export const AUTO_MODEL_ORDER: Exclude<AiModelId, 'auto'>[] = [
-	'stepfun-ai/step-3.7-flash',
-	'poolside/laguna-xs-2.1',
 	'nvidia/nemotron-3.5-lightning-30b-a3b',
+	'stepfun-ai/step-3.7-flash',
+	'mistralai/mistral-medium-3.5-128b',
 ]
 
 export function isAiModelId(value: unknown): value is AiModelId {

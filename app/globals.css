@@ -109,6 +109,29 @@
 	color: var(--red);
 }
 
+.ai-message[data-tone='note'] {
+	border-style: dashed;
+	color: var(--text-secondary);
+}
+
+.ai-scene-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin-top: 7px;
+}
+
+.ai-scene-chips span {
+	padding: 2px 7px;
+	border: 1px solid var(--border);
+	border-radius: 100px;
+	background: var(--surface);
+	color: var(--text-secondary);
+	font-size: 10px;
+	letter-spacing: 0.02em;
+	white-space: nowrap;
+}
+
 .ai-message--working svg {
 	flex: none;
 	margin-top: 2px;
