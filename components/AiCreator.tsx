@@ -50,7 +50,7 @@ export default function AiCreator({
 		{
 			id: 'welcome',
 			role: 'assistant',
-			text: 'Describe the finished video. I will rewrite the master template, compile it, repair one failed draft automatically, and load the result into the preview.',
+			text: 'Describe the finished video. NVIDIA writes only the replacement TSX source; this Studio compiles it, repairs one failed draft, loads the preview, and renders the output.',
 		},
 	])
 	const [generating, setGenerating] = useState(false)
@@ -136,7 +136,7 @@ export default function AiCreator({
 				{generating ? (
 					<div className="ai-message ai-message--assistant ai-message--working">
 						<IconSpinner size={13} />
-						<span>Directing scenes, writing TSX and checking the composition…</span>
+						<span>Getting TSX source from NVIDIA, then checking it in this Studio…</span>
 					</div>
 				) : null}
 			</div>
