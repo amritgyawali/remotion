@@ -51,9 +51,10 @@ Then click **Load** on *AI Master Template* and press **Render video**.
    Turn it off when you want to preview and revise before rendering.
 
 The NVIDIA credential is read only by the Node.js route and is never included in
-browser JavaScript. On a public deployment, set `AI_ACCESS_KEY` (or reuse
-`RENDER_ACCESS_KEY`) so strangers cannot spend the NVIDIA quota. The model's TSX
-is still untrusted code; review it before enabling server rendering.
+browser JavaScript. Visitors do not enter an AI access key. This makes the AI
+route public on a public deployment, so configure Vercel rate limiting and NVIDIA
+spend controls to protect the quota. The model's TSX is still untrusted code;
+review it before enabling server rendering.
 
 The previous manual workflow still works: download **AI Master Template**, edit it
 with any coding assistant, and upload the completed `.tsx` file.
@@ -207,7 +208,6 @@ your deployment retention policy.
 | `ENABLE_SERVER_RENDER` | unset | Set to `1` to turn on protected Node/Vercel Sandbox rendering. |
 | `RENDER_ACCESS_KEY` | unset | Shared render key. **Required** for both Node and Vercel server rendering. |
 | `NVIDIA_API_KEY` | unset | Server-only `nvapi-…` key for Chat → Remotion generation. |
-| `AI_ACCESS_KEY` | unset | Optional shared key protecting the AI route; falls back to `RENDER_ACCESS_KEY`. |
 | `MAX_RENDER_FRAMES` | `1800` | Frame ceiling for a single server render. |
 | `MAX_RENDER_PIXELS` | `8294400` | Resolution ceiling (4K) for a single server render. |
 | `REMOTION_CONCURRENCY` | `auto` | Remotion chooses a memory-safe worker count; a number pins it. |

@@ -132,10 +132,7 @@ export default function Studio() {
 			for (let pass = 0; pass < 2; pass += 1) {
 				const response = await fetch('/api/ai/generate', {
 					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-						...(render.accessKey ? { 'x-ai-key': render.accessKey } : {}),
-					},
+					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({
 						prompt:
 							pass === 0
@@ -195,7 +192,7 @@ export default function Studio() {
 
 			throw new Error('AI generation stopped before a valid composition was produced.')
 		},
-		[adoptProject, project, render.accessKey],
+		[adoptProject, project],
 	)
 
 	const handleReset = useCallback(() => {
@@ -241,8 +238,6 @@ export default function Studio() {
 					onSample={handleSample}
 					onEntryChange={handleEntryChange}
 					onAiGenerate={handleAiGenerate}
-					aiAccessKey={render.accessKey}
-					onAiAccessKey={render.setAccessKey}
 				/>
 				<StagePanel
 					compileResult={compileResult}

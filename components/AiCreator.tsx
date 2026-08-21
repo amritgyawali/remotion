@@ -34,13 +34,9 @@ const STARTERS = [
 
 export default function AiCreator({
 	busy,
-	accessKey,
-	onAccessKey,
 	onGenerate,
 }: {
 	busy: boolean
-	accessKey: string
-	onAccessKey: (value: string) => void
 	onGenerate: (request: AiGenerationRequest) => Promise<AiGenerationResult>
 }) {
 	const [prompt, setPrompt] = useState('')
@@ -160,28 +156,6 @@ export default function AiCreator({
 				</select>
 				<span className="field-hint">{selected.description}</span>
 			</div>
-
-			<details className="ai-access">
-				<summary>Deployment access</summary>
-				<div className="field">
-					<label className="field-label" htmlFor="ai-access-key">
-						Studio AI access key
-					</label>
-					<input
-						id="ai-access-key"
-						className="input"
-						type="password"
-						value={accessKey}
-						placeholder="AI_ACCESS_KEY (not the NVIDIA key)"
-						disabled={disabled}
-						onChange={(event) => onAccessKey(event.target.value)}
-					/>
-					<span className="field-hint">
-						Only needed when the deployed AI route is protected. The NVIDIA key always stays on
-						the server.
-					</span>
-				</div>
-			</details>
 
 			<label className="ai-auto-render">
 				<input
