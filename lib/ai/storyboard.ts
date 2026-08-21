@@ -54,6 +54,19 @@ export const STRUCTURE_IDS: StructureId[] = [
 export type TimeOfDayId = 'dawn' | 'day' | 'dusk' | 'night'
 export const TIME_OF_DAY_IDS: TimeOfDayId[] = ['dawn', 'day', 'dusk', 'night']
 
+/**
+ * How dimensional the film is.
+ *
+ * flat  - graphic layers only
+ * depth - perspective staging, extruded type, tilted cards, floor grid (CSS 3D)
+ * three - real WebGL geometry, lights and shadows through @remotion/three
+ */
+export type DimensionId = 'flat' | 'depth' | 'three'
+export const DIMENSION_IDS: DimensionId[] = ['flat', 'depth', 'three']
+
+export type SolidId = 'crystal' | 'sphere' | 'torus' | 'cube' | 'prism' | 'capsule' | 'ring'
+export const SOLID_IDS: SolidId[] = ['crystal', 'sphere', 'torus', 'cube', 'prism', 'capsule', 'ring']
+
 export type SceneType =
 	| 'title'
 	| 'statement'
@@ -67,6 +80,10 @@ export type SceneType =
 	| 'process'
 	| 'quote'
 	| 'cta'
+	| 'object3d'
+	| 'globe3d'
+	| 'terrain3d'
+	| 'carousel3d'
 
 export const SCENE_TYPES: SceneType[] = [
 	'title',
@@ -81,7 +98,14 @@ export const SCENE_TYPES: SceneType[] = [
 	'process',
 	'quote',
 	'cta',
+	'object3d',
+	'globe3d',
+	'terrain3d',
+	'carousel3d',
 ]
+
+/** Scene types that mount a WebGL canvas. */
+export const THREE_SCENE_TYPES: SceneType[] = ['object3d', 'globe3d', 'terrain3d']
 
 type Base = { seconds: number }
 
@@ -174,6 +198,34 @@ export type CtaScene = Base & {
 	icon: IconId
 }
 
+export type Object3dScene = Base & {
+	type: 'object3d'
+	solid: SolidId
+	headline: string
+	caption: string
+	wireframe: boolean
+}
+
+export type Globe3dScene = Base & {
+	type: 'globe3d'
+	headline: string
+	caption: string
+	places: MapPlace[]
+}
+
+export type Terrain3dScene = Base & {
+	type: 'terrain3d'
+	terrain: TerrainId
+	headline: string
+	caption: string
+}
+
+export type Carousel3dScene = Base & {
+	type: 'carousel3d'
+	headline: string
+	items: GalleryItem[]
+}
+
 export type Scene =
 	| TitleScene
 	| StatementScene
@@ -187,6 +239,10 @@ export type Scene =
 	| ProcessScene
 	| QuoteScene
 	| CtaScene
+	| Object3dScene
+	| Globe3dScene
+	| Terrain3dScene
+	| Carousel3dScene
 
 export type Storyboard = {
 	title: string
@@ -202,6 +258,7 @@ export type Storyboard = {
 	grain: GrainId
 	leak: LeakId
 	motion: MotionId
+	dimension: DimensionId
 	scenes: Scene[]
 }
 
@@ -426,6 +483,64 @@ function normalizeScene(raw: unknown, subject: string): Scene | null {
 				tagline: text(source.tagline, '', 60),
 				icon: icon(source.icon, 'arrow'),
 			}
+		case 'object3d':
+			return {
+				type,
+				seconds,
+				solid: pickEnum(source.solid ?? source.shape, SOLID_IDS, 'crystal'),
+				headline: text(source.headline, subject, 80),
+				caption: text(source.caption, '', 140),
+				wireframe: source.wireframe !== false,
+			}
+		case 'globe3d': {
+			const places = list(source.places ?? source.markers ?? source.locations)
+				.map((rawPlace, placeIndex) => {
+					const place = record(rawPlace)
+					const name = text(place.name ?? place.label, '', 40)
+					if (!name) return null
+					return {
+						name,
+						detail: text(place.detail, '', 80),
+						x: clampNumber(place.x, 0, 1, ((placeIndex * 0.61803398875) % 1)),
+						y: clampNumber(place.y, 0.08, 0.92, 0.3 + ((placeIndex * 0.29) % 1) * 0.4),
+					}
+				})
+				.filter((place): place is MapPlace => place !== null)
+				.slice(0, 6)
+			return {
+				type,
+				seconds,
+				headline: text(source.headline, subject, 80),
+				caption: text(source.caption, '', 140),
+				places,
+			}
+		}
+		case 'terrain3d':
+			return {
+				type,
+				seconds,
+				terrain: pickEnum(source.terrain, TERRAIN_IDS, 'mountain'),
+				headline: text(source.headline, subject, 80),
+				caption: text(source.caption, '', 140),
+			}
+		case 'carousel3d': {
+			const items = list(source.items ?? source.cards)
+				.map((rawItem, itemIndex) => {
+					const item = record(rawItem)
+					const title = text(item.title ?? item.label, '', 46)
+					if (!title) return null
+					const defaults: IconId[] = ['cube', 'spark', 'layers', 'orbit', 'globe', 'bolt']
+					return {
+						title,
+						detail: text(item.detail, '', 110),
+						icon: icon(item.icon, defaults[itemIndex % defaults.length]),
+					}
+				})
+				.filter((item): item is GalleryItem => item !== null)
+				.slice(0, 6)
+			if (items.length < 3) return null
+			return { type, seconds, headline: text(source.headline, '', 80), items }
+		}
 		default:
 			return null
 	}
@@ -457,6 +572,7 @@ export function normalizeStoryboard(raw: unknown, fallback: Storyboard): Storybo
 		grain: pickEnum(source.grain, GRAIN_IDS, fallback.grain),
 		leak: pickEnum(source.leak, ['warm', 'cool', 'none'] as LeakId[], fallback.leak),
 		motion: pickEnum(source.motion, MOTION_IDS, fallback.motion),
+		dimension: pickEnum(source.dimension ?? source.depth, DIMENSION_IDS, fallback.dimension),
 		scenes: scenes.length > 0 ? scenes.slice(0, MAX_SCENES) : fallback.scenes,
 	}
 }
@@ -573,6 +689,14 @@ export function defaultSceneSeconds(scene: Scene): number {
 			return 3.6
 		case 'cta':
 			return 3.2
+		case 'object3d':
+			return 4.2
+		case 'globe3d':
+			return Math.max(4, scene.places.length * 1.1)
+		case 'terrain3d':
+			return 4.5
+		case 'carousel3d':
+			return Math.max(4, scene.items.length * 1.25)
 		default:
 			return 3
 	}
@@ -581,5 +705,5 @@ export function defaultSceneSeconds(scene: Scene): number {
 export function storyboardSummary(storyboard: Storyboard, layout: StoryboardLayout): string {
 	const seconds = (layout.durationInFrames / layout.fps).toFixed(1)
 	const scenes = layout.timings.map((timing) => timing.scene.type).join(' → ')
-	return `${storyboard.aspect} · ${seconds}s · ${layout.timings.length} scenes · ${scenes}`
+	return `${storyboard.aspect} · ${seconds}s · ${storyboard.dimension} · ${layout.timings.length} scenes · ${scenes}`
 }

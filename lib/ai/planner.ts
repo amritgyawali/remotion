@@ -19,10 +19,12 @@ import {
 	MIN_SECONDS,
 	type AspectId,
 	type ChartBar,
+	type DimensionId,
 	type GalleryItem,
 	type MapPlace,
 	type MotionId,
 	type Scene,
+	type SolidId,
 	type StatItem,
 	type StructureId,
 	type TerrainId,
@@ -227,6 +229,38 @@ function detectTimeOfDay(prompt: string): TimeOfDayId {
 	return 'dawn'
 }
 
+/**
+ * Real WebGL is worth its cost when the brief asks for an object, a planet or a
+ * landscape you can move a camera through. Everything else still gets the
+ * cheaper CSS-3D staging rather than a flat layout.
+ */
+function detectDimension(prompt: string): DimensionId {
+	if (has(prompt, ['flat design', '2d', 'two dimensional', 'text only', 'typographic only', 'no 3d'])) {
+		return 'flat'
+	}
+	if (
+		has(prompt, [
+			'3d', 'three dimensional', 'cgi', 'render', 'rendered', 'octane', 'blender', 'ray trace',
+			'raytrace', 'glass', 'metallic', 'chrome', 'crystal', 'globe', 'planet', 'earth', 'orbit',
+			'terrain', 'topograph', 'wireframe', 'hologram', 'holographic', 'isometric', 'volumetric',
+			'product shot', 'turntable', 'mesh', 'geometry', 'sculpt',
+		])
+	) {
+		return 'three'
+	}
+	return 'depth'
+}
+
+function detectSolid(prompt: string): SolidId {
+	if (has(prompt, ['sphere', 'ball', 'orb', 'planet', 'bubble'])) return 'sphere'
+	if (has(prompt, ['torus', 'knot', 'loop', 'infinite', 'flow'])) return 'torus'
+	if (has(prompt, ['cube', 'box', 'block', 'package', 'container'])) return 'cube'
+	if (has(prompt, ['prism', 'hexagon', 'column', 'pillar'])) return 'prism'
+	if (has(prompt, ['capsule', 'pill', 'battery', 'cylinder'])) return 'capsule'
+	if (has(prompt, ['ring', 'halo', 'circle', 'portal', 'cycle'])) return 'ring'
+	return 'crystal'
+}
+
 function detectMotion(prompt: string): MotionId {
 	if (has(prompt, ['fast', 'punchy', 'energetic', 'hype', 'snappy', 'kinetic', 'tiktok', 'shorts'])) return 'punchy'
 	if (has(prompt, ['calm', 'slow', 'gentle', 'meditative', 'elegant', 'luxury', 'documentary', 'ambient'])) return 'calm'
@@ -310,7 +344,7 @@ function properNouns(raw: string): string[] {
 			// A leading capitalised verb like "Create" is not a subject.
 			if (STOP_WORDS.has(clean.toLowerCase())) continue
 		}
-		if (STOP_WORDS.has(clean.toLowerCase())) continue
+		if (STOP_WORDS.has(clean.toLowerCase()) || STYLE_WORDS.has(clean.toLowerCase())) continue
 		if (!found.includes(clean)) found.push(clean)
 	}
 	return found.slice(0, 6)
@@ -438,6 +472,7 @@ export function planStoryboard(rawPrompt: string): Storyboard {
 	const aspect = parseAspect(prompt)
 	const seconds = parseSeconds(prompt)
 	const motion = detectMotion(prompt)
+	const dimension = detectDimension(prompt)
 	const { displayFont, textFont } = detectFonts(prompt, topic)
 	const subject = subjectOf(raw)
 	const quoted = extractQuoted(raw)
@@ -456,6 +491,8 @@ export function planStoryboard(rawPrompt: string): Storyboard {
 	const wantsMonument = has(prompt, ['monument', 'temple', 'stupa', 'tower', 'palace', 'architecture', 'landmark', 'heritage', 'monuments'])
 	const wantsProcess = has(prompt, ['how', 'steps', 'process', 'workflow', 'explainer', 'tutorial', 'works', 'guide'])
 	const wantsChart = stats.length >= 2 && has(prompt, ['chart', 'graph', 'growth', 'compare', 'comparison', 'data', 'metrics'])
+	const solid = dimension === 'three'
+	const wantsGlobe = solid && (wantsMap || has(prompt, ['globe', 'world', 'planet', 'earth', 'global', 'international']))
 
 	const scenes: Scene[] = []
 
@@ -468,15 +505,48 @@ export function planStoryboard(rawPrompt: string): Storyboard {
 		icon: TOPIC_ICON[topic],
 	})
 
-	if (wantsScenery) {
+	// In WebGL mode the hero object replaces the flat statement card, and a
+	// displaced terrain mesh replaces the layered SVG landscape.
+	if (solid && !wantsScenery && !wantsGlobe) {
 		scenes.push({
-			type: 'landscape',
+			type: 'object3d',
 			seconds: 0,
-			terrain: detectTerrain(prompt),
-			timeOfDay: detectTimeOfDay(prompt),
+			solid: detectSolid(prompt),
 			headline: subject,
-			caption: fragments[1] ?? '',
+			caption: fragments[0] ? titleCase(fragments[0]) : '',
+			wireframe: true,
 		})
+	}
+
+	if (wantsGlobe) {
+		scenes.push({
+			type: 'globe3d',
+			seconds: 0,
+			headline: `${subject} worldwide`,
+			caption: fragments[1] ?? '',
+			places: mapPlaces(nouns),
+		})
+	}
+
+	if (wantsScenery) {
+		scenes.push(
+			solid
+				? {
+						type: 'terrain3d',
+						seconds: 0,
+						terrain: detectTerrain(prompt),
+						headline: subject,
+						caption: fragments[1] ?? '',
+					}
+				: {
+						type: 'landscape',
+						seconds: 0,
+						terrain: detectTerrain(prompt),
+						timeOfDay: detectTimeOfDay(prompt),
+						headline: subject,
+						caption: fragments[1] ?? '',
+					},
+		)
 	}
 
 	if (wantsTimeline) {
@@ -491,7 +561,7 @@ export function planStoryboard(rawPrompt: string): Storyboard {
 		scenes.push({ type: 'timeline', seconds: 0, headline: `${subject} timeline`, events })
 	}
 
-	if (wantsMap && nouns.length > 0) {
+	if (wantsMap && !wantsGlobe && nouns.length > 0) {
 		scenes.push({
 			type: 'map',
 			seconds: 0,
@@ -533,7 +603,11 @@ export function planStoryboard(rawPrompt: string): Storyboard {
 
 	const galleryItems = galleryFrom(fragments.slice(wantsProcess ? 4 : 0), topic)
 	if (galleryItems.length >= 2 && scenes.length < 6) {
-		scenes.push({ type: 'gallery', seconds: 0, headline: subject, items: galleryItems })
+		scenes.push(
+			dimension !== 'flat' && galleryItems.length >= 3
+				? { type: 'carousel3d', seconds: 0, headline: subject, items: galleryItems }
+				: { type: 'gallery', seconds: 0, headline: subject, items: galleryItems },
+		)
 	}
 
 	if (quoted.length > 0 && scenes.length < 7) {
@@ -573,6 +647,7 @@ export function planStoryboard(rawPrompt: string): Storyboard {
 		grain: detectGrain(prompt, palette),
 		leak: detectLeak(prompt, palette),
 		motion,
+		dimension,
 		scenes,
 	}
 }

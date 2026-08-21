@@ -29,6 +29,10 @@ const PROMPTS = [
 	'Neon 12 second hype video for a gaming tournament final, punchy, vertical, ends with "Play to win."',
 	'Calm 45 second wellness film about morning routines, soft light, friendly typography, 4:5.',
 	'hi',
+	'3D product turntable for a titanium smart speaker, metallic crystal geometry, wireframe overlay, 18 seconds, 16:9.',
+	'Rendered 3D globe showing our offices in Kathmandu, Berlin, Tokyo and Austin, 20 seconds, corporate, 16:9.',
+	'Cinematic 3D terrain flyover of the Himalaya with wireframe topography, 16 seconds, 21:9.',
+	'Flat 2D typographic manifesto, black and white, 10 seconds, 1:1.',
 ]
 
 const SUPPORTED_IMPORTS = new Set([

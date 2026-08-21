@@ -52,9 +52,33 @@ fail on a syntax error, a hallucinated import, a missing asset or a truncated
 file - the failure modes that make "ask an LLM for a whole file" unreliable.
 
 Scene types the composer can build: `title`, `statement`, `timeline`, `map`,
-`landscape`, `monument`, `gallery`, `stats`, `chart`, `process`, `quote`, `cta`.
+`landscape`, `monument`, `gallery`, `stats`, `chart`, `process`, `quote`, `cta`,
+plus the dimensional set below.
 Duration, aspect ratio (16:9, 9:16, 1:1, 4:5, 21:9), palette, fonts and music are
 read from the prompt when you state them and inferred when you do not.
+
+### Dimension
+
+Every storyboard picks one of three looks:
+
+| Mode | What it renders | Cost |
+| --- | --- | --- |
+| `depth` (default) | Perspective stage with a drifting camera, extruded headlines, tilted cards and a receding floor grid. Pure CSS/SVG. | free |
+| `three` | Everything in `depth`, plus real WebGL scenes through `@remotion/three`: lights, shadows, materials and a moving camera. | a GPU frame per scene |
+| `flat` | Graphic layers only. Asked for with "flat design", "2D" or "typographic". | lowest |
+
+WebGL scenes: `object3d` (lit turntable of a procedural solid - crystal, sphere,
+torus knot, cube, prism, capsule or ring - with wireframe overlay, orbiting
+satellites and a contact shadow), `globe3d` (rotating sphere with a graticule
+cage, atmosphere shell and markers placed at real latitude/longitude),
+`terrain3d` (camera flight over a displaced height field with flat shading,
+wireframe topography and depth fog). `carousel3d` puts cards on a rotating rig
+using CSS 3D and needs no WebGL.
+
+Say "3D", "rendered", "product turntable", "globe" or "terrain" and the director
+switches to `three` on its own. Everything still animates from
+`useCurrentFrame()`, so previews, browser exports and server renders match frame
+for frame.
 
 ### Optional: connect NVIDIA for AI-written scripts
 

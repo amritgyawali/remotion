@@ -19,6 +19,7 @@ import {
 	type IconId,
 } from './kit'
 import {
+	THREE_SCENE_TYPES,
 	layoutStoryboard,
 	storyboardSummary,
 	type Scene,
@@ -49,6 +50,10 @@ const SCENE_COMPONENT: Record<SceneType, string> = {
 	process: 'ProcessScene',
 	quote: 'QuoteScene',
 	cta: 'CtaScene',
+	object3d: 'Object3dScene',
+	globe3d: 'Globe3dScene',
+	terrain3d: 'Terrain3dScene',
+	carousel3d: 'Carousel3dScene',
 }
 
 function json(value: unknown): string {
@@ -70,7 +75,12 @@ function usedIcons(storyboard: Storyboard): IconId[] {
 	const icons = new Set<IconId>(['spark', 'arrow'])
 	for (const scene of storyboard.scenes) {
 		if (scene.type === 'title' || scene.type === 'cta') icons.add(scene.icon)
-		if (scene.type === 'gallery') scene.items.forEach((item) => icons.add(item.icon))
+		if (scene.type === 'gallery' || scene.type === 'carousel3d') {
+			scene.items.forEach((item) => icons.add(item.icon))
+		}
+		if (scene.type === 'globe3d') icons.add('globe')
+		if (scene.type === 'terrain3d') icons.add('mountain')
+		if (scene.type === 'object3d') icons.add('cube')
 		if (scene.type === 'process') scene.steps.forEach((step) => icons.add(step.icon))
 		if (scene.type === 'map') icons.add('pin')
 		if (scene.type === 'quote') icons.add('star')
@@ -95,6 +105,14 @@ const withAlpha = (hex: string, alpha: number): string => {
 	return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + alpha + ')'
 }
 
+/** Mixes a colour toward black, used for the shaded sides of extruded type. */
+const shade = (hex: string, amount: number): string => {
+	const value = hex.replace('#', '')
+	const channel = (start: number) =>
+		Math.round(Number.parseInt(value.slice(start, start + 2), 16) * (1 - amount))
+	return 'rgb(' + channel(0) + ', ' + channel(2) + ', ' + channel(4) + ')'
+}
+
 /** One design unit = 1px at a 1080x1080 frame, so every size scales with format. */
 const useUnit = (): number => {
 	const { width, height } = useVideoConfig()
@@ -107,35 +125,109 @@ const useSpringIn = (delay: number, damping = 190): number => {
 	return spring({ frame: frame - delay, fps, config: { damping, mass: 0.9, stiffness: 120 } })
 }
 
+/**
+ * The camera. In depth and three modes the whole layout lives on a perspective
+ * stage that dollies in and drifts a couple of degrees, so flat elements pick
+ * up parallax instead of sitting on glass.
+ */
 const SceneFrame: React.FC<{
 	children: React.ReactNode
 	align?: 'center' | 'flex-start'
 	justify?: 'center' | 'flex-end' | 'flex-start'
 	push?: number
 	gap?: number
-}> = ({ children, align = 'center', justify = 'center', push = 0.04, gap = 0 }) => {
+	tilt?: number
+}> = ({ children, align = 'center', justify = 'center', push = 0.04, gap = 0, tilt = DEPTH }) => {
 	const frame = useCurrentFrame()
 	const { width, height } = useVideoConfig()
 	const scale = interpolate(frame, [0, 260], [1 + push, 1], CLAMP)
+	const yaw = Math.sin(frame / 130) * 2.6 * tilt
+	const pitch = interpolate(frame, [0, 200], [3.4 * tilt, 0.5 * tilt], CLAMP)
 
 	return (
-		<AbsoluteFill
+		<AbsoluteFill style={{ perspective: tilt > 0 ? width * 1.35 : undefined, perspectiveOrigin: '50% 44%' }}>
+			<AbsoluteFill
+				style={{
+					paddingLeft: Math.round(width * 0.078),
+					paddingRight: Math.round(width * 0.078),
+					paddingTop: Math.round(height * 0.095),
+					paddingBottom: Math.round(height * 0.095),
+					display: 'flex',
+					flexDirection: 'column',
+					alignItems: align,
+					justifyContent: justify,
+					textAlign: align === 'center' ? 'center' : 'left',
+					gap,
+					transformStyle: 'preserve-3d',
+					transform:
+						'scale(' + scale.toFixed(4) + ') rotateX(' + pitch.toFixed(3) + 'deg) rotateY(' + yaw.toFixed(3) + 'deg)',
+				}}
+			>
+				{children}
+			</AbsoluteFill>
+		</AbsoluteFill>
+	)
+}
+
+/** Receding floor plane. Sells the horizon behind title, statement and CTA. */
+const FloorGrid: React.FC<{ color?: string; opacity?: number; speed?: number }> = ({
+	color = THEME.accent,
+	opacity = 0.4,
+	speed = 1.1,
+}) => {
+	const frame = useCurrentFrame()
+	const { width, height } = useVideoConfig()
+	if (DEPTH === 0) return null
+	const cell = Math.round(height * 0.085)
+	const scroll = (frame * speed) % cell
+
+	return (
+		<AbsoluteFill style={{ overflow: 'hidden', perspective: width * 0.8, perspectiveOrigin: '50% 0%' }}>
+			<div
+				style={{
+					position: 'absolute',
+					left: '-60%',
+					top: '56%',
+					width: '220%',
+					height: '150%',
+					transformOrigin: '50% 0%',
+					transform: 'rotateX(76deg) translateY(' + scroll.toFixed(2) + 'px)',
+					backgroundImage:
+						'repeating-linear-gradient(90deg, ' + withAlpha(color, opacity) + ' 0px, ' + withAlpha(color, opacity) +
+						' 2px, rgba(0,0,0,0) 2px, rgba(0,0,0,0) ' + cell + 'px), repeating-linear-gradient(0deg, ' +
+						withAlpha(color, opacity) + ' 0px, ' + withAlpha(color, opacity) +
+						' 2px, rgba(0,0,0,0) 2px, rgba(0,0,0,0) ' + cell + 'px)',
+					maskImage: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,1) 22%, rgba(0,0,0,0) 72%)',
+					WebkitMaskImage: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,1) 22%, rgba(0,0,0,0) 72%)',
+				}}
+			/>
+		</AbsoluteFill>
+	)
+}
+
+/** Gives a flat card a physical tilt and a cast shadow on the depth stage. */
+const DepthTilt: React.FC<{ children: React.ReactNode; index?: number; lift?: number }> = ({
+	children,
+	index = 0,
+	lift = 1,
+}) => {
+	const frame = useCurrentFrame()
+	if (DEPTH === 0) return <>{children}</>
+	const yaw = Math.sin(frame / 90 + index * 0.7) * 3.4
+	const push = Math.cos(frame / 110 + index) * 6 * lift
+
+	return (
+		<div
 			style={{
-				paddingLeft: Math.round(width * 0.078),
-				paddingRight: Math.round(width * 0.078),
-				paddingTop: Math.round(height * 0.095),
-				paddingBottom: Math.round(height * 0.095),
 				display: 'flex',
-				flexDirection: 'column',
-				alignItems: align,
-				justifyContent: justify,
-				textAlign: align === 'center' ? 'center' : 'left',
-				gap,
-				transform: 'scale(' + scale.toFixed(4) + ')',
+				flex: 1,
+				minWidth: 0,
+				transformStyle: 'preserve-3d',
+				transform: 'rotateY(' + yaw.toFixed(2) + 'deg) translateZ(' + push.toFixed(2) + 'px)',
 			}}
 		>
 			{children}
-		</AbsoluteFill>
+		</div>
 	)
 }
 
@@ -264,20 +356,25 @@ const Word: React.FC<{
 	weight: number
 	tracking: number
 	accent?: boolean
-}> = ({ text, delay, size, color, family, weight, tracking, accent = false }) => {
+	extrude?: number
+}> = ({ text, delay, size, color, family, weight, tracking, accent = false, extrude = 0 }) => {
 	const enter = useSpringIn(delay, 200)
 	const blur = (1 - enter) * 10
+	const face = accent ? THEME.accent : color
+	const step = size * 0.022
+	const layers = extrude > 0 ? new Array(extrude).fill(0) : []
 
 	return (
 		<span
 			style={{
+				position: 'relative',
 				display: 'inline-block',
 				fontFamily: family,
 				fontSize: size,
 				fontWeight: weight,
 				letterSpacing: tracking,
 				lineHeight: 1.02,
-				color: accent ? THEME.accent : color,
+				color: face,
 				opacity: enter,
 				transform:
 					'translateY(' + ((1 - enter) * size * 0.42).toFixed(2) + 'px) scale(' + (0.94 + enter * 0.06).toFixed(4) + ')',
@@ -285,7 +382,23 @@ const Word: React.FC<{
 				textShadow: accent ? '0 0 ' + (size * 0.35).toFixed(0) + 'px ' + withAlpha(THEME.glow, 0.4) : undefined,
 			}}
 		>
-			{text}
+			{/* Solid extruded sides, drawn away from the key light. */}
+			{layers.map((_, index) => (
+				<span
+					key={'extrude-' + index}
+					aria-hidden
+					style={{
+						position: 'absolute',
+						left: (index + 1) * step,
+						top: (index + 1) * step,
+						color: shade(face, 0.45 + (index / Math.max(1, extrude)) * 0.4),
+						whiteSpace: 'pre',
+					}}
+				>
+					{text}
+				</span>
+			))}
+			<span style={{ position: 'relative' }}>{text}</span>
 		</span>
 	)
 }
@@ -303,6 +416,7 @@ const Headline: React.FC<{
 	uppercase?: boolean
 	highlight?: string
 	maxWidth?: number
+	extrude?: number
 }> = ({
 	text,
 	size,
@@ -316,6 +430,7 @@ const Headline: React.FC<{
 	uppercase = false,
 	highlight = '',
 	maxWidth,
+	extrude = DEPTH * 5,
 }) => {
 	const words = text.split(' ').filter(Boolean)
 	const accents = highlight
@@ -345,6 +460,7 @@ const Headline: React.FC<{
 					weight={weight}
 					tracking={tracking}
 					accent={accents.includes(word.toLowerCase().replace(/[^a-z0-9]/g, ''))}
+					extrude={extrude}
 				/>
 			))}
 		</div>
@@ -501,6 +617,7 @@ const TitleScene: React.FC<{
 	return (
 		<AbsoluteFill>
 			<Backdrop seed={1} />
+			<FloorGrid opacity={0.32} />
 			<ParticleField count={30} speed={0.45} />
 			<SceneFrame gap={unit * 26} push={0.06}>
 				<IconBadge name={icon} size={unit * 118} delay={2} />
@@ -1237,7 +1354,9 @@ const GalleryScene: React.FC<{ frames: number; headline: string; items: GalleryI
 					}}
 				>
 					{items.map((item, index) => (
-						<GalleryCard key={item.title + '-' + index} item={item} delay={12 + index * 7} />
+						<DepthTilt key={item.title + '-' + index} index={index}>
+							<GalleryCard item={item} delay={12 + index * 7} />
+						</DepthTilt>
 					))}
 				</div>
 			</SceneFrame>
@@ -1255,6 +1374,7 @@ const GalleryCard: React.FC<{ item: GalleryItemData; delay: number }> = ({ item,
 			style={{
 				display: 'flex',
 				flexDirection: 'column',
+				width: '100%',
 				gap: unit * 14,
 				padding: unit * 26,
 				borderRadius: unit * 22,
@@ -1479,7 +1599,9 @@ const ProcessScene: React.FC<{ frames: number; headline: string; steps: ProcessS
 				>
 					{steps.map((step, index) => (
 						<React.Fragment key={step.title + '-' + index}>
-							<ProcessCard step={step} index={index} delay={12 + index * 9} />
+							<DepthTilt index={index} lift={0.7}>
+								<ProcessCard step={step} index={index} delay={12 + index * 9} />
+							</DepthTilt>
 							{index < steps.length - 1 ? <ProcessLink delay={17 + index * 9} row={row} /> : null}
 						</React.Fragment>
 					))}
@@ -1620,6 +1742,7 @@ const CtaScene: React.FC<{
 	return (
 		<AbsoluteFill>
 			<Backdrop seed={11} intensity={1.3} />
+			<FloorGrid opacity={0.36} speed={1.5} />
 			<ParticleField count={34} speed={0.6} color={THEME.accentAlt} />
 			<SceneFrame gap={unit * 26} push={0.05}>
 				<IconBadge name={icon} size={unit * 104} delay={2} color={THEME.accentAlt} />
@@ -1660,7 +1783,516 @@ const CtaScene: React.FC<{
 	)
 }
 `,
+	object3d: `
+const Object3dScene: React.FC<{
+	frames: number
+	solid: string
+	headline: string
+	caption: string
+	wireframe: boolean
+}> = ({ frames, solid, headline, caption, wireframe }) => {
+	const frame = useCurrentFrame()
+	const enter = useSpringIn(2, 160)
+	const spin = frame * 0.0115
+	const bob = Math.sin(frame / 34) * 0.17
+	const distance = interpolate(frame, [0, frames], [8.6, 6.7], CLAMP)
+	const orbit = Math.sin(frame / 150) * 0.42
+
+	return (
+		<AbsoluteFill>
+			<Backdrop seed={12} intensity={1.15} />
+			<ThreeStage distance={distance} yaw={orbit} pitch={0.2}>
+				<group position={[0, bob, 0]} rotation={[spin * 0.45, spin, spin * 0.12]} scale={0.25 + enter * 0.75}>
+					<mesh castShadow receiveShadow>
+						<Solid solid={solid} />
+						{/* Clearcoat gives a lacquered highlight without an environment map,
+						    which a metal-heavy material cannot produce on its own. */}
+						<meshPhysicalMaterial
+							color={THEME.accent}
+							metalness={0.35}
+							roughness={0.26}
+							clearcoat={1}
+							clearcoatRoughness={0.14}
+							reflectivity={0.7}
+							emissive={THEME.accent}
+							emissiveIntensity={0.06}
+						/>
+					</mesh>
+					{wireframe ? (
+						<mesh scale={1.07}>
+							<Solid solid={solid} />
+							<meshBasicMaterial color={THEME.accentAlt} wireframe transparent opacity={0.32} />
+						</mesh>
+					) : null}
+				</group>
+
+				{/* Satellites give the turntable a sense of scale and speed. */}
+				{new Array(4).fill(0).map((_, index) => {
+					const angle = spin * (1.4 + index * 0.35) + index * 1.7
+					const radius = 2.9 + index * 0.5
+					return (
+						<mesh
+							key={'satellite-' + index}
+							castShadow
+							position={[
+								Math.cos(angle) * radius,
+								Math.sin(angle * 0.8 + index) * 1.05,
+								Math.sin(angle) * radius,
+							]}
+							scale={0.1 + index * 0.028}
+						>
+							<sphereGeometry args={[1, 18, 18]} />
+							<meshStandardMaterial
+								color={THEME.accentAlt}
+								emissive={THEME.accentAlt}
+								emissiveIntensity={0.75}
+								roughness={0.3}
+							/>
+						</mesh>
+					)
+				})}
+
+				<mesh position={[0, 0, -4.5]}>
+					<ringGeometry args={[3.3, 3.36, 96]} />
+					<meshBasicMaterial color={THEME.accentAlt} transparent opacity={0.45} />
+				</mesh>
+				<mesh receiveShadow position={[0, -2.25, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+					<circleGeometry args={[8, 72]} />
+					<meshStandardMaterial color={THEME.surface} roughness={0.94} metalness={0.06} />
+				</mesh>
+			</ThreeStage>
+			<StageCaption headline={headline} caption={caption} delay={14} />
+			<SceneEdge frames={frames} />
+		</AbsoluteFill>
+	)
 }
+`,
+	globe3d: `
+type GlobePlaceData = { name: string; detail: string; x: number; y: number }
+
+const Globe3dScene: React.FC<{
+	frames: number
+	headline: string
+	caption: string
+	places: GlobePlaceData[]
+}> = ({ frames, headline, caption, places }) => {
+	const frame = useCurrentFrame()
+	const unit = useUnit()
+	const { width, height } = useVideoConfig()
+	const enter = useSpringIn(2, 170)
+	const spin = frame * 0.0075
+	const distance = interpolate(frame, [0, frames], [7.4, 6.2], CLAMP)
+
+	return (
+		<AbsoluteFill>
+			<Backdrop seed={13} intensity={1} />
+			<ParticleField count={40} speed={0.22} color={THEME.accentAlt} size={4} />
+			<ThreeStage distance={distance} yaw={Math.sin(frame / 200) * 0.22} pitch={0.16} fov={36}>
+				<group rotation={[0.32, spin, 0.06]} scale={0.4 + enter * 0.6}>
+					<mesh castShadow receiveShadow>
+						<sphereGeometry args={[1.75, 64, 48]} />
+						<meshStandardMaterial color={THEME.surface} roughness={0.75} metalness={0.25} />
+					</mesh>
+					{/* Graticule: the classic latitude/longitude cage. */}
+					<mesh scale={1.012}>
+						<sphereGeometry args={[1.75, 32, 20]} />
+						<meshBasicMaterial color={THEME.accent} wireframe transparent opacity={0.28} />
+					</mesh>
+					{/* Atmosphere shell, lit from inside. */}
+					<mesh scale={1.14}>
+						<sphereGeometry args={[1.75, 48, 32]} />
+						<meshBasicMaterial color={THEME.accent} transparent opacity={0.09} side={BackSide} />
+					</mesh>
+
+					{places.map((place, index) => {
+						const longitude = (place.x - 0.5) * Math.PI * 2
+						const latitude = (0.5 - place.y) * Math.PI
+						const radius = 1.79
+						const pop = interpolate(frame, [16 + index * 6, 34 + index * 6], [0, 1], { ...CLAMP, easing: EASE_OUT })
+						const position: [number, number, number] = [
+							radius * Math.cos(latitude) * Math.sin(longitude),
+							radius * Math.sin(latitude),
+							radius * Math.cos(latitude) * Math.cos(longitude),
+						]
+						return (
+							<group key={place.name + '-' + index} position={position} scale={pop}>
+								<mesh>
+									<sphereGeometry args={[0.075, 16, 16]} />
+									<meshStandardMaterial
+										color={THEME.accentAlt}
+										emissive={THEME.accentAlt}
+										emissiveIntensity={1.1}
+									/>
+								</mesh>
+								<mesh position={[0, 0.16, 0]}>
+									<cylinderGeometry args={[0.008, 0.008, 0.32, 8]} />
+									<meshBasicMaterial color={THEME.accentAlt} transparent opacity={0.7} />
+								</mesh>
+							</group>
+						)
+					})}
+				</group>
+
+				<mesh rotation={[-Math.PI / 2.1, 0, spin * 0.4]}>
+					<ringGeometry args={[2.55, 2.6, 128]} />
+					<meshBasicMaterial color={THEME.accent} transparent opacity={0.35} />
+				</mesh>
+			</ThreeStage>
+
+			<AbsoluteFill
+				style={{
+					flexDirection: 'column',
+					alignItems: 'flex-start',
+					justifyContent: 'flex-start',
+					paddingLeft: width * 0.078,
+					paddingTop: height * 0.095,
+					gap: unit * 14,
+					pointerEvents: 'none',
+				}}
+			>
+				<Kicker text="Global" delay={0} />
+				<Headline
+					text={headline}
+					size={unit * 56}
+					delay={6}
+					align="flex-start"
+					uppercase
+					weight={800}
+					maxWidth={unit * 620}
+				/>
+			</AbsoluteFill>
+
+			<AbsoluteFill
+				style={{
+					flexDirection: 'column',
+					alignItems: 'center',
+					justifyContent: 'flex-end',
+					paddingBottom: height * 0.08,
+					gap: unit * 12,
+					pointerEvents: 'none',
+				}}
+			>
+				<div style={{ display: 'flex', flexWrap: 'wrap', gap: unit * 10, justifyContent: 'center' }}>
+					{places.map((place, index) => (
+						<GlobeChip key={'chip-' + index} name={place.name} delay={18 + index * 6} />
+					))}
+				</div>
+				<Copy text={caption} delay={26} size={unit * 26} maxWidth={unit * 720} />
+			</AbsoluteFill>
+			<SceneEdge frames={frames} />
+		</AbsoluteFill>
+	)
+}
+
+const GlobeChip: React.FC<{ name: string; delay: number }> = ({ name, delay }) => {
+	const unit = useUnit()
+	const enter = useSpringIn(delay, 200)
+
+	return (
+		<span
+			style={{
+				display: 'inline-flex',
+				alignItems: 'center',
+				gap: unit * 8,
+				padding: unit * 8 + 'px ' + unit * 16 + 'px',
+				borderRadius: unit * 100,
+				border: '1px solid ' + withAlpha(THEME.accentAlt, 0.45),
+				backgroundColor: withAlpha(THEME.surface, 0.6),
+				color: THEME.ink,
+				fontFamily: TEXT_FONT,
+				fontSize: unit * 22,
+				opacity: enter,
+				transform: 'translateY(' + ((1 - enter) * unit * 12).toFixed(1) + 'px)',
+			}}
+		>
+			<span
+				style={{
+					width: unit * 8,
+					height: unit * 8,
+					borderRadius: unit * 8,
+					backgroundColor: THEME.accentAlt,
+					display: 'block',
+				}}
+			/>
+			{name}
+		</span>
+	)
+}
+`,
+	terrain3d: `
+/** Deterministic height field - the same seed always builds the same range. */
+const terrainHeight = (x: number, y: number, profile: string): number => {
+	const ridge = Math.sin(x * 0.52 + 1.3) * Math.cos(y * 0.44)
+	const detail = Math.sin(x * 1.7 + y * 0.9) * 0.32 + Math.cos(x * 2.6 - y * 1.4) * 0.19
+	if (profile === 'desert') return (Math.abs(ridge) * 0.85 + detail * 0.2) * 1.15
+	if (profile === 'ocean') return Math.sin(x * 0.85 + y * 0.55) * 0.34 + detail * 0.12
+	if (profile === 'valley') return Math.min(2.6, Math.abs(x) * 0.34) + ridge * 0.42
+	if (profile === 'forest') return Math.max(0, ridge * 1.1) + Math.abs(detail) * 0.9
+	if (profile === 'city') return Math.round(Math.abs(ridge) * 3) * 0.42
+	return Math.max(0, ridge * 2.2 + detail) * 1.4
+}
+
+const Terrain3dScene: React.FC<{
+	frames: number
+	terrain: string
+	headline: string
+	caption: string
+}> = ({ frames, terrain, headline, caption }) => {
+	const frame = useCurrentFrame()
+	const travel = interpolate(frame, [0, frames], [0, 6.5], CLAMP)
+	const distance = interpolate(frame, [0, frames], [10.5, 8.2], CLAMP)
+	const pitch = interpolate(frame, [0, frames], [0.42, 0.22], CLAMP)
+
+	const geometry = React.useMemo(() => {
+		const geo = new PlaneGeometry(46, 30, 90, 60)
+		const position = geo.attributes.position
+		for (let index = 0; index < position.count; index += 1) {
+			position.setZ(index, terrainHeight(position.getX(index), position.getY(index), terrain))
+		}
+		position.needsUpdate = true
+		geo.computeVertexNormals()
+		return geo
+	}, [terrain])
+
+	return (
+		<AbsoluteFill>
+			<Backdrop seed={14} intensity={0.9} />
+			<ThreeStage distance={distance} yaw={Math.sin(frame / 190) * 0.16} pitch={pitch} fov={44} fog={[9, 34]}>
+				<group position={[0, -1.6, travel]}>
+					<mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} castShadow receiveShadow>
+						<meshStandardMaterial color={THEME.surface} roughness={0.92} metalness={0.05} flatShading />
+					</mesh>
+					<mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, 0]}>
+						<meshBasicMaterial color={THEME.accent} wireframe transparent opacity={0.16} />
+					</mesh>
+				</group>
+				{/* Sun disc on the horizon. fog={false} keeps it bright instead of
+				    letting the depth fog wash it into the background plate. */}
+				<mesh position={[3.4, 2.6, -17]}>
+					<circleGeometry args={[2, 64]} />
+					<meshBasicMaterial color={THEME.accent} transparent opacity={0.9} fog={false} />
+				</mesh>
+				<mesh position={[3.4, 2.6, -17.4]}>
+					<ringGeometry args={[2.1, 3.4, 64]} />
+					<meshBasicMaterial color={THEME.accent} transparent opacity={0.14} fog={false} />
+				</mesh>
+			</ThreeStage>
+			<StageCaption headline={headline} caption={caption} delay={12} />
+			<SceneEdge frames={frames} />
+		</AbsoluteFill>
+	)
+}
+`,
+	carousel3d: `
+type CarouselItemData = { title: string; detail: string; icon: IconName }
+
+const Carousel3dScene: React.FC<{ frames: number; headline: string; items: CarouselItemData[] }> = ({
+	frames,
+	headline,
+	items,
+}) => {
+	const frame = useCurrentFrame()
+	const unit = useUnit()
+	const { width, height } = useVideoConfig()
+	// A shallow arc keeps the neighbouring cards visible at an angle; a full
+	// 360-degree ring would turn them edge-on and leave the frame empty.
+	const step = Math.min(360 / items.length, 58)
+	const radius = Math.min(width * 0.34, unit * 500)
+	const spin = interpolate(frame, [10, frames - 6], [0, -step * (items.length - 1)], {
+		...CLAMP,
+		easing: EASE_OUT,
+	})
+
+	return (
+		<AbsoluteFill>
+			<Backdrop seed={15} intensity={1.2} />
+			<FloorGrid opacity={0.3} speed={1.4} />
+			<AbsoluteFill
+				style={{
+					alignItems: 'center',
+					justifyContent: 'center',
+					perspective: width * 1.1,
+					perspectiveOrigin: '50% 48%',
+				}}
+			>
+				<div
+					style={{
+						position: 'relative',
+						width: unit * 360,
+						height: unit * 300,
+						transformStyle: 'preserve-3d',
+						transform: 'rotateX(-7deg) rotateY(' + spin.toFixed(2) + 'deg)',
+					}}
+				>
+					{items.map((item, index) => (
+						<CarouselCard
+							key={item.title + '-' + index}
+							item={item}
+							angle={index * step}
+							facing={Math.cos(((index * step + spin) * Math.PI) / 180)}
+							radius={radius}
+							delay={8 + index * 5}
+						/>
+					))}
+				</div>
+			</AbsoluteFill>
+			<AbsoluteFill
+				style={{
+					flexDirection: 'column',
+					alignItems: 'center',
+					justifyContent: 'flex-start',
+					paddingTop: height * 0.09,
+					pointerEvents: 'none',
+				}}
+			>
+				<Headline text={headline} size={unit * 56} delay={2} uppercase weight={800} maxWidth={unit * 900} />
+			</AbsoluteFill>
+			<SceneEdge frames={frames} />
+		</AbsoluteFill>
+	)
+}
+
+const CarouselCard: React.FC<{
+	item: CarouselItemData
+	angle: number
+	facing: number
+	radius: number
+	delay: number
+}> = ({ item, angle, facing, radius, delay }) => {
+	const unit = useUnit()
+	const enter = useSpringIn(delay, 180)
+	const front = Math.max(0, facing)
+
+	return (
+		<div
+			style={{
+				position: 'absolute',
+				left: 0,
+				top: 0,
+				width: '100%',
+				height: '100%',
+				display: 'flex',
+				flexDirection: 'column',
+				gap: unit * 14,
+				justifyContent: 'center',
+				padding: unit * 28,
+				borderRadius: unit * 24,
+				backgroundColor: withAlpha(THEME.surface, 0.82),
+				border: '1px solid ' + withAlpha(THEME.accent, 0.34),
+				boxShadow: '0 ' + (unit * 26).toFixed(0) + 'px ' + (unit * 60).toFixed(0) + 'px ' + withAlpha('#000000', 0.45),
+				transform:
+					'rotateY(' + angle + 'deg) translateZ(' + radius.toFixed(1) + 'px) scale(' +
+					(0.86 + enter * 0.14 * (0.7 + front * 0.3)).toFixed(3) + ')',
+				opacity: enter * (0.3 + front * 0.7),
+				backfaceVisibility: 'hidden',
+			}}
+		>
+			<VectorIcon name={item.icon} size={unit * 52} color={THEME.accent} strokeWidth={1.7} glow />
+			<span style={{ fontFamily: DISPLAY_FONT, fontSize: unit * 38, fontWeight: 800, color: THEME.ink, lineHeight: 1.12 }}>
+				{item.title}
+			</span>
+			{item.detail ? (
+				<span style={{ fontFamily: TEXT_FONT, fontSize: unit * 24, color: THEME.muted, lineHeight: 1.4 }}>
+					{item.detail}
+				</span>
+			) : null}
+		</div>
+	)
+}
+`,
+}
+
+/**
+ * The WebGL stage. Emitted only when a storyboard uses a three scene, because
+ * it pulls three.js into the compile.
+ */
+const THREE_STAGE = `
+/**
+ * Camera, lights and atmosphere for every WebGL scene.
+ *
+ * preserveDrawingBuffer is mandatory: without it a browser export captures an
+ * empty canvas. Every value below is derived from useCurrentFrame() by the
+ * caller, so the render is deterministic and useFrame() is never needed.
+ */
+const ThreeStage: React.FC<{
+	children: React.ReactNode
+	distance?: number
+	yaw?: number
+	pitch?: number
+	fov?: number
+	fog?: [number, number] | null
+}> = ({ children, distance = 7.4, yaw = 0, pitch = 0.24, fov = 38, fog = null }) => {
+	const { width, height } = useVideoConfig()
+	const x = Math.sin(yaw) * distance * Math.cos(pitch)
+	const y = Math.sin(pitch) * distance
+	const z = Math.cos(yaw) * distance * Math.cos(pitch)
+
+	return (
+		<ThreeCanvas
+			width={width}
+			height={height}
+			dpr={2}
+			shadows="basic"
+			gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }}
+			camera={{ fov, near: 0.1, far: 160, position: [x, y, z] }}
+			style={{ position: 'absolute', inset: 0 }}
+		>
+			{fog ? <fog attach="fog" args={[THEME.background, fog[0], fog[1]]} /> : null}
+			<ambientLight color={THEME.ink} intensity={0.5} />
+			<hemisphereLight color={THEME.accent} groundColor={THEME.background} intensity={0.75} />
+			<directionalLight
+				castShadow
+				color="#FFFFFF"
+				intensity={2.3}
+				position={[5.5, 8.5, 6]}
+				shadow-mapSize-width={1024}
+				shadow-mapSize-height={1024}
+			/>
+			{/* Rim light in the accent colour separates the subject from the plate. */}
+			<pointLight color={THEME.accentAlt} intensity={45} distance={30} decay={2} position={[-5.5, 2.6, 3.6]} />
+			{/* Cool fill from below stops the underside going to pure black. */}
+			<pointLight color={THEME.accent} intensity={22} distance={26} decay={2} position={[2.4, -3.2, 4.2]} />
+			{children}
+		</ThreeCanvas>
+	)
+}
+
+const Solid: React.FC<{ solid: string }> = ({ solid }) => {
+	if (solid === 'sphere') return <icosahedronGeometry args={[1.5, 4]} />
+	if (solid === 'torus') return <torusKnotGeometry args={[1, 0.33, 180, 26]} />
+	if (solid === 'cube') return <boxGeometry args={[2, 2, 2]} />
+	if (solid === 'prism') return <cylinderGeometry args={[1.3, 1.3, 2.2, 6]} />
+	if (solid === 'capsule') return <capsuleGeometry args={[0.8, 1.5, 12, 28]} />
+	if (solid === 'ring') return <torusGeometry args={[1.5, 0.32, 30, 120]} />
+	return <octahedronGeometry args={[1.7, 0]} />
+}
+
+/** Caption plate used under every WebGL scene so type stays crisp DOM text. */
+const StageCaption: React.FC<{ headline: string; caption: string; delay?: number }> = ({
+	headline,
+	caption,
+	delay = 12,
+}) => {
+	const unit = useUnit()
+	const { height } = useVideoConfig()
+
+	return (
+		<AbsoluteFill
+			style={{
+				justifyContent: 'flex-end',
+				alignItems: 'center',
+				paddingBottom: height * 0.085,
+				gap: unit * 14,
+				flexDirection: 'column',
+				pointerEvents: 'none',
+			}}
+		>
+			<Headline text={headline} size={unit * 66} delay={delay} uppercase weight={800} maxWidth={unit * 940} />
+			<Copy text={caption} delay={delay + 10} size={unit * 27} maxWidth={unit * 720} />
+		</AbsoluteFill>
+	)
+}
+`
 
 /** A per-scene edge treatment: keeps the first frames of every cut readable. */
 const SCENE_EDGE = `
@@ -1699,6 +2331,14 @@ function sceneProps(scene: Scene, frames: number): string {
 			return `${common} quote={${json(scene.quote)}} attribution={${json(scene.attribution)}}`
 		case 'cta':
 			return `${common} headline={${json(scene.headline)}} subline={${json(scene.subline)}} tagline={${json(scene.tagline)}} icon={${json(scene.icon)}}`
+		case 'object3d':
+			return `${common} solid={${json(scene.solid)}} headline={${json(scene.headline)}} caption={${json(scene.caption)}} wireframe={${scene.wireframe}}`
+		case 'globe3d':
+			return `${common} headline={${json(scene.headline)}} caption={${json(scene.caption)}} places={${json(scene.places)}}`
+		case 'terrain3d':
+			return `${common} terrain={${json(scene.terrain)}} headline={${json(scene.headline)}} caption={${json(scene.caption)}}`
+		case 'carousel3d':
+			return `${common} headline={${json(scene.headline)}} items={${json(scene.items)}}`
 		default:
 			return common
 	}
@@ -1852,6 +2492,12 @@ import { TransitionSeries, linearTiming } from '@remotion/transitions'`)
 		out.push(`import { ${name} } from '@remotion/transitions/${name}'`)
 	}
 
+	const usesThree = types.some((type) => THREE_SCENE_TYPES.includes(type))
+	if (usesThree) {
+		out.push(`import { ThreeCanvas } from '@remotion/three'`)
+		out.push(`import { BackSide, PlaneGeometry } from 'three'`)
+	}
+
 	out.push(`
 /* -------------------------------------------------------------------------- */
 /*  Format                                                                    */
@@ -1894,6 +2540,16 @@ loadFont({
 const DISPLAY_FONT = "'${display.family}', ${display.fallback}"
 const TEXT_FONT = "'${body.family}', ${body.fallback}"
 
+/**
+ * How dimensional this film is: 'flat' keeps everything on one plane, 'depth'
+ * adds a perspective stage with extruded type, and 'three' also mounts real
+ * WebGL scenes. DEPTH scales every pseudo-3D effect from one place.
+ */
+export const DIMENSION = '${storyboard.dimension}'
+
+/** 0 disables every pseudo-3D effect, 1 enables the perspective stage. */
+const DEPTH: number = ${storyboard.dimension === 'flat' ? 0 : 1}
+
 /* -------------------------------------------------------------------------- */
 /*  Iconography                                                               */
 /* -------------------------------------------------------------------------- */
@@ -1911,6 +2567,7 @@ type IconName = keyof typeof ICON_PATHS
 
 	out.push(HELPERS)
 	out.push(SCENE_EDGE)
+	if (usesThree) out.push(THREE_STAGE)
 
 	for (const type of types) {
 		out.push(SCENES[type])
