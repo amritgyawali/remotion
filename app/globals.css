@@ -151,16 +151,11 @@
 	font-size: 9.5px;
 }
 
-.ai-ideas summary,
-.ai-access summary {
+.ai-ideas summary {
 	cursor: pointer;
 	color: var(--text-tertiary);
 	font-size: 10.5px;
 	user-select: none;
-}
-
-.ai-access[open] summary {
-	margin-bottom: 8px;
 }
 
 .ai-auto-render {

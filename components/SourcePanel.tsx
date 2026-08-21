@@ -17,8 +17,6 @@ export default function SourcePanel({
 	onSample,
 	onEntryChange,
 	onAiGenerate,
-	aiAccessKey,
-	onAiAccessKey,
 }: {
 	project: VirtualProject | null
 	busy: boolean
@@ -27,8 +25,6 @@ export default function SourcePanel({
 	onSample: (sample: SampleDefinition) => void
 	onEntryChange: (path: string) => void
 	onAiGenerate: (request: AiGenerationRequest) => Promise<AiGenerationResult>
-	aiAccessKey: string
-	onAiAccessKey: (value: string) => void
 }) {
 	const inputRef = useRef<HTMLInputElement>(null)
 	const [dragging, setDragging] = useState(false)
@@ -48,12 +44,7 @@ export default function SourcePanel({
 			<div className="panel-scroll">
 				<div>
 					<h2 className="section-label">1 - Create with AI</h2>
-					<AiCreator
-						busy={busy}
-						accessKey={aiAccessKey}
-						onAccessKey={onAiAccessKey}
-						onGenerate={onAiGenerate}
-					/>
+					<AiCreator busy={busy} onGenerate={onAiGenerate} />
 				</div>
 
 				<div>

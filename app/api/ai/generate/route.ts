@@ -1,4 +1,3 @@
-import { timingSafeEqual } from 'node:crypto'
 import {
 	AUTO_MODEL_ORDER,
 	isAiModelId,
@@ -99,17 +98,6 @@ type NvidiaResponse = {
 type Attempt = {
 	model: string
 	error: string
-}
-
-function hasAccess(request: Request): boolean {
-	const expected = (process.env.AI_ACCESS_KEY || process.env.RENDER_ACCESS_KEY || '').trim()
-	if (!expected) return true
-	const received = request.headers.get('x-ai-key') ?? ''
-	const expectedBytes = Buffer.from(expected)
-	const receivedBytes = Buffer.from(received)
-	return (
-		expectedBytes.length === receivedBytes.length && timingSafeEqual(expectedBytes, receivedBytes)
-	)
 }
 
 function collectHistory(value: unknown): Array<{ role: 'user' | 'assistant'; text: string }> {
@@ -328,10 +316,6 @@ function projectName(prompt: string): string {
 }
 
 export async function POST(request: Request) {
-	if (!hasAccess(request)) {
-		return Response.json({ error: 'Invalid or missing Studio AI access key.' }, { status: 401 })
-	}
-
 	const apiKey = process.env.NVIDIA_API_KEY?.trim()
 	if (!apiKey) {
 		return Response.json(
