@@ -1,6 +1,7 @@
 'use client'
 
-import { IconBolt, IconBrowser, IconCaptions, IconLogo, IconServer, IconTrash } from './Icons'
+import { IconBrowser, IconCaptions, IconLogo, IconServer, IconTrash } from './Icons'
+import ThemeToggle from './ThemeToggle'
 import type { RenderEngine, ServerCapabilities, VirtualProject } from '../lib/types'
 
 export default function TopBar({
@@ -16,21 +17,30 @@ export default function TopBar({
 	webCodecs: boolean
 	onReset: () => void
 }) {
+	const engineLabel =
+		engine === 'server'
+			? capabilities.provider === 'vercel-sandbox'
+				? 'Vercel Sandbox'
+				: 'Server'
+			: 'This device'
+
 	return (
 		<header className="topbar">
 			<div className="brand">
 				<span className="brand-mark">
 					<IconLogo size={15} />
 				</span>
-				Remotion Video Studio
-				<span className="brand-sub">code file in, rendered video out</span>
+				<span className="brand-text">
+					Remotion Video Studio
+					<span className="brand-sub">describe it, watch it, download it</span>
+				</span>
 			</div>
 
 			<div className="topbar-spacer" />
 
 			{project ? (
-				<span className="chip chip--static" title={`Entry: ${project.entry}`}>
-					{project.name} - {project.files.length} file{project.files.length === 1 ? '' : 's'}
+				<span className="chip chip--static" title={`Entry file: ${project.entry}`}>
+					{project.name}
 				</span>
 			) : null}
 
@@ -42,36 +52,34 @@ export default function TopBar({
 							? 'Rendering happens in an isolated Vercel Sandbox VM'
 							: 'Rendering happens on the configured Node host with headless Chrome'
 						: webCodecs
-							? 'Rendering happens on this device with WebCodecs'
+							? 'Rendering happens on this device with WebCodecs - nothing is uploaded'
 							: 'This browser has no WebCodecs support'
 				}
 			>
 				{engine === 'server' ? <IconServer size={11} /> : <IconBrowser size={11} />}
-				{engine === 'server' && capabilities.provider === 'vercel-sandbox'
-					? 'Vercel Sandbox'
-					: engine === 'server'
-						? 'Server engine'
-						: 'Browser engine'}
+				{engineLabel}
 			</span>
 
-			{capabilities.enabled ? (
-				<span className="badge badge--muted" title="Server rendering is enabled on this deployment">
-					<IconBolt size={11} />
-					{capabilities.provider === 'vercel-sandbox' ? 'sandbox ready' : 'server ready'}
-				</span>
-			) : null}
+			<div className="topbar-actions">
+				{/* A plain link, not next/link: /captions is served with cross-origin
+				    isolation headers that a client-side navigation would not pick up. */}
+				<a className="btn btn--ghost btn--sm" href="/captions" title="Add subtitles to a video">
+					<IconCaptions size={13} />
+					<span className="btn-label">Subtitles</span>
+				</a>
 
-			{/* A plain link, not next/link: /captions is served with cross-origin
-			    isolation headers that a client-side navigation would not pick up. */}
-			<a className="btn btn--ghost btn--sm" href="/captions" title="Add subtitles to a video you upload">
-				<IconCaptions size={13} />
-				Subtitle a video
-			</a>
+				<ThemeToggle />
 
-			<button className="btn btn--ghost btn--sm" onClick={onReset} disabled={!project}>
-				<IconTrash size={13} />
-				Reset
-			</button>
+				<button
+					className="icon-btn"
+					onClick={onReset}
+					disabled={!project}
+					title="Start over"
+					aria-label="Start over"
+				>
+					<IconTrash size={14} />
+				</button>
+			</div>
 		</header>
 	)
 }
