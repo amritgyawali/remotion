@@ -1,6 +1,7 @@
 'use client'
 
-import { IconBrowser, IconCaptions, IconCheck, IconServer, IconTrash } from '../Icons'
+import { IconBrowser, IconCaptions, IconCheck, IconFilm, IconServer, IconTrash } from '../Icons'
+import ThemeToggle from '../ThemeToggle'
 import type { RenderEngine, ServerCapabilities } from '../../lib/types'
 
 export type StudioStep = {
@@ -34,8 +35,10 @@ export default function CaptionTopBar({
 				<span className="brand-mark">
 					<IconCaptions size={15} />
 				</span>
-				Subtitle Studio
-				<span className="brand-sub">video in, captioned video out</span>
+				<span className="brand-text">
+					Subtitle Studio
+					<span className="brand-sub">video in, captioned video out</span>
+				</span>
 			</div>
 
 			<ol className="steps">
@@ -76,16 +79,26 @@ export default function CaptionTopBar({
 					: 'Browser engine'}
 			</span>
 
-			{/* A full page load on purpose: the cross-origin isolation that the
-			    speech model needs is granted per document, not per client-side route. */}
-			<a className="btn btn--ghost btn--sm" href="/">
-				Code studio
-			</a>
+			<div className="topbar-actions">
+				{/* A full page load on purpose: the cross-origin isolation that the
+				    speech model needs is granted per document, not per client-side route. */}
+				<a className="btn btn--ghost btn--sm" href="/" title="Back to the video studio">
+					<IconFilm size={13} />
+					<span className="btn-label">Video studio</span>
+				</a>
 
-			<button className="btn btn--ghost btn--sm" onClick={onReset} disabled={!canReset}>
-				<IconTrash size={13} />
-				Reset
-			</button>
+				<ThemeToggle />
+
+				<button
+					className="icon-btn"
+					onClick={onReset}
+					disabled={!canReset}
+					title="Start over"
+					aria-label="Start over"
+				>
+					<IconTrash size={14} />
+				</button>
+			</div>
 		</header>
 	)
 }

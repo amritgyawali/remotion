@@ -12,7 +12,17 @@ import RenderPanel from './RenderPanel'
 import SourcePanel from './SourcePanel'
 import StagePanel from './StagePanel'
 import TopBar from './TopBar'
-import type { AiGenerationRequest, AiGenerationResult } from './AiCreator'
+import { IconFilm, IconSliders, IconSparkle } from './Icons'
+import type { AiChatMessage, AiGenerationRequest, AiGenerationResult } from './AiCreator'
+
+/** Which single pane a phone shows; the tab bar under the workspace switches it. */
+type MobileTab = 'create' | 'preview' | 'export'
+
+const MOBILE_TABS: Array<{ id: MobileTab; label: string; icon: typeof IconFilm }> = [
+	{ id: 'create', label: 'Create', icon: IconSparkle },
+	{ id: 'preview', label: 'Preview', icon: IconFilm },
+	{ id: 'export', label: 'Export', icon: IconSliders },
+]
 
 const INITIAL_SETTINGS: RenderSettings = {
 	engine: 'browser',
@@ -30,6 +40,10 @@ export default function Studio() {
 	const [compiling, setCompiling] = useState(false)
 	const [selectedId, setSelectedId] = useState<string | null>(null)
 	const [autoRenderEntry, setAutoRenderEntry] = useState<string | null>(null)
+	const [mobileTab, setMobileTab] = useState<MobileTab>('preview')
+	// Held here, not in the composer: the composer is remounted when the opening
+	// screen gives way to the three-pane studio, and the transcript must survive it.
+	const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([])
 
 	const render = useRenderController(INITIAL_SETTINGS)
 	const { reset: resetRender, startRender } = render
@@ -85,6 +99,8 @@ export default function Studio() {
 			setCompileError(null)
 			setSelectedId(null)
 			setProject(next)
+			// A phone shows one pane at a time: land on the video, not the form.
+			setMobileTab('preview')
 		},
 		[resetRender],
 	)
@@ -243,6 +259,7 @@ export default function Studio() {
 		resetRender()
 		setAutoRenderEntry(null)
 		setProject(null)
+		setAiMessages([])
 	}, [resetRender])
 
 	const handleRender = useCallback(() => {
@@ -264,6 +281,11 @@ export default function Studio() {
 		void handleRender()
 	}, [autoRenderEntry, compiling, composition, handleRender, project, render.rendering])
 
+	/** A finished file is the point of the visit, so a phone jumps to it. */
+	useEffect(() => {
+		if (render.output) setMobileTab('export')
+	}, [render.output])
+
 	return (
 		<div className="app">
 			<TopBar
@@ -273,42 +295,81 @@ export default function Studio() {
 				webCodecs={render.webCodecs}
 				onReset={handleReset}
 			/>
-			<div className="workspace">
+			{!project ? (
+				/* Nothing loaded yet: one prompt box, full width, no panels to read first. */
 				<SourcePanel
-					project={project}
+					project={null}
 					busy={compiling || render.rendering}
 					warnings={compileResult?.warnings ?? []}
+					error={compileError}
+					variant="hero"
+					messages={aiMessages}
+					onMessages={setAiMessages}
 					onFiles={handleFiles}
 					onSample={handleSample}
 					onEntryChange={handleEntryChange}
 					onAiGenerate={handleAiGenerate}
 				/>
-				<StagePanel
-					compileResult={compileResult}
-					composition={composition}
-					audioEnabled={render.settings.audioEnabled}
-					selectedId={selectedId}
-					onSelect={setSelectedId}
-					compiling={compiling}
-					error={compileError}
-				/>
-				<RenderPanel
-					composition={composition}
-					settings={render.settings}
-					onSettings={render.updateSettings}
-					capabilities={render.capabilities}
-					webCodecs={render.webCodecs}
-					progress={render.progress}
-					output={render.output}
-					error={render.error}
-					rendering={render.rendering}
-					onRender={handleRender}
-					onCancel={render.cancel}
-					accessKey={render.accessKey}
-					onAccessKey={render.setAccessKey}
-					log={render.log}
-				/>
-			</div>
+			) : (
+				<>
+				<div className="workspace" data-tab={mobileTab}>
+					<SourcePanel
+						project={project}
+						busy={compiling || render.rendering}
+						warnings={compileResult?.warnings ?? []}
+						variant="panel"
+						messages={aiMessages}
+						onMessages={setAiMessages}
+						onFiles={handleFiles}
+						onSample={handleSample}
+						onEntryChange={handleEntryChange}
+						onAiGenerate={handleAiGenerate}
+					/>
+					<StagePanel
+						compileResult={compileResult}
+						composition={composition}
+						audioEnabled={render.settings.audioEnabled}
+						selectedId={selectedId}
+						onSelect={setSelectedId}
+						compiling={compiling}
+						error={compileError}
+					/>
+					<RenderPanel
+						composition={composition}
+						settings={render.settings}
+						onSettings={render.updateSettings}
+						capabilities={render.capabilities}
+						webCodecs={render.webCodecs}
+						progress={render.progress}
+						output={render.output}
+						error={render.error}
+						rendering={render.rendering}
+						onRender={handleRender}
+						onCancel={render.cancel}
+						accessKey={render.accessKey}
+						onAccessKey={render.setAccessKey}
+						log={render.log}
+					/>
+				</div>
+					<nav className="mobile-tabs" aria-label="Studio sections">
+						{MOBILE_TABS.map((tab) => {
+							const Icon = tab.icon
+							return (
+								<button
+									key={tab.id}
+									className="mobile-tab"
+									data-active={mobileTab === tab.id}
+									aria-current={mobileTab === tab.id}
+									onClick={() => setMobileTab(tab.id)}
+								>
+									<Icon size={17} />
+									{tab.label}
+								</button>
+							)
+						})}
+					</nav>
+				</>
+			)}
 		</div>
 	)
 }

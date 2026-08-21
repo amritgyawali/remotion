@@ -229,3 +229,31 @@ export const IconType = (props: IconProps) => (
 		<path d="M8.5 20h7" />
 	</Base>
 )
+
+export const IconSun = (props: IconProps) => (
+	<Base {...props}>
+		<circle cx="12" cy="12" r="4" />
+		<path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+	</Base>
+)
+
+export const IconMoon = (props: IconProps) => (
+	<Base {...props}>
+		<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z" />
+	</Base>
+)
+
+export const IconArrowUp = (props: IconProps) => (
+	<Base {...props} strokeWidth={2.2}>
+		<path d="M12 19V5M6 11l6-6 6 6" />
+	</Base>
+)
+
+export const IconSliders = (props: IconProps) => (
+	<Base {...props}>
+		<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h10M18 18h2" />
+		<circle cx="16" cy="6" r="2" />
+		<circle cx="10" cy="12" r="2" />
+		<circle cx="16" cy="18" r="2" />
+	</Base>
+)

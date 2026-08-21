@@ -53,7 +53,7 @@ export default function StagePanel({
 				) : composition ? (
 					<span className="chip chip--static">{composition.id}</span>
 				) : (
-					<span className="chip chip--static">No composition</span>
+					<span className="chip chip--static">No composition yet</span>
 				)}
 
 				{composition ? (
@@ -69,16 +69,21 @@ export default function StagePanel({
 							{formatDuration(composition.durationInFrames, composition.fps)}
 						</span>
 						{composition.inferred ? (
-							<span className="badge badge--orange" title="No <Composition> found - defaults applied">
+							<span
+								className="badge badge--orange"
+								title="No <Composition> found - sensible defaults were applied"
+							>
 								inferred
 							</span>
 						) : null}
 					</>
 				) : null}
 
+				<span className="stage-bar-spacer" />
+
 				{compiling ? (
 					<span className="badge badge--accent">
-						<IconSpinner size={11} /> compiling
+						<IconSpinner size={11} /> building preview
 					</span>
 				) : null}
 			</div>
@@ -90,7 +95,8 @@ export default function StagePanel({
 							<IconAlert size={24} />
 						</span>
 						<h2>That file did not compile</h2>
-						<pre className="log" style={{ textAlign: 'left', marginTop: 12 }}>
+						<p>Fix the error below, or ask the AI for a new version - nothing else was changed.</p>
+						<pre className="log" style={{ textAlign: 'left', marginTop: 14 }}>
 							{error}
 						</pre>
 					</div>
@@ -114,11 +120,11 @@ export default function StagePanel({
 						<span className="stage-empty-mark">
 							<IconFilm size={24} />
 						</span>
-						<h2>Drop in a composition file</h2>
+						<h2>Your preview shows up here</h2>
 						<p>
-							Upload a <code>.tsx</code> Remotion component or a zipped project on the left, or load
-							one of the samples. It compiles in your browser - nothing is uploaded until you choose
-							the server engine.
+							Describe a video on the left and it plays here in seconds. You can also drop in a{' '}
+							<code>.tsx</code> Remotion file or open an example - everything compiles on this
+							device.
 						</p>
 					</div>
 				)}
