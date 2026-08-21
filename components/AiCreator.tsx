@@ -8,7 +8,8 @@ export type AiChatMessage = {
 	id: string
 	role: 'user' | 'assistant'
 	text: string
-	tone?: 'normal' | 'success' | 'error'
+	tone?: 'normal' | 'success' | 'error' | 'note'
+	meta?: string[]
 }
 
 export type AiGenerationRequest = {
@@ -20,17 +21,37 @@ export type AiGenerationRequest = {
 
 export type AiGenerationResult = {
 	model: string
+	source: 'nvidia' | 'studio'
 	compositionId: string
-	repaired: boolean
-	fallbacks: string[]
+	summary: string
+	scenes: string[]
+	seconds: number
+	title: string
+	notice?: string
 	renderQueued: boolean
 }
 
 const STARTERS = [
-	'15-second cinematic product launch for a solar-powered camera, warm desert light, bold minimal copy, 9:16, end with “See farther.”',
+	'Cinematic 20-second history of Nepal, 16:9, animated timeline, mountain scenery, temple architecture and elegant serif typography.',
+	'15-second product launch for a solar-powered camera, warm desert light, bold minimal copy, 9:16, end with “See farther.”',
 	'30-second explainer showing how the JavaScript event loop works, dark technical style, honest diagrams, 16:9, no voiceover.',
 	'Luxury editorial teaser for a Nepali mountain hotel, mist, paper texture, elegant serif typography, 20 seconds, 1:1.',
 ]
+
+const SCENE_LABELS: Record<string, string> = {
+	title: 'Title',
+	statement: 'Statement',
+	timeline: 'Timeline',
+	map: 'Map',
+	landscape: 'Landscape',
+	monument: 'Monument',
+	gallery: 'Gallery',
+	stats: 'Stats',
+	chart: 'Chart',
+	process: 'Process',
+	quote: 'Quote',
+	cta: 'Call to action',
+}
 
 export default function AiCreator({
 	busy,
@@ -46,7 +67,7 @@ export default function AiCreator({
 		{
 			id: 'welcome',
 			role: 'assistant',
-			text: 'Describe the finished video. NVIDIA writes only the replacement TSX source; this Studio compiles it, repairs one failed draft, loads the preview, and renders the output.',
+			text: 'Describe the video you want. NVIDIA plans the storyboard - scenes, copy, palette, type, music - and this Studio composes the Remotion file, compiles it, loads the preview and renders the output. If the model is unavailable the Studio director plans it locally, so a single click always produces a video.',
 		},
 	])
 	const [generating, setGenerating] = useState(false)
@@ -78,18 +99,31 @@ export default function AiCreator({
 				renderAfterGenerate,
 				history,
 			})
-			const fallbackNote = result.fallbacks.length
-				? ` after ${result.fallbacks.length} fallback${result.fallbacks.length === 1 ? '' : 's'}`
-				: ''
-			setMessages((current) => [
-				...current,
+
+			const director = result.source === 'nvidia' ? result.model : 'the Studio director'
+			const scenes = result.scenes.map((scene) => SCENE_LABELS[scene] ?? scene)
+			const next: AiChatMessage[] = [
 				{
 					id: `assistant-${Date.now()}`,
 					role: 'assistant',
 					tone: 'success',
-					text: `Loaded ${result.compositionId} using ${result.model}${fallbackNote}${result.repaired ? ' and repaired a compile issue automatically' : ''}. ${result.renderQueued ? 'The final output render is starting automatically.' : 'Preview it now, then ask for a revision or render the final video.'}`,
+					text: `Built “${result.title || result.compositionId}” with ${director} - ${result.seconds}s, ${scenes.length} scenes. ${
+						result.renderQueued
+							? 'The final render is starting automatically.'
+							: 'Preview it now, then ask for a revision or render it.'
+					}`,
+					meta: scenes,
 				},
-			])
+			]
+			if (result.notice) {
+				next.push({
+					id: `assistant-note-${Date.now()}`,
+					role: 'assistant',
+					tone: 'note',
+					text: result.notice,
+				})
+			}
+			setMessages((current) => [...current, ...next])
 		} catch (error) {
 			setMessages((current) => [
 				...current,
@@ -110,11 +144,11 @@ export default function AiCreator({
 			<div className="ai-creator-heading">
 				<div>
 					<div className="ai-kicker">
-						<IconSparkle size={13} /> NVIDIA AI director
+						<IconSparkle size={13} /> AI video director
 					</div>
 					<h3>Chat → Remotion video</h3>
 				</div>
-				<span className="badge badge--green">server key</span>
+				<span className="badge badge--green">one click</span>
 			</div>
 
 			<div className="ai-chat" aria-live="polite">
@@ -126,13 +160,22 @@ export default function AiCreator({
 					>
 						{message.tone === 'error' ? <IconAlert size={13} /> : null}
 						{message.tone === 'success' ? <IconCheck size={13} /> : null}
-						<span>{message.text}</span>
+						<span>
+							{message.text}
+							{message.meta && message.meta.length > 0 ? (
+								<span className="ai-scene-chips">
+									{message.meta.map((item, index) => (
+										<span key={`${message.id}-${item}-${index}`}>{item}</span>
+									))}
+								</span>
+							) : null}
+						</span>
 					</div>
 				))}
 				{generating ? (
 					<div className="ai-message ai-message--assistant ai-message--working">
 						<IconSpinner size={13} />
-						<span>Getting TSX source from NVIDIA, then checking it in this Studio…</span>
+						<span>Planning the storyboard, composing the Remotion file and compiling it…</span>
 					</div>
 				) : null}
 			</div>

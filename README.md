@@ -33,28 +33,75 @@ npm run dev          # http://localhost:3000
 
 Then click **Load** on *AI Master Template* and press **Render video**.
 
-## Build a video with NVIDIA AI
+## Build a video from a chat message
+
+Type what you want in **Chat → Remotion video** and press **Generate**. One click
+produces a finished composition, and with **Render output automatically** left on
+(the default) it continues straight through to the downloadable file.
+
+How a generation runs:
+
+1. The AI director plans a **storyboard**, not code: title, scenes, on-screen copy,
+   palette, typography, music, grain and pacing, as one small JSON document.
+2. The Studio **composes the Remotion TSX itself** from that storyboard using the
+   built-in scene library and the bundled asset kit, then compiles it in the
+   browser and loads the preview.
+
+Because the code is generated locally from a validated plan, a generation cannot
+fail on a syntax error, a hallucinated import, a missing asset or a truncated
+file - the failure modes that make "ask an LLM for a whole file" unreliable.
+
+Scene types the composer can build: `title`, `statement`, `timeline`, `map`,
+`landscape`, `monument`, `gallery`, `stats`, `chart`, `process`, `quote`, `cta`,
+plus the dimensional set below.
+Duration, aspect ratio (16:9, 9:16, 1:1, 4:5, 21:9), palette, fonts and music are
+read from the prompt when you state them and inferred when you do not.
+
+### Dimension
+
+Every storyboard picks one of three looks:
+
+| Mode | What it renders | Cost |
+| --- | --- | --- |
+| `depth` (default) | Perspective stage with a drifting camera, extruded headlines, tilted cards and a receding floor grid. Pure CSS/SVG. | free |
+| `three` | Everything in `depth`, plus real WebGL scenes through `@remotion/three`: lights, shadows, materials and a moving camera. | a GPU frame per scene |
+| `flat` | Graphic layers only. Asked for with "flat design", "2D" or "typographic". | lowest |
+
+WebGL scenes: `object3d` (lit turntable of a procedural solid - crystal, sphere,
+torus knot, cube, prism, capsule or ring - with wireframe overlay, orbiting
+satellites and a contact shadow), `globe3d` (rotating sphere with a graticule
+cage, atmosphere shell and markers placed at real latitude/longitude),
+`terrain3d` (camera flight over a displaced height field with flat shading,
+wireframe topography and depth fog). `carousel3d` puts cards on a rotating rig
+using CSS 3D and needs no WebGL.
+
+Say "3D", "rendered", "product turntable", "globe" or "terrain" and the director
+switches to `three` on its own. Everything still animates from
+`useCurrentFrame()`, so previews, browser exports and server renders match frame
+for frame.
+
+### Optional: connect NVIDIA for AI-written scripts
 
 1. Generate an NVIDIA NIM API key on <https://build.nvidia.com/>. The copied
    secret normally starts with `nvapi-`; the credential ID shown in the account
    table is not the API key.
 2. Copy `.env.example` to `.env.local`, set `NVIDIA_API_KEY`, and restart `npm run dev`.
-3. In **Chat → Remotion video**, describe the subject, audience, goal, duration,
-   aspect ratio, exact copy, visual style, pacing, music and CTA. **Auto** tries
-   the strongest configured free NVIDIA-hosted models and falls back when a model
-   is unavailable or rate-limited.
-4. The app rewrites the current composition (or starts from **AI Master Template**),
-   validates the returned TSX, compiles it locally, automatically asks for one
-   repair if compilation fails, then loads the video into the live preview.
-5. **Render output automatically** is enabled by default, so a successful generation
-   continues through the current render settings and produces the downloadable file.
-   Turn it off when you want to preview and revise before rendering.
+3. **Auto** starts with the fastest planner and falls back automatically when a
+   model is slow, rate limited or returns something unusable.
+
+Without a key - or when every model fails - the **Studio director** plans the
+storyboard locally from your prompt and the video is still produced. The chat
+says which director was used. The local planner never invents facts: statistics,
+dates and quotes only appear when you wrote them, so connect NVIDIA when you want
+researched copy.
 
 The NVIDIA credential is read only by the Node.js route and is never included in
 browser JavaScript. Visitors do not enter an AI access key. This makes the AI
 route public on a public deployment, so configure Vercel rate limiting and NVIDIA
-spend controls to protect the quota. The model's TSX is still untrusted code;
-review it before enabling server rendering.
+spend controls to protect the quota.
+
+Run `npm run ai:check` to compose a spread of prompts and verify every generated
+file satisfies the Studio contract.
 
 The previous manual workflow still works: download **AI Master Template**, edit it
 with any coding assistant, and upload the completed `.tsx` file.

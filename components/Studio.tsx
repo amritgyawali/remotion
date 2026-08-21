@@ -1,6 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { composeVideoSource } from '../lib/ai/compose'
+import { planStoryboard } from '../lib/ai/planner'
 import { compileProject } from '../lib/compiler'
 import { loadSampleProject, projectFromFiles, projectFromZip } from '../lib/project'
 import { useRenderController } from '../lib/use-render-controller'
@@ -117,56 +119,95 @@ export default function Studio() {
 		setProject((current) => (current ? { ...current, entry: path } : current))
 	}, [])
 
+	/**
+	 * One click, one video.
+	 *
+	 * The server plans the storyboard with NVIDIA and composes the TSX. If the
+	 * request fails, the browser runs the very same composer on a locally planned
+	 * storyboard, so the studio still loads a finished, renderable composition.
+	 */
 	const handleAiGenerate = useCallback(
 		async (request: AiGenerationRequest): Promise<AiGenerationResult> => {
-			const masterSample = {
-				file: 'ai-master-template.tsx',
-				name: 'AI Master Template',
+			type Candidate = {
+				code: string
+				fileName: string
+				projectName: string
+				model: string
+				source: 'nvidia' | 'studio'
+				summary: string
+				scenes: string[]
+				seconds: number
+				aspect: string
+				title: string
+				notice?: string
 			}
-			let sourceProject = project ?? (await loadSampleProject(masterSample))
-			let repaired = false
-			let fallbacks: string[] = []
-			let usedModel = ''
-			let repairError = ''
 
-			for (let pass = 0; pass < 2; pass += 1) {
+			const candidates: Candidate[] = []
+			let transportError = ''
+
+			try {
 				const response = await fetch('/api/ai/generate', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({
-						prompt:
-							pass === 0
-								? request.prompt
-								: `Repair the current generated file so it compiles in this studio. Keep the requested creative direction. The compiler error is: ${repairError || 'Unknown compile failure.'}`,
+						prompt: request.prompt,
 						model: request.model,
 						history: request.history,
-						files: sourceProject.files,
-						entry: sourceProject.entry,
 					}),
 				})
-
-				const data = (await response.json().catch(() => ({}))) as {
-					code?: string
-					fileName?: string
-					projectName?: string
-					model?: string
-					fallbacks?: string[]
+				const data = (await response.json().catch(() => ({}))) as Partial<Candidate> & {
 					error?: string
 					attempts?: Array<{ model?: string; error?: string }>
 				}
-				if (!response.ok || !data.code) {
-					const details = data.attempts?.map((item) => `${item.model}: ${item.error}`).join(' | ')
-					throw new Error([data.error || `AI generation failed (${response.status}).`, details].filter(Boolean).join(' '))
-				}
 
-				const fileName = data.fileName || 'ai-generated-video.tsx'
-				const nextProject: VirtualProject = {
-					name: data.projectName || 'AI generated video',
-					entry: fileName,
-					files: [{ path: fileName, contents: data.code }],
+				if (response.ok && data.code) {
+					candidates.push({
+						code: data.code,
+						fileName: data.fileName || 'ai-generated-video.tsx',
+						projectName: data.projectName || 'AI generated video',
+						model: data.model || request.model,
+						source: data.source === 'studio' ? 'studio' : 'nvidia',
+						summary: data.summary ?? '',
+						scenes: data.scenes ?? [],
+						seconds: data.seconds ?? 0,
+						aspect: data.aspect ?? '',
+						title: data.title ?? '',
+						notice: data.notice,
+					})
+				} else {
+					transportError =
+						data.error ||
+						data.attempts?.map((item) => `${item.model}: ${item.error}`).join(' | ') ||
+						`The AI service returned ${response.status}.`
 				}
-				usedModel = data.model || request.model
-				fallbacks = [...fallbacks, ...(data.fallbacks ?? [])]
+			} catch (error) {
+				transportError = error instanceof Error ? error.message : String(error)
+			}
+
+			const local = composeVideoSource(planStoryboard(request.prompt))
+			candidates.push({
+				code: local.code,
+				fileName: local.fileName,
+				projectName: local.projectName,
+				model: 'studio-director',
+				source: 'studio',
+				summary: local.summary,
+				scenes: local.layout.timings.map((timing) => timing.scene.type),
+				seconds: Number((local.layout.durationInFrames / local.layout.fps).toFixed(1)),
+				aspect: `${local.layout.width}x${local.layout.height}`,
+				title: local.projectName,
+				notice: transportError
+					? `The AI service was unavailable, so the Studio director planned this video in your browser. ${transportError}`
+					: 'The Studio director planned this video in your browser.',
+			})
+
+			let lastError: unknown = null
+			for (const candidate of candidates) {
+				const nextProject: VirtualProject = {
+					name: candidate.projectName,
+					entry: candidate.fileName,
+					files: [{ path: candidate.fileName, contents: candidate.code }],
+				}
 
 				try {
 					const checked = await compileProject(nextProject)
@@ -175,24 +216,27 @@ export default function Studio() {
 					adoptProject(nextProject)
 					if (request.renderAfterGenerate) setAutoRenderEntry(nextProject.entry)
 					return {
-						model: usedModel,
+						model: candidate.model,
+						source: candidate.source,
 						compositionId: first.id,
-						repaired,
-						fallbacks,
+						summary: candidate.summary || `${first.width}x${first.height}`,
+						scenes: candidate.scenes,
+						seconds: candidate.seconds || Math.round(first.durationInFrames / first.fps),
+						title: candidate.title || candidate.projectName,
+						notice: candidate.notice,
 						renderQueued: request.renderAfterGenerate,
 					}
 				} catch (error) {
-					if (pass === 1) throw error
-					repaired = true
-					sourceProject = nextProject
-					repairError = error instanceof Error ? error.message : String(error)
-					setCompileError(repairError)
+					lastError = error
+					setCompileError(error instanceof Error ? error.message : String(error))
 				}
 			}
 
-			throw new Error('AI generation stopped before a valid composition was produced.')
+			throw lastError instanceof Error
+				? lastError
+				: new Error('AI generation stopped before a valid composition was produced.')
 		},
-		[adoptProject, project],
+		[adoptProject],
 	)
 
 	const handleReset = useCallback(() => {
