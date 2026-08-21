@@ -33,14 +33,30 @@ npm run dev          # http://localhost:3000
 
 Then click **Load** on *AI Master Template* and press **Render video**.
 
-## Build a video with AI
+## Build a video with NVIDIA AI
 
-1. Under **Sample projects**, download **AI Master Template**.
-2. Attach the downloaded `.tsx` file to your AI together with your topic, audience,
-   goal, platform, duration, visual style, script or key points, assets and call to action.
-3. Ask: "Follow the AI EDITING CONTRACT in this file and return one complete,
-   runnable `.tsx` file. Use only the supported imports; do not return a diff."
-4. Upload the completed file here, preview every scene, then render it.
+1. Generate an NVIDIA NIM API key on <https://build.nvidia.com/>. The copied
+   secret normally starts with `nvapi-`; the credential ID shown in the account
+   table is not the API key.
+2. Copy `.env.example` to `.env.local`, set `NVIDIA_API_KEY`, and restart `npm run dev`.
+3. In **Chat → Remotion video**, describe the subject, audience, goal, duration,
+   aspect ratio, exact copy, visual style, pacing, music and CTA. **Auto** tries
+   the strongest configured free NVIDIA-hosted models and falls back when a model
+   is unavailable or rate-limited.
+4. The app rewrites the current composition (or starts from **AI Master Template**),
+   validates the returned TSX, compiles it locally, automatically asks for one
+   repair if compilation fails, then loads the video into the live preview.
+5. **Render output automatically** is enabled by default, so a successful generation
+   continues through the current render settings and produces the downloadable file.
+   Turn it off when you want to preview and revise before rendering.
+
+The NVIDIA credential is read only by the Node.js route and is never included in
+browser JavaScript. On a public deployment, set `AI_ACCESS_KEY` (or reuse
+`RENDER_ACCESS_KEY`) so strangers cannot spend the NVIDIA quota. The model's TSX
+is still untrusted code; review it before enabling server rendering.
+
+The previous manual workflow still works: download **AI Master Template**, edit it
+with any coding assistant, and upload the completed `.tsx` file.
 
 The template is already a working composition with a lit procedural 3D sun and
 tree, an original music bed, story sounds, and frame-synchronized SFX. Its
@@ -190,6 +206,8 @@ your deployment retention policy.
 | --- | --- | --- |
 | `ENABLE_SERVER_RENDER` | unset | Set to `1` to turn on protected Node/Vercel Sandbox rendering. |
 | `RENDER_ACCESS_KEY` | unset | Shared render key. **Required** for both Node and Vercel server rendering. |
+| `NVIDIA_API_KEY` | unset | Server-only `nvapi-…` key for Chat → Remotion generation. |
+| `AI_ACCESS_KEY` | unset | Optional shared key protecting the AI route; falls back to `RENDER_ACCESS_KEY`. |
 | `MAX_RENDER_FRAMES` | `1800` | Frame ceiling for a single server render. |
 | `MAX_RENDER_PIXELS` | `8294400` | Resolution ceiling (4K) for a single server render. |
 | `REMOTION_CONCURRENCY` | `auto` | Remotion chooses a memory-safe worker count; a number pins it. |
