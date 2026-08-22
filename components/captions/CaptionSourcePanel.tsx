@@ -12,10 +12,18 @@ import {
 	type WhisperSupport,
 } from '../../lib/captions/transcribe'
 import { ACCEPTED_VIDEO_TYPES } from '../../lib/captions/video-source'
+import {
+	CLOUD_ASR_MODELS,
+	cloudAsrModelById,
+	cloudModelForLanguage,
+	cloudModelSupports,
+	type CloudAsrStatus,
+} from '../../lib/captions/asr-models'
 import type {
 	CaptionCue,
 	CaptionLayoutOptions,
 	CaptionVideoSource,
+	TranscribeEngine,
 	TranscribeProgress,
 	TranscriptOrigin,
 	WhisperModelId,
@@ -65,10 +73,12 @@ Follow the AI EDITING CONTRACT in the attached file exactly. Reply with ONE comp
 
 const STAGE_LABEL: Record<TranscribeProgress['stage'], string> = {
 	idle: 'Ready',
-	checking: 'Checking this browser',
+	checking: 'Choosing a speech engine',
 	'downloading-model': 'Downloading model',
+	'extracting-audio': 'Reading the audio',
 	'decoding-audio': 'Decoding audio',
 	transcribing: 'Transcribing speech',
+	polishing: 'Tidying the transcript',
 	done: 'Done',
 	error: 'Failed',
 	cancelled: 'Cancelled',
@@ -76,10 +86,29 @@ const STAGE_LABEL: Record<TranscribeProgress['stage'], string> = {
 
 const ORIGIN_LABEL: Record<TranscriptOrigin, string> = {
 	whisper: 'transcribed on-device',
+	nvidia: 'transcribed with NVIDIA',
 	srt: 'imported subtitles',
 	text: 'auto-timed script',
 	none: 'no transcript',
 }
+
+const ENGINE_OPTIONS: { id: TranscribeEngine; label: string; note: string }[] = [
+	{
+		id: 'auto',
+		label: 'Auto',
+		note: 'Uses NVIDIA when the server has a key, and falls back to this device automatically if anything goes wrong.',
+	},
+	{
+		id: 'nvidia',
+		label: 'NVIDIA cloud',
+		note: 'Only the audio is uploaded, as 16 kHz mono - never the video. Nothing to download, works on any machine, and the strongest option for Nepali.',
+	},
+	{
+		id: 'device',
+		label: 'On this device',
+		note: 'Whisper runs inside this tab with WebAssembly and nothing leaves the machine. Needs a one-off model download and a browser that allows SharedArrayBuffer.',
+	},
+]
 
 export default function CaptionSourcePanel({
 	video,
@@ -90,6 +119,10 @@ export default function CaptionSourcePanel({
 	mode,
 	transcriptText,
 	speechProfile,
+	engine,
+	cloudStatus,
+	cloudModel,
+	polish,
 	whisperModel,
 	whisperLanguage,
 	whisperSupport,
@@ -97,6 +130,8 @@ export default function CaptionSourcePanel({
 	transcribing,
 	transcribeProgress,
 	transcribeError,
+	transcribeNotice,
+	engineUsed,
 	videoError,
 	onVideoFiles,
 	onVideoUrl,
@@ -106,6 +141,9 @@ export default function CaptionSourcePanel({
 	onAutoTime,
 	onImportSubtitles,
 	onSpeechProfile,
+	onEngine,
+	onCloudModel,
+	onPolish,
 	onWhisperModel,
 	onWhisperLanguage,
 	onTranscribe,
@@ -121,6 +159,11 @@ export default function CaptionSourcePanel({
 	mode: TranscriptMode
 	transcriptText: string
 	speechProfile: SpeechProfile['id']
+	engine: TranscribeEngine
+	cloudStatus: CloudAsrStatus | null
+	/** null means "let the server pick for the spoken language" */
+	cloudModel: string | null
+	polish: boolean
 	whisperModel: WhisperModelId
 	whisperLanguage: string
 	whisperSupport: WhisperSupport | null
@@ -128,6 +171,8 @@ export default function CaptionSourcePanel({
 	transcribing: boolean
 	transcribeProgress: TranscribeProgress
 	transcribeError: string | null
+	transcribeNotice: string | null
+	engineUsed: 'nvidia' | 'device' | null
 	videoError: string | null
 	onVideoFiles: (files: File[]) => void
 	onVideoUrl: (url: string) => void
@@ -137,6 +182,9 @@ export default function CaptionSourcePanel({
 	onAutoTime: () => void
 	onImportSubtitles: (file: File) => void
 	onSpeechProfile: (profile: SpeechProfile['id']) => void
+	onEngine: (engine: TranscribeEngine) => void
+	onCloudModel: (model: string | null) => void
+	onPolish: (polish: boolean) => void
 	onWhisperModel: (model: WhisperModelId) => void
 	onWhisperLanguage: (language: string) => void
 	onTranscribe: () => void
@@ -171,9 +219,26 @@ export default function CaptionSourcePanel({
 	const model = WHISPER_MODELS.find((entry) => entry.id === whisperModel) ?? WHISPER_MODELS[0]
 	const modelReady = loadedModels.includes(whisperModel)
 	const profile = profileById(speechProfile)
-	const effectiveLanguage = model.englishOnly ? 'en' : whisperLanguage
 	const languageMismatch = !modelSupportsLanguage(whisperModel, profile.language)
 	const words = cues.reduce((sum, cue) => sum + cue.tokens.length, 0)
+
+	const cloudReady = cloudStatus?.configured === true
+	// What "Auto" would actually do right now, so every hint below is about the
+	// engine that will really run rather than about the one that was picked.
+	const resolvedEngine: 'nvidia' | 'device' =
+		engine === 'auto' ? (cloudReady ? 'nvidia' : 'device') : engine
+	const engineNote = ENGINE_OPTIONS.find((option) => option.id === engine)?.note ?? ''
+	// English-only Whisper builds pin the language; no cloud model does.
+	const englishPinned = resolvedEngine === 'device' && model.englishOnly
+	const effectiveLanguage = englishPinned ? 'en' : whisperLanguage
+	const autoCloudModel = cloudModelForLanguage(whisperLanguage)
+	const resolvedCloudModel = cloudAsrModelById(cloudModel ?? autoCloudModel)
+	const cloudLanguageMismatch =
+		resolvedCloudModel !== null && !cloudModelSupports(resolvedCloudModel, whisperLanguage)
+	const deviceUnavailable = whisperSupport !== null && !whisperSupport.supported
+	const blockedEngine =
+		(resolvedEngine === 'device' && deviceUnavailable && engine === 'device') ||
+		(resolvedEngine === 'nvidia' && engine === 'nvidia' && cloudStatus !== null && !cloudReady)
 
 	return (
 		<aside className="panel panel--left">
@@ -343,43 +408,126 @@ export default function CaptionSourcePanel({
 								</span>
 							</div>
 
-							{languageMismatch ? (
+							<div className="field">
+								<span className="field-label">
+									Speech engine
+									<span className="field-value">
+										{engine === 'auto'
+											? resolvedEngine === 'nvidia'
+												? 'auto - NVIDIA'
+												: 'auto - this device'
+											: resolvedEngine === 'nvidia'
+												? 'NVIDIA'
+												: 'this device'}
+									</span>
+								</span>
+								<div className="segmented segmented--wrap" role="group" aria-label="Speech engine">
+									{ENGINE_OPTIONS.map((entry) => (
+										<button
+											key={entry.id}
+											data-active={engine === entry.id}
+											disabled={transcribing}
+											onClick={() => onEngine(entry.id)}
+										>
+											{entry.label}
+										</button>
+									))}
+								</div>
+								<span style={{ fontSize: 11.5, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+									{engineNote}
+								</span>
+							</div>
+
+							{resolvedEngine === 'nvidia' ? (
+								<div className="field">
+									<label className="field-label" htmlFor="cloud-model">
+										NVIDIA model
+										<span className="badge badge--muted">
+											{cloudStatus === null
+												? 'checking'
+												: cloudReady
+													? 'server key found'
+													: 'no server key'}
+										</span>
+									</label>
+									<select
+										id="cloud-model"
+										className="select"
+										value={cloudModel ?? ''}
+										disabled={transcribing}
+										onChange={(event) => onCloudModel(event.target.value || null)}
+									>
+										<option value="">
+											Automatic - best model for {effectiveLanguage === 'auto' ? 'the detected language' : effectiveLanguage}
+										</option>
+										{CLOUD_ASR_MODELS.map((entry) => (
+											<option key={entry.id} value={entry.id}>
+												{entry.label}
+												{cloudModelSupports(entry, whisperLanguage) ? '' : ' - other languages'}
+											</option>
+										))}
+									</select>
+									<span style={{ fontSize: 11.5, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+										{resolvedCloudModel?.note ??
+											'The server picks the model that fits the spoken language.'}
+									</span>
+								</div>
+							) : (
+								<>
+									{languageMismatch ? (
+										<div className="notice notice--warn">
+											<span className="notice-icon">
+												<IconAlert size={14} />
+											</span>
+											<span>
+												The {model.label} model only writes English. Choose a multilingual model
+												below, or this profile will transcribe {profile.label} as English.
+											</span>
+										</div>
+									) : null}
+
+									<div className="field">
+										<label className="field-label" htmlFor="whisper-model">
+											Speech model
+											<span className="field-value">
+												{modelReady ? 'on this device' : formatBytes(model.sizeInBytes)}
+											</span>
+										</label>
+										<select
+											id="whisper-model"
+											className="select"
+											value={whisperModel}
+											disabled={transcribing}
+											onChange={(event) => onWhisperModel(event.target.value as WhisperModelId)}
+										>
+											{WHISPER_MODELS.map((entry) => (
+												<option key={entry.id} value={entry.id}>
+													{entry.label}
+													{loadedModels.includes(entry.id)
+														? ' - ready'
+														: ` - ${formatBytes(entry.sizeInBytes)}`}
+												</option>
+											))}
+										</select>
+										<span style={{ fontSize: 11.5, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+											{model.note} Downloaded once, then kept in this browser.
+										</span>
+									</div>
+								</>
+							)}
+
+							{cloudLanguageMismatch ? (
 								<div className="notice notice--warn">
 									<span className="notice-icon">
 										<IconAlert size={14} />
 									</span>
 									<span>
-										The {model.label} model only writes English. Choose a multilingual model
-										below, or this profile will transcribe {profile.label} as English.
+										{resolvedCloudModel?.label} does not transcribe {effectiveLanguage}. Leave the
+										model on Automatic, or pick Whisper large-v3, which covers every language this
+										studio offers.
 									</span>
 								</div>
 							) : null}
-
-							<div className="field">
-								<label className="field-label" htmlFor="whisper-model">
-									Speech model
-									<span className="field-value">
-										{modelReady ? 'on this device' : formatBytes(model.sizeInBytes)}
-									</span>
-								</label>
-								<select
-									id="whisper-model"
-									className="select"
-									value={whisperModel}
-									disabled={transcribing}
-									onChange={(event) => onWhisperModel(event.target.value as WhisperModelId)}
-								>
-									{WHISPER_MODELS.map((entry) => (
-										<option key={entry.id} value={entry.id}>
-											{entry.label}
-											{loadedModels.includes(entry.id) ? ' - ready' : ` - ${formatBytes(entry.sizeInBytes)}`}
-										</option>
-									))}
-								</select>
-								<span style={{ fontSize: 11.5, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-									{model.note} Downloaded once, then kept in this browser.
-								</span>
-							</div>
 
 							<div className="field">
 								<label className="field-label" htmlFor="whisper-language">
@@ -389,10 +537,10 @@ export default function CaptionSourcePanel({
 									id="whisper-language"
 									className="select"
 									value={effectiveLanguage}
-									disabled={transcribing || model.englishOnly}
+									disabled={transcribing || englishPinned}
 									onChange={(event) => onWhisperLanguage(event.target.value)}
 								>
-									{model.englishOnly ? (
+									{englishPinned ? (
 										<option value="en">English (this model is English-only)</option>
 									) : (
 										WHISPER_LANGUAGES.map((language) => (
@@ -404,16 +552,51 @@ export default function CaptionSourcePanel({
 								</select>
 							</div>
 
-							{whisperSupport && !whisperSupport.supported ? (
-								<div className="notice notice--warn">
+							<label className="field" style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+								<input
+									type="checkbox"
+									checked={polish}
+									disabled={transcribing}
+									onChange={(event) => onPolish(event.target.checked)}
+									style={{ marginTop: 2 }}
+								/>
+								<span>
+									<span className="field-label" style={{ display: 'block' }}>
+										Tidy the transcript with NVIDIA AI
+									</span>
+									<span style={{ fontSize: 11.5, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+										A language model fixes punctuation, capitalisation and misheard words line by
+										line. It never translates, and every word keeps the timing the recogniser gave
+										it. Only the text is sent - never the audio.
+									</span>
+								</span>
+							</label>
+
+							{deviceUnavailable ? (
+								<div className={`notice ${engine === 'device' ? 'notice--warn' : 'notice--info'}`}>
 									<span className="notice-icon">
-										<IconAlert size={14} />
+										{engine === 'device' ? <IconAlert size={14} /> : <IconInfo size={14} />}
 									</span>
 									<span>
-										{whisperSupport.needsIsolation
-											? 'On-device speech recognition needs a cross-origin isolated page. Reload this tab - if it still fails, your browser blocks SharedArrayBuffer. Write or import the transcript instead.'
-											: (whisperSupport.reason ??
-												'On-device speech recognition is not available in this browser.')}
+										{whisperSupport?.needsIsolation
+											? 'On-device speech recognition needs a cross-origin isolated page, which this browser is not giving the tab.'
+											: (whisperSupport?.reason ??
+												'On-device speech recognition is not available in this browser.')}{' '}
+										{engine === 'device'
+											? 'Switch the engine to NVIDIA cloud, or write the transcript by hand.'
+											: 'NVIDIA cloud transcription is used instead - it needs nothing from the browser.'}
+									</span>
+								</div>
+							) : null}
+
+							{cloudStatus !== null && !cloudReady && engine !== 'device' ? (
+								<div className={`notice ${engine === 'nvidia' ? 'notice--warn' : 'notice--info'}`}>
+									<span className="notice-icon">
+										{engine === 'nvidia' ? <IconAlert size={14} /> : <IconInfo size={14} />}
+									</span>
+									<span>
+										{cloudStatus.reason ??
+											'Cloud transcription is not configured on this server.'}
 									</span>
 								</div>
 							) : null}
@@ -433,7 +616,7 @@ export default function CaptionSourcePanel({
 							<div style={{ display: 'flex', gap: 8 }}>
 								<button
 									className="btn btn--primary btn--block"
-									disabled={!video || transcribing || (whisperSupport ? !whisperSupport.supported : false)}
+									disabled={!video || transcribing || blockedEngine}
 									onClick={onTranscribe}
 								>
 									{transcribing ? <IconSpinner size={14} /> : <IconWand size={14} />}
@@ -475,13 +658,27 @@ export default function CaptionSourcePanel({
 								</div>
 							) : null}
 
+							{transcribeNotice ? (
+								<div className="notice notice--info">
+									<span className="notice-icon">
+										<IconInfo size={14} />
+									</span>
+									<span>{transcribeNotice}</span>
+								</div>
+							) : null}
+
 							<div className="notice notice--info">
 								<span className="notice-icon">
 									<IconInfo size={14} />
 								</span>
 								<span>
-									Whisper runs inside this tab with WebAssembly. The audio never leaves the
-									machine, and every word gets its own timestamp for karaoke styles.
+									{engineUsed === 'nvidia'
+										? 'Transcribed by NVIDIA speech recognition: the studio decoded the audio here, sent it as 16 kHz mono, and every word came back with its own timestamp for karaoke styles.'
+										: engineUsed === 'device'
+											? 'Transcribed inside this tab with WebAssembly - the audio never left the machine, and every word carries its own timestamp.'
+											: resolvedEngine === 'nvidia'
+												? 'The studio decodes the audio here and uploads it as 16 kHz mono - the video itself never leaves this device. Every word comes back with its own timestamp for karaoke styles.'
+												: 'Whisper runs inside this tab with WebAssembly. The audio never leaves the machine, and every word gets its own timestamp for karaoke styles.'}
 								</span>
 							</div>
 						</div>

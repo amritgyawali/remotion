@@ -19,7 +19,8 @@ transcribes an uploaded clip on-device, lets you edit and style the lines, and
 renders the video back out with the subtitles burned in.
 
 ```
-upload .mp4  ->  Whisper (WASM, on-device)  ->  editable cues  ->  generated .tsx  ->  captioned video + .srt
+upload .mp4  ->  NVIDIA speech (cloud) or Whisper (WASM, on-device)  ->  editable cues
+             ->  generated .tsx  ->  captioned video + .srt
 ```
 
 ## Quick start
@@ -127,12 +128,32 @@ Open **Subtitle a video** in the top bar, or go straight to
    size, frame rate and whether it has an audio track come from mediabunny, the
    same demuxer Remotion renders with. A public video URL works too.
 2. **Get the transcript**, three ways:
-   * **Auto** - Whisper runs inside the tab as WebAssembly. Six models from
-     tiny to small, English-only or multilingual (77 MB - 488 MB), downloaded
-     once into IndexedDB and reused afterwards. Nothing is uploaded and no API
-     key is involved. Every word gets its own timestamp, threads scale to the
-     device's cores, and a cleanup pass drops music/silence hallucinations and
-     the credit-loop lines Whisper sometimes falls into on long clips.
+   * **Auto** - speech recognition, with two engines behind one button.
+
+     **NVIDIA cloud** (used first whenever the server has an `NVIDIA_API_KEY`)
+     decodes the audio in the browser, resamples it to 16 kHz mono, cuts it at
+     the quietest point near each boundary and uploads those chunks to
+     `/api/captions/transcribe`, which calls NVIDIA's hosted recognisers -
+     Whisper large-v3 for Nepali and the other 98 languages, Parakeet TDT for
+     English and 25 European ones. The video never leaves the device, there is
+     nothing to download, and a chunk that fails is retried and then skipped
+     rather than losing the whole transcript.
+
+     **On this device** runs Whisper as WebAssembly inside the tab. Six models
+     from tiny to small, English-only or multilingual (77 MB - 488 MB),
+     downloaded once into IndexedDB and reused afterwards. Nothing is uploaded
+     and no API key is involved; it does need a cross-origin isolated page for
+     SharedArrayBuffer.
+
+     Either way every word gets its own timestamp, and a cleanup pass drops
+     music/silence hallucinations and the credit-loop lines Whisper falls into
+     on long clips. **Auto** falls back to the other engine when one fails, so a
+     missing key or a browser without SharedArrayBuffer still produces captions.
+
+     Optionally an NVIDIA language model then tidies the transcript - one
+     rewritten line per recognised line, so punctuation and spelling improve
+     while every word timing is kept. It is refused if the model changes the
+     line count or rewrites a line beyond recognition.
    * **Write** - paste the script and it is spread across the clip, weighted by
      word length (Devanagari clusters count as one syllable, not one code
      point, so Nepali timing reads naturally), with a blank line acting as a
@@ -199,6 +220,19 @@ English, à la *"यो feature धेरै राम्रो छ"*.
   `getLoadedModels()` tells the UI which models are already cached so it can
   say "ready" instead of a download size, and threading is capped at
   `hardwareConcurrency - 1` so the UI thread keeps painting the progress bar.
+* **Cloud speech recognition** posts 16 kHz mono WAV chunks to
+  `/api/captions/transcribe`, which holds the key and speaks both dialects
+  NVIDIA's speech endpoints answer to - the OpenAI-compatible
+  `/v1/audio/transcriptions` form and the Riva form (`language=ne-NP`,
+  `word_time_offsets`) - remembering whichever pairing answered. Word timings
+  come back as seconds or milliseconds depending on the endpoint; both are
+  normalised, and a reply with text but no timings is spread by word length and
+  labelled as estimated. Chunks are cut at the quietest 20 ms frame within four
+  seconds of the target boundary, so a word is not split across two requests.
+* **Where the audio goes**: the video file itself is never uploaded. Only the
+  decoded speech is, and only when the NVIDIA engine is selected; the on-device
+  engine sends nothing at all. `npm run captions:check` exercises the chunker,
+  the uploader and both routes against canned NVIDIA responses, with no network.
 * **Transcript hygiene**: bracketed sound events (`[Music]`, `(applause)`),
   subtitle-credit lines (`Subtitles by...`, `अनुवाद:`, `सदस्यता लिनुहोस्`) and the
   repeat-loops Whisper produces on long silence are filtered before a single
@@ -214,8 +248,9 @@ The route is served with `Cross-Origin-Opener-Policy: same-origin` and
 document. Those headers are scoped to `/captions`, so the code studio keeps
 loading third-party assets unchanged - and the links between the two studios are
 plain `<a>` tags on purpose, since a client-side navigation would not pick the
-headers up. Where isolation is unavailable (Safari today), the studio says so and
-the Write and Import paths still work.
+headers up. Where isolation is unavailable (Safari today), or where the WASM
+bundle itself cannot be fetched, the studio says so and switches to NVIDIA cloud
+transcription; the Write and Import paths still work either way.
 
 ## Deploy to GitHub + Vercel
 
@@ -254,7 +289,10 @@ your deployment retention policy.
 | --- | --- | --- |
 | `ENABLE_SERVER_RENDER` | unset | Set to `1` to turn on protected Node/Vercel Sandbox rendering. |
 | `RENDER_ACCESS_KEY` | unset | Shared render key. **Required** for both Node and Vercel server rendering. |
-| `NVIDIA_API_KEY` | unset | Server-only `nvapi-…` key for Chat → Remotion generation. |
+| `NVIDIA_API_KEY` | unset | Server-only `nvapi-…` key for Chat → Remotion generation and for cloud speech recognition in the Subtitle Studio. |
+| `NVIDIA_ASR_ENDPOINT` | unset | Full URL of an OpenAI-compatible `/v1/audio/transcriptions` endpoint, e.g. a self-hosted NIM. Tried before the hosted defaults. |
+| `NVIDIA_ASR_FUNCTION_ID` | unset | NVCF function id; expands to `https://<id>.invocation.api.nvcf.nvidia.com/v1/audio/transcriptions`. |
+| `NVIDIA_ASR_MODEL` | unset | Pin one speech model instead of choosing by spoken language. |
 | `MAX_RENDER_FRAMES` | `1800` | Frame ceiling for a single server render. |
 | `MAX_RENDER_PIXELS` | `8294400` | Resolution ceiling (4K) for a single server render. |
 | `REMOTION_CONCURRENCY` | `auto` | Remotion chooses a memory-safe worker count; a number pins it. |

@@ -26,6 +26,26 @@ const nextConfig = {
 				os: false,
 				crypto: false,
 			}
+
+			/**
+			 * Whisper's WebAssembly build ships an Emscripten pthread worker, which
+			 * makes its chunk and the webpack runtime depend on each other - the
+			 * build says so out loud:
+			 *
+			 *   Circular dependency between chunks with runtime (em-pthread, webpack)
+			 *   This prevents using hashes of each other and should be avoided.
+			 *
+			 * With `realContentHash` on (the production default) webpack rewrites
+			 * those filenames after minification, and inside that cycle the runtime
+			 * can keep pointing at a hash that was never emitted. The deployed app
+			 * then requests a chunk that 404s and the studio reports "Loading chunk
+			 * 192 failed" - permanently, not just until the next reload. Hashing
+			 * before minification keeps the reference and the file in step.
+			 */
+			config.optimization = {
+				...config.optimization,
+				realContentHash: false,
+			}
 		}
 		return config
 	},

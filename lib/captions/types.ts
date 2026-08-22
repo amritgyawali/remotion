@@ -21,7 +21,18 @@ export type CaptionCue = {
 }
 
 /** Where the transcript came from - shown in the UI and written into the .tsx header. */
-export type TranscriptOrigin = 'whisper' | 'srt' | 'text' | 'none'
+export type TranscriptOrigin = 'whisper' | 'nvidia' | 'srt' | 'text' | 'none'
+
+/**
+ * Which recogniser produces the transcript.
+ *
+ * `nvidia` uploads 16 kHz mono audio to the studio's own route, which holds the
+ * API key; `device` runs Whisper in this tab and never sends anything. `auto`
+ * prefers the cloud when the server has a key - it needs no download, no
+ * SharedArrayBuffer and no fast machine - and falls back to the device when it
+ * does not, or when the cloud path fails mid-run.
+ */
+export type TranscribeEngine = 'auto' | 'nvidia' | 'device'
 
 export type CaptionVideoSource = {
 	/** object URL for an upload, or the pasted https:// address */
@@ -144,8 +155,10 @@ export type TranscribeStage =
 	| 'idle'
 	| 'checking'
 	| 'downloading-model'
+	| 'extracting-audio'
 	| 'decoding-audio'
 	| 'transcribing'
+	| 'polishing'
 	| 'done'
 	| 'error'
 	| 'cancelled'

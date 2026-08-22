@@ -15,7 +15,10 @@ import { groupWordsIntoCues, type WordTiming } from './cues'
 import type {
 	CaptionCue,
 	CaptionLayoutOptions,
+	CaptionVideoSource,
+	TranscribeEngine,
 	TranscribeProgress,
+	TranscriptOrigin,
 	WhisperModelId,
 } from './types'
 
@@ -175,6 +178,71 @@ export class TranscriptionCancelled extends Error {
 	}
 }
 
+/** Raised when the whisper bundle itself never arrives - see loadWhisperWeb. */
+export class WhisperBundleError extends Error {
+	constructor(message: string) {
+		super(message)
+		this.name = 'WhisperBundleError'
+	}
+}
+
+type WhisperWebModule = typeof import('@remotion/whisper-web')
+
+let whisperModule: Promise<WhisperWebModule> | null = null
+
+function isChunkLoadError(error: unknown): boolean {
+	if (!(error instanceof Error)) return false
+	return (
+		error.name === 'ChunkLoadError' ||
+		/loading chunk|failed to fetch dynamically imported module|error loading dynamically imported module|importing a module script failed/i.test(
+			error.message,
+		)
+	)
+}
+
+/**
+ * Loads the WebAssembly speech bundle, and survives the one failure mode users
+ * actually hit: `Loading chunk N failed`.
+ *
+ * That error means the JavaScript chunk holding the model runtime never
+ * arrived - a deploy replaced the file the open tab was told to fetch, a proxy
+ * or offline cache served a 404, or the network dropped mid-download. Webpack
+ * does not cache the rejected request, so a plain retry usually succeeds; when
+ * it does not, the message has to say what to do rather than leak a chunk
+ * number, and the studio falls back to cloud transcription.
+ */
+export async function loadWhisperWeb(): Promise<WhisperWebModule> {
+	whisperModule ??= (async () => {
+		let lastError: unknown
+		for (let attempt = 1; attempt <= 3; attempt++) {
+			try {
+				return await import('@remotion/whisper-web')
+			} catch (error) {
+				lastError = error
+				if (!isChunkLoadError(error)) break
+				await new Promise((resolve) => setTimeout(resolve, 350 * attempt))
+			}
+		}
+
+		if (isChunkLoadError(lastError)) {
+			throw new WhisperBundleError(
+				'The on-device speech engine could not be downloaded into this tab - the studio was most likely updated while the page was open. Reload the page (Ctrl+Shift+R / Cmd+Shift+R) and try again, or use NVIDIA cloud transcription, which needs no download.',
+			)
+		}
+		throw lastError instanceof Error
+			? new WhisperBundleError(`The on-device speech engine failed to load: ${lastError.message}`)
+			: new WhisperBundleError('The on-device speech engine failed to load.')
+	})()
+
+	try {
+		return await whisperModule
+	} catch (error) {
+		// A failed load must not poison every later attempt.
+		whisperModule = null
+		throw error
+	}
+}
+
 export type WhisperSupport = {
 	supported: boolean
 	reason?: string
@@ -187,7 +255,7 @@ export async function checkWhisperSupport(model: WhisperModelId): Promise<Whispe
 		return { supported: false, reason: 'Not available during server rendering.', needsIsolation: false }
 	}
 	try {
-		const { canUseWhisperWeb } = await import('@remotion/whisper-web')
+		const { canUseWhisperWeb } = await loadWhisperWeb()
 		const result = await canUseWhisperWeb(model)
 		const needsIsolation = result.reason === 'not-cross-origin-isolated'
 		return {
@@ -207,7 +275,7 @@ export async function checkWhisperSupport(model: WhisperModelId): Promise<Whispe
 /** Models already sitting in IndexedDB, so the UI can say "ready" instead of "244 MB". */
 export async function loadedWhisperModels(): Promise<WhisperModelId[]> {
 	try {
-		const { getLoadedModels } = await import('@remotion/whisper-web')
+		const { getLoadedModels } = await loadWhisperWeb()
 		return (await getLoadedModels()) as WhisperModelId[]
 	} catch {
 		return []
@@ -215,7 +283,7 @@ export async function loadedWhisperModels(): Promise<WhisperModelId[]> {
 }
 
 export async function deleteWhisperModel(model: WhisperModelId): Promise<void> {
-	const { deleteModel } = await import('@remotion/whisper-web')
+	const { deleteModel } = await loadWhisperWeb()
 	await deleteModel(model)
 }
 
@@ -288,17 +356,15 @@ function assertLive(signal: AbortSignal): void {
 }
 
 /**
- * Runs the whole pipeline and returns ready-to-edit cues.
+ * Runs the on-device pipeline and returns one timed word per entry.
  * Word timings come straight from the model, so karaoke highlighting lines up
  * with the speaker without any manual work.
  */
-export async function transcribeToCues(args: TranscribeArgs): Promise<CaptionCue[]> {
-	const { source, model, language, layout, onProgress, signal } = args
+export async function transcribeOnDevice(args: Omit<TranscribeArgs, 'layout'>): Promise<WordTiming[]> {
+	const { source, model, language, onProgress, signal } = args
 	assertLive(signal)
 
-	const { downloadWhisperModel, resampleTo16Khz, toCaptions, transcribe } = await import(
-		'@remotion/whisper-web'
-	)
+	const { downloadWhisperModel, resampleTo16Khz, toCaptions, transcribe } = await loadWhisperWeb()
 
 	onProgress({ stage: 'downloading-model', progress: 0, message: `Preparing the ${model} model` })
 	const { alreadyDownloaded } = await downloadWhisperModel({
@@ -385,6 +451,202 @@ export async function transcribeToCues(args: TranscribeArgs): Promise<CaptionCue
 		)
 	}
 
-	onProgress({ stage: 'done', progress: 1, message: `${words.length} words transcribed` })
-	return groupWordsIntoCues(words, layout)
+	onProgress({ stage: 'transcribing', progress: 1, message: `${words.length} words transcribed` })
+	return words
+}
+
+/** Kept for callers that only want cues from the on-device engine. */
+export async function transcribeToCues(args: TranscribeArgs): Promise<CaptionCue[]> {
+	const words = await transcribeOnDevice(args)
+	return groupWordsIntoCues(words, args.layout)
+}
+
+/* --------------------------------------------------------- engine routing */
+
+export type TranscriptionOutcome = {
+	cues: CaptionCue[]
+	origin: TranscriptOrigin
+	engine: 'nvidia' | 'device'
+	/** the recogniser that produced the words, for the UI and the .tsx header */
+	model: string
+	/** anything the user should know that is not an outright failure */
+	notice?: string
+}
+
+export type RunTranscriptionArgs = {
+	video: CaptionVideoSource
+	engine: TranscribeEngine
+	language: string
+	whisperModel: WhisperModelId
+	/** null lets the server pick the cloud model that fits the language */
+	cloudModel: string | null
+	layout: CaptionLayoutOptions
+	/** run the NVIDIA punctuation and spelling pass over the finished cues */
+	polish: boolean
+	onProgress: (progress: TranscribeProgress) => void
+	signal: AbortSignal
+}
+
+/** The bytes to transcribe: the upload itself, or the remote clip fetched once. */
+async function sourceBlob(video: CaptionVideoSource): Promise<Blob> {
+	if (video.file) return video.file
+	const response = await fetch(video.url).catch(() => {
+		throw new Error(
+			'That video URL cannot be read by this page (the server did not allow a cross-origin read). Download the file and upload it instead.',
+		)
+	})
+	if (!response.ok) throw new Error(`Could not read the video (HTTP ${response.status}).`)
+	return response.blob()
+}
+
+function describeError(error: unknown): string {
+	if (error instanceof Error) return error.message
+	return String(error)
+}
+
+/**
+ * The one entry point the studio calls.
+ *
+ * It picks a recogniser, runs it, and - when the choice was `auto` - falls back
+ * to the other one rather than handing the user an error they cannot act on.
+ * The two engines fail for completely unrelated reasons (a missing server key
+ * versus a browser that will not give the tab a SharedArrayBuffer), so the
+ * second attempt genuinely tends to succeed where the first did not.
+ */
+export async function runTranscription(args: RunTranscriptionArgs): Promise<TranscriptionOutcome> {
+	const { video, engine, language, whisperModel, cloudModel, layout, polish, onProgress, signal } =
+		args
+	assertLive(signal)
+
+	onProgress({ stage: 'checking', progress: 0, message: 'Choosing a speech engine' })
+	const { cloudAsrStatus, refineCues, transcribeInCloud } = await import('./cloud-transcribe')
+
+	const status = engine === 'device' ? null : await cloudAsrStatus()
+	assertLive(signal)
+
+	const order: Array<'nvidia' | 'device'> =
+		engine === 'nvidia'
+			? ['nvidia']
+			: engine === 'device'
+				? ['device']
+				: status?.configured
+					? ['nvidia', 'device']
+					: ['device', 'nvidia']
+
+	const blob = await sourceBlob(video)
+	assertLive(signal)
+
+	const failures: string[] = []
+
+	for (const attempt of order) {
+		try {
+			if (attempt === 'nvidia') {
+				if (status && !status.configured && engine !== 'nvidia') {
+					throw new Error(status.reason ?? 'Cloud transcription is not configured on this server.')
+				}
+				const result = await transcribeInCloud({
+					source: blob,
+					language,
+					model: cloudModel,
+					durationSeconds: video.durationInSeconds,
+					onProgress,
+					signal,
+				})
+				assertLive(signal)
+
+				if (result.words.length === 0) {
+					throw new Error(
+						result.silent
+							? 'That video has an audio track, but it is silent from start to finish.'
+							: 'NVIDIA returned no words for that audio. Try the on-device engine, or write the transcript by hand.',
+					)
+				}
+
+				const notices: string[] = []
+				if (failures.length > 0) notices.push(failures[failures.length - 1])
+				if (result.failedChunks > 0) {
+					notices.push(
+						`${result.failedChunks} of ${result.chunks} audio chunks could not be transcribed, so a few seconds may be missing.`,
+					)
+				}
+				if (result.estimatedTimings) {
+					notices.push(
+						'The endpoint returned text without word timings, so word timing was estimated from word length - karaoke styles will be approximate.',
+					)
+				}
+
+				let cues = groupWordsIntoCues(result.words, layout)
+				if (polish) {
+					onProgress({
+						stage: 'polishing',
+						progress: 0.99,
+						message: 'Tidying punctuation with NVIDIA',
+					})
+					const refined = await refineCues(cues, { language, signal })
+					cues = refined.cues
+					if (refined.notice) notices.push(refined.notice)
+				}
+
+				onProgress({ stage: 'done', progress: 1, message: `${result.words.length} words transcribed` })
+				return {
+					cues,
+					origin: 'nvidia',
+					engine: 'nvidia',
+					model: result.model || 'NVIDIA',
+					notice: notices.length > 0 ? notices.join(' ') : undefined,
+				}
+			}
+
+			const support = await checkWhisperSupport(whisperModel)
+			if (!support.supported) {
+				throw new Error(
+					support.needsIsolation
+						? 'This browser will not give the page a SharedArrayBuffer, which the on-device model needs.'
+						: (support.reason ?? 'On-device speech recognition is unavailable here.'),
+				)
+			}
+
+			const words = await transcribeOnDevice({
+				source: blob,
+				model: whisperModel,
+				language,
+				onProgress,
+				signal,
+			})
+			assertLive(signal)
+
+			let cues = groupWordsIntoCues(words, layout)
+			const notices = failures.length > 0 ? [failures[failures.length - 1]] : []
+			if (polish) {
+				onProgress({ stage: 'polishing', progress: 0.99, message: 'Tidying punctuation with NVIDIA' })
+				const refined = await refineCues(cues, { language, signal })
+				cues = refined.cues
+				if (refined.notice) notices.push(refined.notice)
+			}
+
+			onProgress({ stage: 'done', progress: 1, message: `${words.length} words transcribed` })
+			return {
+				cues,
+				origin: 'whisper',
+				engine: 'device',
+				model: whisperModel,
+				notice: notices.length > 0 ? notices.join(' ') : undefined,
+			}
+		} catch (error) {
+			if (error instanceof TranscriptionCancelled || signal.aborted) throw new TranscriptionCancelled()
+			const label = attempt === 'nvidia' ? 'NVIDIA cloud transcription' : 'On-device transcription'
+			failures.push(`${label} failed: ${describeError(error)}`)
+			// A single-engine run has nowhere to fall back to.
+			if (order.length === 1 || attempt === order[order.length - 1]) {
+				throw new Error(failures.join(' Then '))
+			}
+			onProgress({
+				stage: 'checking',
+				progress: 0,
+				message: `${label} failed - trying the other engine`,
+			})
+		}
+	}
+
+	throw new Error(failures.join(' Then ') || 'No speech engine was available.')
 }
