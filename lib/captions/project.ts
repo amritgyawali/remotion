@@ -14,6 +14,7 @@ const MAX_DIMENSION = 3840
 
 const ORIGIN_LABEL: Record<TranscriptOrigin, string> = {
 	whisper: 'transcribed on-device with Whisper',
+	nvidia: 'transcribed with NVIDIA speech recognition',
 	srt: 'imported from a subtitle file',
 	text: 'written by hand and auto-timed',
 	none: 'no transcript yet',

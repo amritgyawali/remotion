@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit",
     "samples": "node scripts/sync-samples.mjs",
     "ai:check": "node scripts/check-ai-compose.cjs",
+    "captions:check": "node scripts/check-captions.cjs",
     "assets:visual": "node scripts/generate-visual-assets.mjs",
     "assets:audio": "node scripts/generate-audio-assets.mjs",
     "assets:texture": "node scripts/generate-texture-assets.mjs",

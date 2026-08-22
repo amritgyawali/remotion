@@ -28,11 +28,13 @@ import {
 	checkWhisperSupport,
 	loadedWhisperModels,
 	profileById,
-	transcribeToCues,
+	runTranscription,
 	TranscriptionCancelled,
 	type SpeechProfile,
 	type WhisperSupport,
 } from '../lib/captions/transcribe'
+import { cloudAsrStatus } from '../lib/captions/cloud-transcribe'
+import type { CloudAsrStatus } from '../lib/captions/asr-models'
 import { isVideoFile, probeVideo, releaseVideoSource } from '../lib/captions/video-source'
 import type {
 	CaptionCue,
@@ -41,6 +43,7 @@ import type {
 	CaptionStylePresetId,
 	CaptionVideoSource,
 	ScriptMix,
+	TranscribeEngine,
 	TranscribeProgress,
 	TranscriptOrigin,
 	WhisperModelId,
@@ -95,6 +98,21 @@ function downloadText(text: string, fileName: string, mimeType: string): void {
 	setTimeout(() => URL.revokeObjectURL(url), 4000)
 }
 
+function cueListsEqual(left: CaptionCue[], right: CaptionCue[]): boolean {
+	return (
+		left.length === right.length &&
+		left.every((cue, index) => {
+			const other = right[index]
+			return (
+				cue.id === other?.id &&
+				cue.text === other.text &&
+				cue.startMs === other.startMs &&
+				cue.endMs === other.endMs
+			)
+		})
+	)
+}
+
 export default function CaptionStudio() {
 	const [video, setVideo] = useState<CaptionVideoSource | null>(null)
 	const [videoError, setVideoError] = useState<string | null>(null)
@@ -115,9 +133,18 @@ export default function CaptionStudio() {
 	const [whisperLanguage, setWhisperLanguage] = useState(profileById('nepali-english').language)
 	const [whisperSupport, setWhisperSupport] = useState<WhisperSupport | null>(null)
 	const [loadedModels, setLoadedModels] = useState<WhisperModelId[]>([])
+	// The cloud engine leads by default: it needs no download, no
+	// SharedArrayBuffer and no fast machine, and `auto` still falls back to the
+	// on-device model whenever the server has no key or NVIDIA cannot be reached.
+	const [engine, setEngine] = useState<TranscribeEngine>('auto')
+	const [cloudStatus, setCloudStatus] = useState<CloudAsrStatus | null>(null)
+	const [cloudModel, setCloudModel] = useState<string | null>(null)
+	const [polish, setPolish] = useState(true)
+	const [engineUsed, setEngineUsed] = useState<'nvidia' | 'device' | null>(null)
 	const [transcribing, setTranscribing] = useState(false)
 	const [transcribeProgress, setTranscribeProgress] = useState<TranscribeProgress>(IDLE_TRANSCRIBE)
 	const [transcribeError, setTranscribeError] = useState<string | null>(null)
+	const [transcribeNotice, setTranscribeNotice] = useState<string | null>(null)
 
 	const [compiled, setCompiled] = useState<{ project: VirtualProject; result: CompileResult } | null>(
 		null,
@@ -127,14 +154,63 @@ export default function CaptionStudio() {
 	const [tab, setTab] = useState<'design' | 'export'>('design')
 	const [currentFrame, setCurrentFrame] = useState(0)
 	const [isolated, setIsolated] = useState(false)
+	const [placingCaption, setPlacingCaption] = useState(false)
+	const [cueHistory, setCueHistory] = useState({ canUndo: false, canRedo: false })
 
 	const playerRef = useRef<PlayerRef | null>(null)
 	const transcribeAbortRef = useRef<AbortController | null>(null)
 	// Object URLs are revoked outside the state updater: React may call an updater
 	// twice, and freeing the previous clip is a side effect, not a state change.
 	const videoRef = useRef<CaptionVideoSource | null>(null)
+	const cuesRef = useRef<CaptionCue[]>([])
+	const cueHistoryRef = useRef<{ past: CaptionCue[][]; future: CaptionCue[][] }>({
+		past: [],
+		future: [],
+	})
+	cuesRef.current = cues
 	const render = useRenderController(INITIAL_SETTINGS)
 	const { reset: resetRender, startRender } = render
+
+	const clearCueHistory = useCallback(() => {
+		cueHistoryRef.current = { past: [], future: [] }
+		setCueHistory({ canUndo: false, canRedo: false })
+	}, [])
+
+	const commitCues = useCallback((update: (current: CaptionCue[]) => CaptionCue[]) => {
+		const current = cuesRef.current
+		const next = update(current)
+		if (cueListsEqual(current, next)) return
+		const history = cueHistoryRef.current
+		history.past = [...history.past, current].slice(-80)
+		history.future = []
+		cuesRef.current = next
+		setCues(next)
+		setCueHistory({ canUndo: true, canRedo: false })
+	}, [])
+
+	const handleCueUndo = useCallback(() => {
+		const history = cueHistoryRef.current
+		const previous = history.past.at(-1)
+		if (!previous) return
+		history.past = history.past.slice(0, -1)
+		history.future = [...history.future, cuesRef.current].slice(-80)
+		cuesRef.current = previous
+		setCues(previous)
+		setHandEdited(true)
+		setCueHistory({ canUndo: history.past.length > 0, canRedo: true })
+	}, [])
+
+	const handleCueRedo = useCallback(() => {
+		const history = cueHistoryRef.current
+		const next = history.future.at(-1)
+		if (!next) return
+		history.future = history.future.slice(0, -1)
+		history.past = [...history.past, cuesRef.current].slice(-80)
+		cuesRef.current = next
+		setCues(next)
+		setHandEdited(true)
+		setCueHistory({ canUndo: true, canRedo: history.future.length > 0 })
+	}, [])
 
 	const durationMs = video ? Math.round(video.durationInSeconds * 1000) : 0
 	const plan = useMemo(() => (video ? planComposition(video, fps) : null), [video, fps])
@@ -166,6 +242,18 @@ export default function CaptionStudio() {
 			active = false
 		}
 	}, [whisperModel])
+
+	// Whether the server holds an NVIDIA key decides what "Auto" does, so it is
+	// asked once on mount rather than at the moment the user presses the button.
+	useEffect(() => {
+		let active = true
+		cloudAsrStatus().then((status) => {
+			if (active) setCloudStatus(status)
+		})
+		return () => {
+			active = false
+		}
+	}, [])
 
 	useEffect(() => {
 		if (!structuralKey) {
@@ -244,7 +332,9 @@ export default function CaptionStudio() {
 				}),
 				durationMs || Number.MAX_SAFE_INTEGER,
 			)
+			cuesRef.current = normalized
 			setCues(normalized)
+			clearCueHistory()
 			setOrigin(nextOrigin)
 			setHandEdited(false)
 			// The written script keeps the author's own paragraphs; the other two
@@ -259,7 +349,7 @@ export default function CaptionStudio() {
 			const first = normalized[0]
 			if (first) seekToMsRef.current(first.startMs + (first.endMs - first.startMs) / 2)
 		},
-		[durationMs, layout.minCueMs],
+		[clearCueHistory, durationMs, layout.minCueMs],
 	)
 
 	/* ------------------------------------------------------------- video */
@@ -274,19 +364,23 @@ export default function CaptionStudio() {
 				setVideo(next)
 				if (previous) releaseVideoSource(previous)
 				setFps(timelineFps(next.fps))
+				cuesRef.current = []
 				setCues([])
+				clearCueHistory()
 				setOrigin('none')
 				setHandEdited(false)
 				setTranscriptText('')
 				setTranscribeProgress(IDLE_TRANSCRIBE)
 				setTranscribeError(null)
+				setTranscribeNotice(null)
+				setEngineUsed(null)
 				setCurrentFrame(0)
 				resetRender()
 			} catch (error) {
 				setVideoError(error instanceof Error ? error.message : String(error))
 			}
 		},
-		[resetRender],
+		[clearCueHistory, resetRender],
 	)
 
 	const handleVideoFiles = useCallback(
@@ -315,15 +409,20 @@ export default function CaptionStudio() {
 		videoRef.current = null
 		setVideo(null)
 		if (previous) releaseVideoSource(previous)
+		cuesRef.current = []
 		setCues([])
+		clearCueHistory()
 		setOrigin('none')
 		setHandEdited(false)
 		setTranscriptText('')
 		setTranscribeProgress(IDLE_TRANSCRIBE)
 		setTranscribeError(null)
+		setTranscribeNotice(null)
+		setEngineUsed(null)
 		setCompiled(null)
 		resetRender()
-	}, [resetRender])
+		setPlacingCaption(false)
+	}, [clearCueHistory, resetRender])
 
 	useEffect(() => {
 		return () => {
@@ -339,43 +438,30 @@ export default function CaptionStudio() {
 		transcribeAbortRef.current = controller
 		setTranscribing(true)
 		setTranscribeError(null)
-		setTranscribeProgress({ stage: 'checking', progress: 0, message: 'Checking this browser' })
+		setTranscribeNotice(null)
+		setEngineUsed(null)
+		setTranscribeProgress({ stage: 'checking', progress: 0, message: 'Choosing a speech engine' })
 
 		try {
-			const support = await checkWhisperSupport(whisperModel)
-			setWhisperSupport(support)
-			if (!support.supported) {
-				throw new Error(
-					support.needsIsolation
-						? 'This browser will not give the page a SharedArrayBuffer, which the speech model needs. Write or import the transcript instead.'
-						: (support.reason ?? 'On-device speech recognition is unavailable here.'),
-				)
-			}
-
-			const blob =
-				video.file ??
-				(await fetch(video.url)
-					.then((response) => {
-						if (!response.ok) throw new Error(`Could not read the video (${response.status}).`)
-						return response.blob()
-					})
-					.catch(() => {
-						throw new Error(
-							'That video URL cannot be read by this page. Download the file and upload it instead.',
-						)
-					}))
-
-			const nextCues = await transcribeToCues({
-				source: blob,
-				model: whisperModel,
+			const outcome = await runTranscription({
+				video,
+				engine,
 				language: whisperLanguage,
+				whisperModel,
+				cloudModel,
 				layout,
+				polish,
 				onProgress: setTranscribeProgress,
 				signal: controller.signal,
 			})
 
-			applyCues(nextCues, 'whisper')
-			setLoadedModels(await loadedWhisperModels())
+			applyCues(outcome.cues, outcome.origin)
+			setEngineUsed(outcome.engine)
+			setTranscribeNotice(outcome.notice ?? null)
+			if (outcome.engine === 'device') setLoadedModels(await loadedWhisperModels())
+			// A cloud run says nothing about this browser's on-device support, but
+			// a device run just proved it either way.
+			if (outcome.engine === 'device') setWhisperSupport(await checkWhisperSupport(whisperModel))
 		} catch (error) {
 			if (error instanceof TranscriptionCancelled || controller.signal.aborted) {
 				setTranscribeProgress({ stage: 'cancelled', progress: 0, message: 'Cancelled' })
@@ -387,7 +473,7 @@ export default function CaptionStudio() {
 			transcribeAbortRef.current = null
 			setTranscribing(false)
 		}
-	}, [applyCues, layout, video, whisperLanguage, whisperModel])
+	}, [applyCues, cloudModel, engine, layout, polish, video, whisperLanguage, whisperModel])
 
 	const handleAutoTime = useCallback(() => {
 		if (!video || !transcriptText.trim()) return
@@ -412,9 +498,9 @@ export default function CaptionStudio() {
 	)
 
 	const handleRegroup = useCallback(() => {
-		setCues((current) => normalizeCues(regroupCues(current, layout), durationMs))
+		commitCues((current) => normalizeCues(regroupCues(current, layout), durationMs))
 		setHandEdited(false)
-	}, [durationMs, layout])
+	}, [commitCues, durationMs, layout])
 
 	const handleSpeechProfile = useCallback((id: SpeechProfile['id']) => {
 		const profile = profileById(id)
@@ -426,37 +512,72 @@ export default function CaptionStudio() {
 	/* --------------------------------------------------------- cue edits */
 
 	const handleCueUpdate = useCallback(
-		(id: string, patch: { text?: string; startMs?: number; endMs?: number }) => {
+		(
+			id: string,
+			patch: { text?: string; startMs?: number; endMs?: number; overwrite?: boolean },
+		) => {
 			setHandEdited(true)
-			setCues((current) =>
-				normalizeCues(
-					current.map((cue) => (cue.id === id ? updateCue(cue, patch) : cue)),
-					durationMs,
-				),
-			)
+			commitCues((current) => {
+				const { overwrite, ...cuePatch } = patch
+				const original = current.find((cue) => cue.id === id)
+				if (!original) return current
+				const target = updateCue(original, cuePatch)
+				if (!overwrite) {
+					return normalizeCues(
+						current.map((cue) => (cue.id === id ? target : cue)),
+						durationMs,
+					)
+				}
+
+				// Overwrite editing keeps the dragged caption exactly under the mouse.
+				// Neighboring captions are trimmed only where they intersect it.
+				const frameMs = 1000 / Math.max(1, fps)
+				const next = current.flatMap((cue) => {
+					if (cue.id === id) return [target]
+					if (cue.endMs <= target.startMs || cue.startMs >= target.endMs) return [cue]
+					if (cue.startMs < target.startMs && cue.endMs > target.startMs) {
+						const endMs = target.startMs - frameMs
+						return endMs >= cue.startMs + frameMs ? [updateCue(cue, { endMs })] : []
+					}
+					if (cue.startMs < target.endMs && cue.endMs > target.endMs) {
+						const startMs = target.endMs + frameMs
+						return startMs <= cue.endMs - frameMs ? [updateCue(cue, { startMs })] : []
+					}
+					return []
+				})
+				return normalizeCues(next, durationMs)
+			})
 		},
-		[durationMs],
+		[commitCues, durationMs, fps],
 	)
 
 	const handleCueSplit = useCallback(
-		(id: string) => {
+		(id: string, atMs?: number) => {
 			setHandEdited(true)
-			setCues((current) =>
+			commitCues((current) =>
 				normalizeCues(
-					current.flatMap((cue) =>
-						cue.id === id ? splitCue(cue, Math.ceil(cue.tokens.length / 2)) : [cue],
-					),
+					current.flatMap((cue) => {
+						if (cue.id !== id) return [cue]
+						let tokenIndex = Math.ceil(cue.tokens.length / 2)
+						if (atMs !== undefined && atMs > cue.startMs && atMs < cue.endMs && cue.tokens.length > 1) {
+							tokenIndex = cue.tokens
+								.map((token, index) => ({ index, distance: Math.abs(token.fromMs - atMs) }))
+								.filter(({ index }) => index > 0)
+								.sort((left, right) => left.distance - right.distance)[0]?.index ?? tokenIndex
+						}
+						return splitCue(cue, tokenIndex)
+					}),
 					durationMs,
 				),
 			)
 		},
-		[durationMs],
+		[commitCues, durationMs],
 	)
 
 	const handleCueMerge = useCallback(
 		(id: string) => {
 			setHandEdited(true)
-			setCues((current) => {
+			commitCues((current) => {
 				const index = current.findIndex((cue) => cue.id === id)
 				if (index === -1 || index === current.length - 1) return current
 				const merged = mergeCues(current[index], current[index + 1])
@@ -465,35 +586,83 @@ export default function CaptionStudio() {
 				return normalizeCues(next, durationMs)
 			})
 		},
-		[durationMs],
+		[commitCues, durationMs],
 	)
 
-	const handleCueDelete = useCallback((id: string) => {
-		setHandEdited(true)
-		setCues((current) => current.filter((cue) => cue.id !== id))
-	}, [])
+	const handleCueDelete = useCallback(
+		(id: string) => {
+			setHandEdited(true)
+			commitCues((current) => current.filter((cue) => cue.id !== id))
+		},
+		[commitCues],
+	)
 
-	const handleCueAdd = useCallback(() => {
-		setHandEdited(true)
-		setCues((current) => {
-			const startMs = current.length > 0 ? current[current.length - 1].endMs + 120 : 0
-			const endMs = Math.min(durationMs || startMs + 1500, startMs + 1500)
-			return normalizeCues([...current, makeCue('New caption', startMs, endMs)], durationMs)
-		})
-	}, [durationMs])
+	const handleCueAdd = useCallback(
+		(atMs?: number) => {
+			setHandEdited(true)
+			commitCues((current) => {
+				const frameMs = 1000 / Math.max(1, fps)
+				let startMs = atMs ?? (current.length > 0 ? current[current.length - 1].endMs + frameMs : 0)
+				const coveringCue = current.find((cue) => startMs >= cue.startMs && startMs < cue.endMs)
+				if (coveringCue) startMs = coveringCue.endMs + frameMs
+				startMs = Math.max(0, Math.min(Math.max(0, durationMs - frameMs), startMs))
+				const nextCue = current.find((cue) => cue.startMs > startMs)
+				const availableEnd = nextCue ? nextCue.startMs - frameMs : durationMs || startMs + 1500
+				const endMs = Math.max(startMs + frameMs, Math.min(startMs + 1500, availableEnd))
+				return normalizeCues([...current, makeCue('New caption', startMs, endMs)], durationMs)
+			})
+		},
+		[commitCues, durationMs, fps],
+	)
+
+	const handleCueDuplicate = useCallback(
+		(id: string) => {
+			setHandEdited(true)
+			commitCues((current) => {
+				const cue = current.find((item) => item.id === id)
+				if (!cue) return current
+				const frameMs = 1000 / Math.max(1, fps)
+				const duration = cue.endMs - cue.startMs
+				const startMs = Math.min(Math.max(0, durationMs - frameMs), cue.endMs + frameMs)
+				const endMs = Math.min(durationMs || startMs + duration, startMs + duration)
+				return normalizeCues([...current, makeCue(cue.text, startMs, endMs)], durationMs)
+			})
+		},
+		[commitCues, durationMs, fps],
+	)
 
 	const handleShiftAll = useCallback(
 		(deltaMs: number) => {
 			setHandEdited(true)
-			setCues((current) => shiftCues(current, deltaMs, durationMs))
+			commitCues((current) => shiftCues(current, deltaMs, durationMs))
 		},
-		[durationMs],
+		[commitCues, durationMs],
 	)
 
 	/* -------------------------------------------------------------- style */
 
 	const handleStyle = useCallback((patch: Partial<CaptionStyle>) => {
 		setStyle((current) => ({ ...current, ...patch }))
+	}, [])
+
+	const handlePreviewPlacement = useCallback((clientY: number, top: number, height: number) => {
+		const ratio = Math.max(0, Math.min(1, (clientY - top) / Math.max(1, height)))
+		if (ratio < 0.4) {
+			setStyle((current) => ({
+				...current,
+				placement: 'top',
+				offsetPercent: Math.max(0, Math.min(45, Math.round(ratio * 1000) / 10)),
+			}))
+		} else if (ratio > 0.6) {
+			setStyle((current) => ({
+				...current,
+				placement: 'bottom',
+				offsetPercent: Math.max(0, Math.min(45, Math.round((1 - ratio) * 1000) / 10)),
+			}))
+		} else {
+			setStyle((current) => ({ ...current, placement: 'center' }))
+		}
+		setPlacingCaption(false)
 	}, [])
 
 	const handlePreset = useCallback(
@@ -504,14 +673,14 @@ export default function CaptionStudio() {
 			// at the cost of cues that were split or rewritten by hand.
 			if (!handEdited) {
 				setLayout(preset.layout)
-				setCues((current) =>
+				commitCues((current) =>
 					current.length > 0
 						? normalizeCues(regroupCues(current, preset.layout), durationMs)
 						: current,
 				)
 			}
 		},
-		[durationMs, handEdited],
+		[commitCues, durationMs, handEdited],
 	)
 
 	const handleLayout = useCallback((patch: Partial<CaptionLayoutOptions>) => {
@@ -582,6 +751,10 @@ export default function CaptionStudio() {
 					mode={mode}
 					transcriptText={transcriptText}
 					speechProfile={speechProfile}
+					engine={engine}
+					cloudStatus={cloudStatus}
+					cloudModel={cloudModel}
+					polish={polish}
 					whisperModel={whisperModel}
 					whisperLanguage={whisperLanguage}
 					whisperSupport={whisperSupport}
@@ -589,6 +762,8 @@ export default function CaptionStudio() {
 					transcribing={transcribing}
 					transcribeProgress={transcribeProgress}
 					transcribeError={transcribeError}
+					transcribeNotice={transcribeNotice}
+					engineUsed={engineUsed}
 					videoError={videoError}
 					onVideoFiles={handleVideoFiles}
 					onVideoUrl={handleVideoUrl}
@@ -598,6 +773,9 @@ export default function CaptionStudio() {
 					onAutoTime={handleAutoTime}
 					onImportSubtitles={(file) => void handleImportSubtitles(file)}
 					onSpeechProfile={handleSpeechProfile}
+					onEngine={setEngine}
+					onCloudModel={setCloudModel}
+					onPolish={setPolish}
 					onWhisperModel={setWhisperModel}
 					onWhisperLanguage={setWhisperLanguage}
 					onTranscribe={() => void handleTranscribe()}
@@ -621,6 +799,16 @@ export default function CaptionStudio() {
 								</span>
 							</>
 						) : null}
+						<button
+							className="btn btn--sm caption-place-button"
+							data-active={placingCaption}
+							disabled={!composition || busy}
+							onClick={() => setPlacingCaption((value) => !value)}
+							title="Click directly on the video to position every caption"
+						>
+							<IconCaptions size={12} />
+							{placingCaption ? 'Cancel placement' : 'Place on video'}
+						</button>
 						<label className="stage-fps">
 							fps
 							<select
@@ -680,6 +868,22 @@ export default function CaptionStudio() {
 									playerRef={playerRef}
 									onFrame={setCurrentFrame}
 								/>
+								{placingCaption ? (
+									<button
+										type="button"
+										className="caption-placement-overlay"
+										aria-label="Choose subtitle position on the video"
+										onClick={(event) => {
+											const rect = event.currentTarget.getBoundingClientRect()
+											handlePreviewPlacement(event.clientY, rect.top, rect.height)
+										}}
+									>
+										<span className="caption-placement-zone caption-placement-zone--top">TOP</span>
+										<span className="caption-placement-zone caption-placement-zone--middle">MIDDLE</span>
+										<span className="caption-placement-zone caption-placement-zone--bottom">BOTTOM</span>
+										<span className="caption-placement-hint">Click where the subtitle should appear</span>
+									</button>
+								) : null}
 							</div>
 						) : (
 							<div className="stage-empty">
@@ -701,14 +905,20 @@ export default function CaptionStudio() {
 							cues={cues}
 							currentMs={currentMs}
 							durationMs={durationMs}
+							fps={fps}
 							disabled={busy}
+							canUndo={cueHistory.canUndo}
+							canRedo={cueHistory.canRedo}
 							onSeek={seekToMs}
 							onUpdate={handleCueUpdate}
 							onSplit={handleCueSplit}
 							onMerge={handleCueMerge}
+							onDuplicate={handleCueDuplicate}
 							onDelete={handleCueDelete}
 							onAdd={handleCueAdd}
 							onShiftAll={handleShiftAll}
+							onUndo={handleCueUndo}
+							onRedo={handleCueRedo}
 						/>
 					) : null}
 				</section>
