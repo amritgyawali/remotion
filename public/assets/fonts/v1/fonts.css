@@ -17,17 +17,57 @@
 }
 
 @font-face {
-	font-family: 'Anton';
-	src: url('/assets/fonts/v1/anton/Anton-Regular.ttf') format('truetype');
-	font-weight: 400;
+	font-family: 'Montserrat';
+	src: url('/assets/fonts/v1/montserrat/Montserrat%5Bwght%5D.ttf') format('truetype');
+	font-weight: 100 900;
 	font-style: normal;
 	font-display: block;
 }
 
 @font-face {
-	font-family: 'Bebas Neue';
-	src: url('/assets/fonts/v1/bebas-neue/BebasNeue-Regular.ttf') format('truetype');
-	font-weight: 400;
+	font-family: 'Poppins';
+	src: url('/assets/fonts/v1/poppins/Poppins-Bold.ttf') format('truetype');
+	font-weight: 700;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Outfit';
+	src: url('/assets/fonts/v1/outfit/Outfit%5Bwght%5D.ttf') format('truetype');
+	font-weight: 100 900;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Sora';
+	src: url('/assets/fonts/v1/sora/Sora%5Bwght%5D.ttf') format('truetype');
+	font-weight: 100 800;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Plus Jakarta Sans';
+	src: url('/assets/fonts/v1/plus-jakarta-sans/PlusJakartaSans%5Bwght%5D.ttf') format('truetype');
+	font-weight: 200 800;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Nunito';
+	src: url('/assets/fonts/v1/nunito/Nunito%5Bwght%5D.ttf') format('truetype');
+	font-weight: 200 1000;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Fredoka';
+	src: url('/assets/fonts/v1/fredoka/Fredoka%5Bwdth%2Cwght%5D.ttf') format('truetype');
+	font-weight: 300 700;
 	font-style: normal;
 	font-display: block;
 }
@@ -41,8 +81,176 @@
 }
 
 @font-face {
+	font-family: 'Bebas Neue';
+	src: url('/assets/fonts/v1/bebas-neue/BebasNeue-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Barlow Condensed';
+	src: url('/assets/fonts/v1/barlow-condensed/BarlowCondensed-Bold.ttf') format('truetype');
+	font-weight: 700;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Staatliches';
+	src: url('/assets/fonts/v1/staatliches/Staatliches-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Kanit';
+	src: url('/assets/fonts/v1/kanit/Kanit-Bold.ttf') format('truetype');
+	font-weight: 700;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Khand';
+	src: url('/assets/fonts/v1/khand/Khand-Bold.ttf') format('truetype');
+	font-weight: 700;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Anton';
+	src: url('/assets/fonts/v1/anton/Anton-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Archivo Black';
+	src: url('/assets/fonts/v1/archivo-black/ArchivoBlack-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Alfa Slab One';
+	src: url('/assets/fonts/v1/alfa-slab-one/AlfaSlabOne-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Titan One';
+	src: url('/assets/fonts/v1/titan-one/TitanOne-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Lilita One';
+	src: url('/assets/fonts/v1/lilita-one/LilitaOne-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Rowdies';
+	src: url('/assets/fonts/v1/rowdies/Rowdies-Bold.ttf') format('truetype');
+	font-weight: 700;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Bangers';
+	src: url('/assets/fonts/v1/bangers/Bangers-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Luckiest Guy';
+	src: url('/assets/fonts/v1/luckiest-guy/LuckiestGuy-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Chewy';
+	src: url('/assets/fonts/v1/chewy/Chewy-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Bungee';
+	src: url('/assets/fonts/v1/bungee/Bungee-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Bungee Shade';
+	src: url('/assets/fonts/v1/bungee-shade/BungeeShade-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Rubik Mono One';
+	src: url('/assets/fonts/v1/rubik-mono-one/RubikMonoOne-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Shrikhand';
+	src: url('/assets/fonts/v1/shrikhand/Shrikhand-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
 	font-family: 'Playfair Display';
 	src: url('/assets/fonts/v1/playfair-display/PlayfairDisplay%5Bwght%5D.ttf') format('truetype');
+	font-weight: 400 900;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Abril Fatface';
+	src: url('/assets/fonts/v1/abril-fatface/AbrilFatface-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'DM Serif Display';
+	src: url('/assets/fonts/v1/dm-serif-display/DMSerifDisplay-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Cinzel';
+	src: url('/assets/fonts/v1/cinzel/Cinzel%5Bwght%5D.ttf') format('truetype');
 	font-weight: 400 900;
 	font-style: normal;
 	font-display: block;
@@ -57,6 +265,78 @@
 }
 
 @font-face {
+	font-family: 'Syne';
+	src: url('/assets/fonts/v1/syne/Syne%5Bwght%5D.ttf') format('truetype');
+	font-weight: 400 800;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Unbounded';
+	src: url('/assets/fonts/v1/unbounded/Unbounded%5Bwght%5D.ttf') format('truetype');
+	font-weight: 200 900;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Orbitron';
+	src: url('/assets/fonts/v1/orbitron/Orbitron%5Bwght%5D.ttf') format('truetype');
+	font-weight: 400 900;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Audiowide';
+	src: url('/assets/fonts/v1/audiowide/Audiowide-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Monoton';
+	src: url('/assets/fonts/v1/monoton/Monoton-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Righteous';
+	src: url('/assets/fonts/v1/righteous/Righteous-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Press Start 2P';
+	src: url('/assets/fonts/v1/press-start-2p/PressStart2P-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Silkscreen';
+	src: url('/assets/fonts/v1/silkscreen/Silkscreen-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'VT323';
+	src: url('/assets/fonts/v1/vt323/VT323-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
 	font-family: 'JetBrains Mono';
 	src: url('/assets/fonts/v1/jetbrains-mono/JetBrainsMono%5Bwght%5D.ttf') format('truetype');
 	font-weight: 100 800;
@@ -65,9 +345,33 @@
 }
 
 @font-face {
-	font-family: 'Nunito';
-	src: url('/assets/fonts/v1/nunito/Nunito%5Bwght%5D.ttf') format('truetype');
-	font-weight: 200 1000;
+	font-family: 'Courier Prime';
+	src: url('/assets/fonts/v1/courier-prime/CourierPrime-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Special Elite';
+	src: url('/assets/fonts/v1/special-elite/SpecialElite-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Rubik Glitch';
+	src: url('/assets/fonts/v1/rubik-glitch/RubikGlitch-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Rubik Wet Paint';
+	src: url('/assets/fonts/v1/rubik-wet-paint/RubikWetPaint-Regular.ttf') format('truetype');
+	font-weight: 400;
 	font-style: normal;
 	font-display: block;
 }
@@ -76,6 +380,38 @@
 	font-family: 'Caveat';
 	src: url('/assets/fonts/v1/caveat/Caveat%5Bwght%5D.ttf') format('truetype');
 	font-weight: 400 700;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Permanent Marker';
+	src: url('/assets/fonts/v1/permanent-marker/PermanentMarker-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Pacifico';
+	src: url('/assets/fonts/v1/pacifico/Pacifico-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Lobster';
+	src: url('/assets/fonts/v1/lobster/Lobster-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Sedgwick Ave';
+	src: url('/assets/fonts/v1/sedgwick-ave/SedgwickAve-Regular.ttf') format('truetype');
+	font-weight: 400;
 	font-style: normal;
 	font-display: block;
 }
@@ -92,6 +428,86 @@
 	font-family: 'Anek Devanagari';
 	src: url('/assets/fonts/v1/anek-devanagari/AnekDevanagari%5Bwdth%2Cwght%5D.ttf') format('truetype');
 	font-weight: 100 800;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Noto Serif Devanagari';
+	src: url('/assets/fonts/v1/noto-serif-devanagari/NotoSerifDevanagari%5Bwdth%2Cwght%5D.ttf') format('truetype');
+	font-weight: 100 900;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Mukta';
+	src: url('/assets/fonts/v1/mukta/Mukta-Bold.ttf') format('truetype');
+	font-weight: 700;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Hind';
+	src: url('/assets/fonts/v1/hind/Hind-Bold.ttf') format('truetype');
+	font-weight: 700;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Baloo 2';
+	src: url('/assets/fonts/v1/baloo-2/Baloo2%5Bwght%5D.ttf') format('truetype');
+	font-weight: 400 800;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Rozha One';
+	src: url('/assets/fonts/v1/rozha-one/RozhaOne-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Yatra One';
+	src: url('/assets/fonts/v1/yatra-one/YatraOne-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Kalam';
+	src: url('/assets/fonts/v1/kalam/Kalam-Bold.ttf') format('truetype');
+	font-weight: 700;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Tiro Devanagari Hindi';
+	src: url('/assets/fonts/v1/tiro-devanagari-hindi/TiroDevanagariHindi-Regular.ttf') format('truetype');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Martel Sans';
+	src: url('/assets/fonts/v1/martel-sans/MartelSans-Bold.ttf') format('truetype');
+	font-weight: 700;
+	font-style: normal;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Teko';
+	src: url('/assets/fonts/v1/teko/Teko%5Bwght%5D.ttf') format('truetype');
+	font-weight: 300 700;
 	font-style: normal;
 	font-display: block;
 }

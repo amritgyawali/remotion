@@ -5,9 +5,15 @@
  * download are the same program, so nothing can drift between what you see and
  * what you ship. Cues and styling are also handed to <Composition> as
  * defaultProps, which lets the editor re-style a caption without recompiling.
+ *
+ * Everything the style engine can do is a pure function of the frame: gradient
+ * fills, glows, faked 3D depth, the karaoke wipe, the per-word motion and the
+ * typewriter reveal all read the clock and nothing else. No DOM measurement, no
+ * randomness, so frame N is identical in the preview, in a browser export and
+ * on a render farm.
  */
 
-import { CAPTION_FONTS, DEVANAGARI_FONTS } from './style-presets'
+import { DEVANAGARI_FONTS, fontById, resolveFontWeight } from './fonts'
 import type { CaptionCue, CaptionStyle } from './types'
 
 export const CAPTION_ENTRY_FILE = 'captioned-video.tsx'
@@ -50,8 +56,12 @@ function cueLiterals(cues: CaptionCue[]): string {
 /** Builds the complete, self-contained .tsx for the captioned video. */
 export function buildCaptionSource(input: CaptionSourceInput): string {
 	const { videoSrc, videoName, cues, style, plan, origin } = input
-	const font = CAPTION_FONTS[style.fontId]
-	const devanagari = style.devanagari ? DEVANAGARI_FONTS[style.devanagariFontId] : null
+	// fontById falls back to Inter rather than throwing: a style pasted from an
+	// older studio version must still produce a renderable file.
+	const font = fontById(style.fontId)
+	const devanagari = style.devanagari
+		? (DEVANAGARI_FONTS[style.devanagariFontId] ?? DEVANAGARI_FONTS.notoSansDevanagari)
+		: null
 	const words = cues.reduce((sum, cue) => sum + cue.tokens.length, 0)
 	const seconds = (plan.durationInFrames / plan.fps).toFixed(1)
 
@@ -62,6 +72,14 @@ export function buildCaptionSource(input: CaptionSourceInput): string {
 		...(devanagari ? [`'${devanagari.family}'`] : []),
 		font.fallback,
 	].join(', ')
+
+	/**
+	 * A static face carries exactly one weight. Asking a browser for 700 on a
+	 * 400-only file gets a synthesised bold that smears at caption size and
+	 * differs between the preview and the render host, so the weight is pinned
+	 * here and the slider is ignored for those families.
+	 */
+	const staticWeight = font.variable ? null : resolveFontWeight(style.fontId, style.fontWeight)
 
 	const devanagariLoader = devanagari
 		? `
@@ -85,13 +103,13 @@ loadFont({
  *
  * How it renders
  *   - every word carries its own timestamp, so the word being spoken can be
- *     marked while the rest of the line stays readable
+ *     marked, filled left to right, or animated on its own
  *   - lines are broken by linear partitioning, which balances a caption across
  *     up to \`maxLines\` rows instead of leaving an orphan word
+ *   - fills, glows, the faked 3D edge and the per-word motion are all computed
+ *     from the frame number, so nothing drifts between preview and render
  *   - an optional gradient scrim fades in under the caption zone, which is what
  *     keeps white type legible over bright or busy footage
- *   - nothing is measured from the DOM and no random values are used, so frame
- *     N always looks identical, in the preview and in every render
  *
  * The video address below is the one the studio used. A blob: address only
  * lives as long as the browser tab that created it, so replace VIDEO_SRC with a
@@ -145,8 +163,8 @@ export type CaptionStyle = typeof CAPTION_STYLE
 
 /* ------------------------------------------------------------ typography */
 
-// Self-hosted OFL font from the studio asset kit: loadFont() holds the render
-// open until the face is parsed, so no frame is drawn in a fallback face.
+// Self-hosted open-licence font from the studio asset kit: loadFont() holds the
+// render open until the face is parsed, so no frame is drawn in a fallback face.
 loadFont({
 	family: ${JSON.stringify(font.family)},
 	url: staticFile(${JSON.stringify(`assets/fonts/v1/${font.file}`)}),
@@ -154,6 +172,9 @@ loadFont({
 })
 ${devanagariLoader}
 const FONT_STACK = ${JSON.stringify(fontStack)}
+
+/** null for a variable face, which honours whatever weight the style asks for. */
+const FONT_STATIC_WEIGHT: number | null = ${staticWeight === null ? 'null' : staticWeight}
 
 /* --------------------------------------------------------------- helpers */
 
@@ -170,10 +191,36 @@ const withAlpha = (color: string, alpha: number): string => {
 	return \`rgba(\${r}, \${g}, \${b}, \${alpha})\`
 }
 
+const clamp01 = (value: number): number => Math.max(0, Math.min(1, value))
+
 const justifyFor = (placement: string): 'flex-start' | 'center' | 'flex-end' => {
 	if (placement === 'top') return 'flex-start'
 	if (placement === 'center') return 'center'
 	return 'flex-end'
+}
+
+const alignFor = (align: string): 'flex-start' | 'center' | 'flex-end' => {
+	if (align === 'left') return 'flex-start'
+	if (align === 'right') return 'flex-end'
+	return 'center'
+}
+
+const caseFor = (textCase: string): 'uppercase' | 'lowercase' | 'capitalize' | 'none' => {
+	if (textCase === 'upper') return 'uppercase'
+	if (textCase === 'lower') return 'lowercase'
+	if (textCase === 'title') return 'capitalize'
+	return 'none'
+}
+
+/**
+ * Deterministic pseudo-noise. The jitter effect needs a value that looks random
+ * but is a pure function of (frame, word) - Math.random() would make every
+ * render of the same frame different, which is the one thing a video pipeline
+ * cannot tolerate.
+ */
+const noise = (a: number, b: number): number => {
+	const value = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453
+	return value - Math.floor(value)
 }
 
 /**
@@ -186,6 +233,10 @@ const DEVANAGARI_COMBINING = /[\\u0900-\\u0902\\u093A-\\u094F\\u0951-\\u0957\\u0
 
 const wordWidth = (text: string): number => text.replace(DEVANAGARI_COMBINING, '').length
 
+/** Emphasis matching ignores case and the punctuation stuck to a word. */
+const bareWord = (text: string): string =>
+	text.toLowerCase().replace(/[^\\p{L}\\p{N}]+/gu, '')
+
 /**
  * Balanced line breaking.
  *
@@ -196,7 +247,7 @@ const wordWidth = (text: string): number => text.replace(DEVANAGARI_COMBINING, '
  * partition, and the same thing a typesetter does by eye.
  */
 const balanceLines = (tokens: CaptionToken[], maxLines: number): CaptionToken[][] => {
-	const limit = Math.max(1, Math.min(3, Math.round(maxLines)))
+	const limit = Math.max(1, Math.min(4, Math.round(maxLines)))
 	if (limit === 1 || tokens.length < 2) return [tokens]
 
 	const widths = tokens.map((token) => wordWidth(token.text))
@@ -290,7 +341,9 @@ type WordMetrics = {
 	fontSize: number
 	strokeWidth: number
 	dropShadow: string
+	extrudeShadow: string
 	glowShadow: string
+	activeGlowShadow: string
 }
 
 const CaptionWord = ({
@@ -300,6 +353,8 @@ const CaptionWord = ({
 	lineEntrance,
 	captionStyle,
 	metrics,
+	index,
+	typed,
 }: {
 	token: CaptionToken
 	cueStartMs: number
@@ -307,6 +362,10 @@ const CaptionWord = ({
 	lineEntrance: number
 	captionStyle: CaptionStyle
 	metrics: WordMetrics
+	/** position of the word in its line, used to phase the wave effect */
+	index: number
+	/** typewriter reveal: 0 - 1 of this word's characters, or null when off */
+	typed: number | null
 }) => {
 	const frame = useCurrentFrame()
 	const { fps } = useVideoConfig()
@@ -331,24 +390,101 @@ const CaptionWord = ({
 	const marked = active && captionStyle.highlight !== 'none'
 	const boxed = marked && captionStyle.highlight === 'box'
 	const popped = marked && captionStyle.highlight === 'scale'
+	const emphasised =
+		captionStyle.emphasisWords.length > 0 &&
+		captionStyle.emphasisWords.includes(bareWord(token.text))
 
-	const scale = (byWord ? 0.86 + entrance * 0.14 : 1) * (popped ? 1.11 : 1)
+	/* ------------------------------------------------------------- motion */
+
+	const seconds = Math.max(0, wordFrame) / fps
+	const effect = active ? captionStyle.wordEffect : 'none'
+	let effectY = 0
+	let effectX = 0
+	let effectScale = 1
+	let effectRotate = 0
+
+	if (effect === 'bounce') {
+		effectY = -Math.abs(Math.sin(seconds * 9)) * metrics.fontSize * 0.12
+	} else if (effect === 'wave') {
+		effectY = Math.sin(seconds * 6 + index * 0.7) * metrics.fontSize * 0.07
+	} else if (effect === 'pulse') {
+		effectScale = 1 + Math.sin(seconds * 11) * 0.045
+	} else if (effect === 'jitter') {
+		effectX = (noise(frame, index) - 0.5) * metrics.fontSize * 0.06
+		effectY = (noise(frame + 37, index) - 0.5) * metrics.fontSize * 0.06
+	} else if (effect === 'flip') {
+		effectRotate = interpolate(wordFrame, [0, 6], [82, 0], {
+			extrapolateLeft: 'clamp',
+			extrapolateRight: 'clamp',
+		})
+	}
+
+	const scale = (byWord ? 0.86 + entrance * 0.14 : 1) * (popped ? 1.11 : 1) * effectScale
 	const rise = byWord ? (1 - entrance) * metrics.fontSize * 0.28 : 0
+
+	/* --------------------------------------------------------------- fill */
+
+	const baseColor = emphasised ? captionStyle.emphasisColor : captionStyle.textColor
+	const gradientFill = \`linear-gradient(\${captionStyle.gradientAngle}deg, \${captionStyle.gradientFrom}, \${captionStyle.gradientTo})\`
+
+	// A karaoke wipe fills the spoken word left to right over its own span,
+	// instead of switching colour on a single frame.
+	const wipe = captionStyle.karaokeFill && active && captionStyle.highlight !== 'none'
+	const wipeProgress = wipe
+		? clamp01((timeMs - token.fromMs) / Math.max(1, token.toMs - token.fromMs))
+		: 0
+
+	const clipToText = {
+		WebkitBackgroundClip: 'text' as const,
+		backgroundClip: 'text' as const,
+		color: 'transparent',
+	}
+
+	const fill = boxed
+		? { color: captionStyle.highlightTextColor }
+		: wipe
+			? {
+					backgroundImage: \`linear-gradient(90deg, \${captionStyle.highlightColor} \${(
+						wipeProgress * 100
+					).toFixed(2)}%, \${baseColor} \${(wipeProgress * 100).toFixed(2)}%)\`,
+					...clipToText,
+				}
+			: marked
+				? { color: captionStyle.highlightColor }
+				: emphasised
+					? { color: captionStyle.emphasisColor }
+					: captionStyle.fill === 'gradient'
+						? { backgroundImage: gradientFill, ...clipToText }
+						: { color: baseColor }
+
+	const shadow = [
+		metrics.extrudeShadow,
+		marked || emphasised ? metrics.activeGlowShadow : metrics.glowShadow,
+		metrics.dropShadow,
+	]
+		.filter(Boolean)
+		.join(', ')
+
+	/* ---------------------------------------------------------- typewriter */
+
+	const characters = Array.from(token.text)
+	const shownCount = typed === null ? characters.length : Math.round(typed * characters.length)
+	const shown = typed === null ? token.text : characters.slice(0, shownCount).join('')
+	// The untyped tail is rendered transparent rather than removed, so the line
+	// keeps its final width from frame one and never reflows as it types.
+	const hidden = typed === null ? '' : characters.slice(shownCount).join('')
 
 	return (
 		<span
 			style={{
 				display: 'inline-block',
 				opacity: byWord ? entrance : 1,
-				color: boxed
-					? captionStyle.highlightTextColor
-					: marked
-						? captionStyle.highlightColor
-						: captionStyle.textColor,
 				backgroundColor: boxed ? captionStyle.highlightColor : 'transparent',
 				padding: boxed ? \`0 \${metrics.fontSize * 0.16}px\` : 0,
 				borderRadius: metrics.fontSize * 0.16,
-				transform: \`translateY(\${rise.toFixed(2)}px) scale(\${scale.toFixed(3)})\`,
+				transform: \`translate(\${effectX.toFixed(2)}px, \${(rise + effectY).toFixed(
+					2,
+				)}px) scale(\${scale.toFixed(3)}) rotateX(\${effectRotate.toFixed(1)}deg)\`,
 				WebkitTextStroke:
 					metrics.strokeWidth > 0
 						? \`\${metrics.strokeWidth.toFixed(2)}px \${captionStyle.strokeColor}\`
@@ -356,12 +492,12 @@ const CaptionWord = ({
 				// Stroke under fill: the default paint order eats into the letterform
 				// and thins out every glyph at social-video outline weights.
 				paintOrder: 'stroke fill',
-				textShadow:
-					[marked ? metrics.glowShadow : '', metrics.dropShadow].filter(Boolean).join(', ') ||
-					'none',
+				textShadow: shadow || 'none',
+				...fill,
 			}}
 		>
-			{token.text}
+			{shown}
+			{hidden ? <span style={{ opacity: 0 }}>{hidden}</span> : null}
 		</span>
 	)
 }
@@ -398,6 +534,7 @@ const CueLayer = ({ cue, captionStyle }: { cue: CaptionCue; captionStyle: Captio
 	// With a word reveal the words carry the entrance themselves; the block only
 	// handles the exit, otherwise every word would fade in twice.
 	const byWord = captionStyle.reveal === 'word'
+	const typewriter = captionStyle.reveal === 'typewriter'
 	const animated = captionStyle.animation !== 'none'
 	// The fade starts at 0.35 rather than 0: a caption that is fully transparent
 	// on its own first frame reads as a flicker, and as a missing caption when
@@ -409,9 +546,44 @@ const CueLayer = ({ cue, captionStyle }: { cue: CaptionCue; captionStyle: Captio
 	const opacity = byWord ? exit : animated ? Math.min(fadeIn, exit) : 1
 	const scale = !byWord && captionStyle.animation === 'pop' ? 0.82 + entrance * 0.18 : 1
 	const translateY =
-		!byWord && captionStyle.animation === 'slide' ? (1 - entrance) * height * 0.045 : 0
+		!byWord && captionStyle.animation === 'slide'
+			? (1 - entrance) * height * 0.045
+			: !byWord && captionStyle.animation === 'rise'
+				? (1 - entrance) * height * 0.02
+				: 0
+	const blurPx =
+		!byWord && captionStyle.animation === 'blur' ? (1 - entrance) * height * 0.012 : 0
 
 	const fontSize = (height * captionStyle.fontSizePercent) / 100
+	const shadowColor = captionStyle.shadowColor || '#000000'
+
+	// Faked depth: a stack of hard shadows one pixel apart reads as an extruded
+	// edge, and unlike a blur it stays crisp when the video is scaled.
+	const extrudeSteps = Math.round(captionStyle.extrude * fontSize * 0.055)
+	const extrudeShadow =
+		captionStyle.extrude > 0 && extrudeSteps > 0
+			? Array.from({ length: extrudeSteps }, (_, step) => {
+					const offset = (step + 1) * (fontSize * 0.012)
+					return \`\${offset.toFixed(2)}px \${offset.toFixed(2)}px 0 \${captionStyle.extrudeColor}\`
+				}).join(', ')
+			: ''
+
+	const glowShadow =
+		captionStyle.glow > 0
+			? \`0 0 \${(fontSize * 0.22 * captionStyle.glow).toFixed(1)}px \${withAlpha(
+					captionStyle.glowColor,
+					Math.min(1, captionStyle.glow * 0.85),
+				)}\`
+			: ''
+	const activeGlowShadow =
+		captionStyle.glow > 0
+			? \`\${glowShadow}, 0 0 \${(fontSize * 0.45 * captionStyle.glow).toFixed(1)}px \${
+					captionStyle.glowColor
+				}\`
+			: captionStyle.preset === 'neon'
+				? \`0 0 \${(fontSize * 0.38).toFixed(1)}px \${captionStyle.highlightColor}\`
+				: ''
+
 	const metrics: WordMetrics = {
 		fontSize,
 		strokeWidth: (fontSize * captionStyle.strokeWidth) / 100,
@@ -420,27 +592,41 @@ const CueLayer = ({ cue, captionStyle }: { cue: CaptionCue; captionStyle: Captio
 		dropShadow:
 			captionStyle.shadow > 0
 				? \`0 \${(fontSize * 0.035).toFixed(1)}px \${(fontSize * 0.07).toFixed(1)}px \${withAlpha(
-						'#000000',
+						shadowColor,
 						Math.min(1, captionStyle.shadow * 1.1),
 					)}, 0 \${(fontSize * 0.09).toFixed(1)}px \${(fontSize * 0.3).toFixed(1)}px \${withAlpha(
-						'#000000',
+						shadowColor,
 						captionStyle.shadow * 0.7,
 					)}\`
 				: '',
-		// The neon preset haloes the word being spoken.
-		glowShadow:
-			captionStyle.preset === 'neon'
-				? \`0 0 \${(fontSize * 0.38).toFixed(1)}px \${captionStyle.highlightColor}\`
-				: '',
+		extrudeShadow,
+		glowShadow,
+		activeGlowShadow,
 	}
+
+	/**
+	 * Typewriter reveal. Each word types across its own timestamp rather than
+	 * across the whole cue, so the text lands with the voice instead of drifting
+	 * ahead of it on a fast line.
+	 */
+	const typedFor = (token: CaptionToken): number | null => {
+		if (!typewriter) return null
+		if (timeMs >= token.toMs) return 1
+		if (timeMs < token.fromMs) return 0
+		return clamp01((timeMs - token.fromMs) / Math.max(1, token.toMs - token.fromMs))
+	}
+
+	const align = alignFor(captionStyle.align)
 
 	return (
 		<AbsoluteFill
 			style={{
 				display: 'flex',
 				flexDirection: 'column',
-				alignItems: 'center',
+				alignItems: align,
 				justifyContent: justifyFor(captionStyle.placement),
+				paddingLeft: captionStyle.align === 'left' ? \`\${(100 - captionStyle.maxWidthPercent) / 2}%\` : 0,
+				paddingRight: captionStyle.align === 'right' ? \`\${(100 - captionStyle.maxWidthPercent) / 2}%\` : 0,
 				paddingTop:
 					captionStyle.placement === 'top' ? (height * captionStyle.offsetPercent) / 100 : 0,
 				paddingBottom:
@@ -451,7 +637,7 @@ const CueLayer = ({ cue, captionStyle }: { cue: CaptionCue; captionStyle: Captio
 				style={{
 					display: 'flex',
 					flexDirection: 'column',
-					alignItems: 'center',
+					alignItems: align,
 					rowGap: fontSize * (captionStyle.lineHeight - 1),
 					maxWidth: \`\${captionStyle.maxWidthPercent}%\`,
 					padding:
@@ -463,15 +649,22 @@ const CueLayer = ({ cue, captionStyle }: { cue: CaptionCue; captionStyle: Captio
 						captionStyle.background === 'none'
 							? 'transparent'
 							: withAlpha(captionStyle.backgroundColor, captionStyle.backgroundOpacity),
+					backdropFilter:
+						captionStyle.backdropBlur > 0 ? \`blur(\${captionStyle.backdropBlur}px)\` : undefined,
+					WebkitBackdropFilter:
+						captionStyle.backdropBlur > 0 ? \`blur(\${captionStyle.backdropBlur}px)\` : undefined,
 					opacity,
-					transform: \`translateY(\${translateY.toFixed(2)}px) scale(\${scale.toFixed(3)})\`,
+					filter: blurPx > 0 ? \`blur(\${blurPx.toFixed(2)}px)\` : undefined,
+					transform: \`translateY(\${translateY.toFixed(2)}px) scale(\${scale.toFixed(
+						3,
+					)}) rotate(\${captionStyle.tilt}deg)\`,
 					fontFamily: FONT_STACK,
-					fontWeight: captionStyle.fontWeight,
+					fontWeight: FONT_STATIC_WEIGHT ?? captionStyle.fontWeight,
 					fontSize,
 					lineHeight: captionStyle.lineHeight,
 					letterSpacing: captionStyle.letterSpacing,
-					textTransform: captionStyle.uppercase ? 'uppercase' : 'none',
-					textAlign: 'center',
+					textTransform: caseFor(captionStyle.textCase),
+					textAlign: captionStyle.align,
 				}}
 			>
 				{lines.map((line, lineIndex) => (
@@ -481,7 +674,7 @@ const CueLayer = ({ cue, captionStyle }: { cue: CaptionCue; captionStyle: Captio
 							display: 'flex',
 							flexWrap: 'wrap',
 							alignItems: 'center',
-							justifyContent: 'center',
+							justifyContent: align,
 							columnGap: fontSize * 0.24,
 							rowGap: fontSize * 0.1,
 						}}
@@ -495,6 +688,8 @@ const CueLayer = ({ cue, captionStyle }: { cue: CaptionCue; captionStyle: Captio
 								lineEntrance={entrance}
 								captionStyle={captionStyle}
 								metrics={metrics}
+								index={tokenIndex}
+								typed={typedFor(token)}
 							/>
 						))}
 					</div>

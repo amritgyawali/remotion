@@ -62,6 +62,11 @@ const { streamAudioChunks } = require('../lib/captions/audio.ts')
 const { transcribeInCloud } = require('../lib/captions/cloud-transcribe.ts')
 const transcribeRoute = require('../app/api/captions/transcribe/route.ts')
 const refineRoute = require('../app/api/captions/refine/route.ts')
+const { buildCaptionSource } = require('../lib/captions/composition-source.ts')
+const { CAPTION_PRESETS, CAPTION_FONT_IDS, CAPTION_FONTS } = require('../lib/captions/style-presets.ts')
+const tools = require('../lib/captions/tools.ts')
+const { cuesToAss } = require('../lib/captions/ass.ts')
+const { transform } = require('sucrase')
 
 /* ------------------------------------------------------------- test tools */
 
@@ -370,11 +375,265 @@ async function checkRefineRoute() {
 	process.env.NVIDIA_API_KEY = 'nvapi-check'
 }
 
+/* ------------------------------------------------- the generated composition */
+
+const CUES = [
+	{
+		id: 'cue-1',
+		text: 'यो feature धेरै राम्रो छ',
+		startMs: 0,
+		endMs: 1800,
+		tokens: [
+			{ text: 'यो', fromMs: 0, toMs: 400 },
+			{ text: 'feature', fromMs: 400, toMs: 1000 },
+			{ text: 'धेरै', fromMs: 1000, toMs: 1400 },
+			{ text: 'राम्रो', fromMs: 1400, toMs: 1650 },
+			{ text: 'छ', fromMs: 1650, toMs: 1800 },
+		],
+	},
+	{
+		id: 'cue-2',
+		text: 'Ship it today',
+		startMs: 2000,
+		endMs: 3400,
+		tokens: [
+			{ text: 'Ship', fromMs: 2000, toMs: 2500 },
+			{ text: 'it', fromMs: 2500, toMs: 2800 },
+			{ text: 'today', fromMs: 2800, toMs: 3400 },
+		],
+	},
+]
+
+const PLAN = { id: 'CaptionedVideo', width: 1080, height: 1920, fps: 30, durationInFrames: 120 }
+
+/** Comments talk about Math.random(); only executable code may not use it. */
+const stripComments = (code) =>
+	code.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1')
+
+/** The same contract the studio compiler and the render path both rely on. */
+function auditSource(code) {
+	const issues = []
+	try {
+		transform(code, {
+			transforms: ['typescript', 'jsx'],
+			jsxRuntime: 'automatic',
+			filePath: 'captioned-video.tsx',
+		})
+	} catch (error) {
+		issues.push(`sucrase: ${String(error.message).split('\n')[0]}`)
+	}
+	const executable = stripComments(code)
+	if (!/registerRoot\(/.test(executable)) issues.push('no registerRoot()')
+	if (!/<Composition\b/.test(executable)) issues.push('no <Composition>')
+	if (!/loadFont\(/.test(executable)) issues.push('no loadFont()')
+	if (/Math\s*\.\s*random\s*\(/.test(executable)) issues.push('Math.random() breaks determinism')
+	if (/\bDate\s*\.\s*now\s*\(/.test(executable)) issues.push('Date.now() breaks determinism')
+	for (const call of executable.matchAll(/staticFile\(\s*['"]([^'"]*)['"]/g)) {
+		if (!call[1].startsWith('assets/fonts/v1/')) issues.push(`unexpected asset ${call[1]}`)
+	}
+	return issues
+}
+
+function checkComposition() {
+	console.log('\nGenerated composition')
+
+	let broken = 0
+	for (const preset of CAPTION_PRESETS) {
+		const code = buildCaptionSource({
+			videoSrc: 'https://example.com/clip.mp4',
+			videoName: 'clip.mp4',
+			cues: CUES,
+			style: { ...preset.style, devanagari: true },
+			plan: PLAN,
+			origin: 'transcribed with NVIDIA speech recognition',
+		})
+		const issues = auditSource(code)
+		if (issues.length > 0) {
+			broken++
+			console.log(`  FAIL ${preset.id}: ${issues.join('; ')}`)
+		}
+	}
+	check(`all ${CAPTION_PRESETS.length} presets compile to a valid Remotion file`, broken === 0, broken)
+
+	// Every bundled face has to survive the same round trip, because a font is
+	// the one style field that changes the generated file rather than a prop.
+	let badFonts = 0
+	for (const id of CAPTION_FONT_IDS) {
+		const code = buildCaptionSource({
+			videoSrc: 'https://example.com/clip.mp4',
+			videoName: 'clip.mp4',
+			cues: CUES,
+			style: { ...CAPTION_PRESETS[0].style, fontId: id },
+			plan: PLAN,
+			origin: 'test',
+		})
+		const face = CAPTION_FONTS[id]
+		const issues = auditSource(code)
+		if (!code.includes(`assets/fonts/v1/${face.file}`)) issues.push('font file not referenced')
+		if (!code.includes(`FONT_STACK = "'${face.family}'`)) issues.push('family missing from the stack')
+		if (!face.variable && !/FONT_STATIC_WEIGHT: number \| null = \d+/.test(code)) {
+			issues.push('a static face must pin its weight')
+		}
+		if (issues.length > 0) {
+			badFonts++
+			console.log(`  FAIL ${id}: ${issues.join('; ')}`)
+		}
+	}
+	check(`all ${CAPTION_FONT_IDS.length} bundled faces render into the file`, badFonts === 0, badFonts)
+
+	const fancy = buildCaptionSource({
+		videoSrc: 'https://example.com/clip.mp4',
+		videoName: 'clip.mp4',
+		cues: CUES,
+		style: {
+			...CAPTION_PRESETS[0].style,
+			fill: 'gradient',
+			karaokeFill: true,
+			glow: 0.7,
+			extrude: 0.6,
+			tilt: -3,
+			backdropBlur: 12,
+			wordEffect: 'jitter',
+			reveal: 'typewriter',
+			emphasisWords: ['today'],
+		},
+		plan: PLAN,
+		origin: 'test',
+	})
+	check('every effect together still compiles', auditSource(fancy).length === 0, auditSource(fancy))
+	check('the karaoke wipe reaches the file', /linear-gradient\(90deg/.test(fancy))
+	check('the typewriter reveal reaches the file', /typedFor/.test(fancy))
+	check('the backdrop blur reaches the file', /backdropFilter/.test(fancy))
+}
+
+/* -------------------------------------------------------------- the tools */
+
+function checkTools() {
+	console.log('\nBulk editing tools')
+
+	const replaced = tools.findReplace(CUES, {
+		find: 'Ship',
+		replace: 'Send',
+		caseSensitive: false,
+		wholeWord: true,
+	})
+	check('find and replace rewrites the line', replaced.cues[1].text.startsWith('Send'), replaced.cues[1].text)
+	check('and counts what it did', replaced.replaced === 1, replaced.replaced)
+	check(
+		'a same-length replacement keeps every word timing',
+		replaced.cues[1].tokens[0].fromMs === CUES[1].tokens[0].fromMs &&
+			replaced.cues[1].tokens[2].toMs === CUES[1].tokens[2].toMs,
+		replaced.cues[1].tokens,
+	)
+	check(
+		'whole-word matching does not fire inside a word',
+		tools.findReplace(CUES, { find: 'hip', replace: 'x', caseSensitive: false, wholeWord: true })
+			.replaced === 0,
+	)
+
+	const titled = tools.transformCase(CUES, 'title')
+	check('title case capitalises the line', titled[1].text === 'Ship It Today', titled[1].text)
+	const sentenced = tools.transformCase([{ ...CUES[1], text: 'ship it today. now go' }], 'sentence')
+	check(
+		'sentence case capitalises after a full stop',
+		sentenced[0].text === 'Ship it today. Now go',
+		sentenced[0].text,
+	)
+	check(
+		'case changes never touch Devanagari word count',
+		tools.transformCase(CUES, 'upper')[0].tokens.length === CUES[0].tokens.length,
+	)
+
+	const messy = [{ ...CUES[1], text: 'hello ,  world ... yes  "quoted"' }]
+	const tidied = tools.cleanPunctuation(messy)
+	check(
+		'punctuation tidy fixes spacing, ellipsis and quotes',
+		tidied.cues[0].text === 'hello, world… yes “quoted”',
+		tidied.cues[0].text,
+	)
+
+	const keywords = tools.suggestKeywords([
+		...CUES,
+		{ ...CUES[1], id: 'x', text: 'today today the the', tokens: [
+			{ text: 'today', fromMs: 0, toMs: 1 },
+			{ text: 'today', fromMs: 1, toMs: 2 },
+			{ text: 'the', fromMs: 2, toMs: 3 },
+			{ text: 'the', fromMs: 3, toMs: 4 },
+		] },
+	])
+	check('keywords rank by frequency', keywords[0].word === 'today', keywords.slice(0, 3))
+	check('English stopwords are excluded', !keywords.some((entry) => entry.word === 'the'))
+	check('Nepali stopwords are excluded', !keywords.some((entry) => entry.word === 'छ'))
+
+	const stretched = tools.stretchTiming(CUES, 1.05, 10_000)
+	check('stretching scales every timestamp', stretched[1].startMs === 2100, stretched[1].startMs)
+	check('and scales word timings with them', stretched[1].tokens[0].fromMs === 2100)
+
+	const held = tools.holdThroughGaps(CUES, 400, 10_000)
+	check('holding extends into the gap', held[0].endMs > CUES[0].endMs, held[0].endMs)
+	check('but never past the next cue', held[0].endMs < CUES[1].startMs, held[0].endMs)
+	check('and never moves a start', held[0].startMs === CUES[0].startMs)
+
+	const snapped = tools.snapToFrames(CUES, 25)
+	check(
+		'snapping lands on frame boundaries',
+		snapped.every((cue) => Math.abs((cue.startMs % 40) - 0) < 1),
+		snapped.map((cue) => cue.startMs),
+	)
+
+	const split = tools.splitLongCues(CUES, 1000)
+	check('long cues are split', split.length > CUES.length, split.length)
+	check(
+		'splitting keeps every word',
+		split.reduce((sum, cue) => sum + cue.tokens.length, 0) ===
+			CUES.reduce((sum, cue) => sum + cue.tokens.length, 0),
+	)
+
+	const merged = tools.mergeShortCues(
+		[
+			{ ...CUES[1], id: 'a', startMs: 0, endMs: 300, tokens: [{ text: 'Hi', fromMs: 0, toMs: 300 }], text: 'Hi' },
+			{ ...CUES[1], id: 'b', startMs: 350, endMs: 1400 },
+		],
+		600,
+	)
+	check('short flashes fold into their neighbour', merged.length === 1, merged.length)
+
+	const speakers = tools.splitOnSpeakers([
+		{ ...CUES[1], text: 'Ram: hello there Sita: hi back', tokens: [] },
+	])
+	check('speaker prefixes split onto their own cues', speakers.found === 1, speakers)
+}
+
+/* ------------------------------------------------------------ ass export */
+
+function checkAss() {
+	console.log('\nStyled .ass export')
+	const style = { ...CAPTION_PRESETS[0].style, textColor: '#ffffff', strokeColor: '#000000' }
+	const ass = cuesToAss(CUES, style, { width: 1080, height: 1920 })
+
+	check('declares the script resolution', /PlayResX: 1080/.test(ass) && /PlayResY: 1920/.test(ass))
+	check('carries a styled Caption line', /^Style: Caption,Anton,/m.test(ass), ass.match(/^Style:.*/m)?.[0])
+	check('writes ASS BGR colours', /&H00FFFFFF/.test(ass), ass.match(/&H[0-9A-F]{8}/g)?.slice(0, 3))
+	check('emits one dialogue per cue', (ass.match(/^Dialogue:/gm) ?? []).length === CUES.length)
+	check('uses h:mm:ss.cc timing', /Dialogue: 0,0:00:00\.00,0:00:01\.80/.test(ass), ass.match(/^Dialogue:.*/m)?.[0])
+	check('carries per-word karaoke tags', /\{\\k\d+\}/.test(ass))
+	check(
+		'keeps Devanagari intact',
+		ass.includes('धेरै'),
+	)
+
+	const plain = cuesToAss(CUES, { ...style, highlight: 'none' }, { width: 1080, height: 1920 })
+	check('a static look exports without karaoke tags', !/\{\\k/.test(plain))
+}
+
 async function main() {
 	await checkChunker()
 	await checkUploader()
 	await checkTranscribeRoute()
 	await checkRefineRoute()
+	checkComposition()
+	checkTools()
+	checkAss()
 
 	if (failures > 0) {
 		console.error(`\n${failures} of ${checks} checks failed.`)
