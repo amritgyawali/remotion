@@ -11,6 +11,8 @@ import {
 	type PointerEvent as ReactPointerEvent,
 } from 'react'
 import type { CaptionCue } from '../../lib/captions/types'
+import { hasDevanagariText } from '../../lib/captions/devanagari'
+import ScriptInput, { type ScriptMode } from './ScriptInput'
 import {
 	IconClock,
 	IconCopy,
@@ -103,6 +105,8 @@ const CueEditorRow = memo(function CueEditorRow({
 	selected,
 	disabled,
 	canMerge,
+	scriptMode,
+	onScriptMode,
 	onSelect,
 	onUpdate,
 	onSplit,
@@ -116,6 +120,9 @@ const CueEditorRow = memo(function CueEditorRow({
 	selected: boolean
 	disabled: boolean
 	canMerge: boolean
+	/** which script this row types in - the timeline default, or its own override */
+	scriptMode: ScriptMode
+	onScriptMode: (id: string, mode: ScriptMode) => void
 	onSelect: (cue: CaptionCue) => void
 	onUpdate: (id: string, patch: CuePatch) => void
 	onSplit: (id: string) => void
@@ -136,19 +143,14 @@ const CueEditorRow = memo(function CueEditorRow({
 			</button>
 
 			<div className="cue-row-content">
-				<input
-					key={`text-${cue.id}-${cue.text}`}
-					className="input cue-text"
-					defaultValue={cue.text}
+				<ScriptInput
+					value={cue.text}
+					mode={scriptMode}
 					disabled={disabled}
-					aria-label={`Text of caption ${index + 1}`}
+					ariaLabel={`Text of caption ${index + 1}`}
 					onFocus={() => onSelect(cue)}
-					onBlur={(event) => {
-						if (event.target.value !== cue.text) onUpdate(cue.id, { text: event.target.value })
-					}}
-					onKeyDown={(event) => {
-						if (event.key === 'Enter' && !event.shiftKey) event.currentTarget.blur()
-					}}
+					onModeChange={(next) => onScriptMode(cue.id, next)}
+					onCommit={(text) => onUpdate(cue.id, { text })}
 				/>
 				<div className="cue-times cue-times--advanced">
 					<IconClock size={11} />
@@ -264,6 +266,17 @@ export default function CueTrack({
 	const dragRef = useRef<DragState | null>(null)
 	const suppressClickRef = useRef(false)
 	const [selectedId, setSelectedId] = useState<string | null>(null)
+	/**
+	 * Which script the rows type in.
+	 *
+	 * The default follows the transcript rather than the interface: a Nepali
+	 * caption list opens ready to type Nepali, an English one ready to type
+	 * English, and a single row can disagree with both. `null` means the default
+	 * has never been decided, so it can still follow the first transcript that
+	 * arrives without overriding a choice the writer has already made.
+	 */
+	const [scriptMode, setScriptMode] = useState<ScriptMode | null>(null)
+	const [scriptOverrides, setScriptOverrides] = useState<Record<string, ScriptMode>>({})
 	const [drag, setDrag] = useState<DragState | null>(null)
 	const [zoom, setZoom] = useState(1)
 	const [snapping, setSnapping] = useState(true)
@@ -275,6 +288,26 @@ export default function CueTrack({
 	const activeCue = cues.find((cue) => currentMs >= cue.startMs && currentMs < cue.endMs) ?? null
 	const activeId = activeCue?.id ?? null
 	const selectedCue = cues.find((cue) => cue.id === selectedId) ?? null
+
+	/** What the transcript is written in, measured rather than assumed. */
+	const looksNepali = useMemo(() => {
+		let devanagari = 0
+		let counted = 0
+		for (const cue of cues) {
+			for (const token of cue.tokens) {
+				counted++
+				if (hasDevanagariText(token.text)) devanagari++
+			}
+			if (counted > 200) break
+		}
+		return counted > 0 && devanagari / counted >= 0.3
+	}, [cues])
+
+	const effectiveMode: ScriptMode = scriptMode ?? (looksNepali ? 'ne' : 'en')
+
+	const handleScriptMode = useCallback((id: string, mode: ScriptMode) => {
+		setScriptOverrides((current) => ({ ...current, [id]: mode }))
+	}, [])
 	const rulerInterval = getRulerInterval(safeDuration, zoom)
 	const rulerMarks = useMemo(() => {
 		const marks: number[] = []
@@ -550,6 +583,31 @@ export default function CueTrack({
 				<button className="cue-tool-toggle" data-active={followPlayhead} onClick={() => setFollowPlayhead((value) => !value)} title="Keep the current caption visible">
 					<span aria-hidden>◎</span> Follow
 				</button>
+				<div className="segmented cue-script" role="group" aria-label="Typing script for caption text">
+					<button
+						data-active={effectiveMode === 'en'}
+						aria-pressed={effectiveMode === 'en'}
+						onClick={() => {
+							setScriptMode('en')
+							setScriptOverrides({})
+						}}
+						title="Type caption text in English"
+					>
+						EN
+					</button>
+					<button
+						data-active={effectiveMode === 'ne'}
+						aria-pressed={effectiveMode === 'ne'}
+						onClick={() => {
+							setScriptMode('ne')
+							setScriptOverrides({})
+						}}
+						title="Type caption text in Nepali - roman letters become Devanagari as you finish each word"
+						className="devanagari"
+					>
+						नेपाली
+					</button>
+				</div>
 				<div className="cue-zoom-control">
 					<span>Zoom</span>
 					<input
@@ -662,6 +720,20 @@ export default function CueTrack({
 				</div>
 				<p className="cue-timeline-help">
 					Drag to move (overlapping edges trim automatically) · drag white handles to trim · double-click empty space to add · Ctrl/Cmd + wheel to zoom
+					{effectiveMode === 'ne' ? (
+						<>
+							{' '}
+							· typing <strong>Nepali</strong>: roman letters become Devanagari when you finish a word
+							(namaste → <span className="devanagari">नमस्ते</span>), CAPITALS stay English, Ctrl/Cmd +
+							Space flips one line
+						</>
+					) : (
+						<>
+							{' '}
+							· typing <strong>English</strong> · switch to <span className="devanagari">नेपाली</span>{' '}
+							above, or press Ctrl/Cmd + Space inside a line
+						</>
+					)}
 				</p>
 			</div>
 
@@ -703,6 +775,8 @@ export default function CueTrack({
 							selected={cue.id === selectedId}
 							disabled={disabled}
 							canMerge={index < cues.length - 1}
+							scriptMode={scriptOverrides[cue.id] ?? effectiveMode}
+							onScriptMode={handleScriptMode}
 							onSelect={selectCue}
 							onUpdate={onUpdate}
 							onSplit={onSplit}

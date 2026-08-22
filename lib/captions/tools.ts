@@ -10,6 +10,7 @@
 
 import { distributeOverSpeech, monotonic, snapWordsToSpeech, type TimedWord } from './align'
 import { makeCue, nextCueId, timeWords, splitWords } from './cues'
+import { englishFor } from './loanwords'
 import type { SpeechSegment } from './vad'
 import type { CaptionCue, CaptionToken } from './types'
 
@@ -195,6 +196,77 @@ export function suggestKeywords(cues: CaptionCue[], limit = 12): KeywordSuggesti
 		.map(([word, count]) => ({ word, count }))
 		.sort((left, right) => right.count - left.count || left.word.localeCompare(right.word))
 		.slice(0, limit)
+}
+
+/* ------------------------------------------------------- code switching */
+
+export type RestoreEnglishResult = {
+	cues: CaptionCue[]
+	/** how many words were put back into Latin */
+	changed: number
+	/** the words that moved, for the note the studio shows */
+	samples: { from: string; to: string }[]
+}
+
+const WORD_EDGE = /^([^\p{L}\p{N}\p{M}]*)(.*?)([^\p{L}\p{N}\p{M}]*)$/u
+
+/**
+ * Puts the English back into English.
+ *
+ * Nepali speech is code-switched, and a recogniser told the language is Nepali
+ * writes every word it hears in Devanagari - including the ones that were never
+ * Nepali. "computer" comes back as कम्प्युटर, "bank" as बैंक, "update" as अपडेट.
+ * None of those is how a Nepali writer spells them, and none of them is what
+ * the speaker said.
+ *
+ * Word timings are preserved exactly. A one-word swap keeps its token
+ * untouched; the rare replacement that is two words - थ्याङ्क्यू becoming
+ * "thank you" - is spread across the span the single token held, so nothing
+ * downstream of this can drift.
+ */
+export function restoreEnglishWords(cues: CaptionCue[]): RestoreEnglishResult {
+	let changed = 0
+	const samples: { from: string; to: string }[] = []
+
+	const next = cues.map((cue) => {
+		let touched = false
+		const tokens: CaptionToken[] = []
+
+		for (const token of cue.tokens) {
+			const match = WORD_EDGE.exec(token.text)
+			const before = match?.[1] ?? ''
+			const core = match?.[2] ?? token.text
+			const after = match?.[3] ?? ''
+			const english = englishFor(core)
+			if (!english) {
+				tokens.push(token)
+				continue
+			}
+
+			touched = true
+			changed++
+			if (samples.length < 6) samples.push({ from: core, to: english })
+
+			const words = english.split(' ')
+			if (words.length === 1) {
+				tokens.push({ ...token, text: `${before}${english}${after}` })
+				continue
+			}
+			// A multi-word replacement splits the token's own span and nothing else.
+			const spread = timeWords(english, token.fromMs, token.toMs)
+			spread.forEach((piece, index) => {
+				tokens.push({
+					...piece,
+					text: `${index === 0 ? before : ''}${piece.text}${index === spread.length - 1 ? after : ''}`,
+				})
+			})
+		}
+
+		if (!touched) return cue
+		return { ...cue, text: tokens.map((token) => token.text).join(' '), tokens }
+	})
+
+	return { cues: next, changed, samples }
 }
 
 /* ---------------------------------------------------------- timing tools */

@@ -517,6 +517,14 @@ export type RunTranscriptionArgs = {
 	layout: CaptionLayoutOptions
 	/** run the NVIDIA punctuation and spelling pass over the finished cues */
 	polish: boolean
+	/**
+	 * Put the English back into English.
+	 *
+	 * A recogniser told the language is Nepali writes every word it hears in
+	 * Devanagari, loanwords included, and "computer" spelled कम्प्युटर is not
+	 * what the speaker said or how any Nepali writer spells it.
+	 */
+	restoreEnglish: boolean
 	onProgress: (progress: TranscribeProgress) => void
 	signal: AbortSignal
 }
@@ -548,12 +556,39 @@ function describeError(error: unknown): string {
  * second attempt genuinely tends to succeed where the first did not.
  */
 export async function runTranscription(args: RunTranscriptionArgs): Promise<TranscriptionOutcome> {
-	const { video, engine, language, whisperModel, cloudModel, layout, polish, onProgress, signal } =
-		args
+	const {
+		video,
+		engine,
+		language,
+		whisperModel,
+		cloudModel,
+		layout,
+		polish,
+		restoreEnglish,
+		onProgress,
+		signal,
+	} = args
 	assertLive(signal)
 
 	onProgress({ stage: 'checking', progress: 0, message: 'Choosing a speech engine' })
 	const { cloudAsrStatus, refineCues, transcribeInCloud } = await import('./cloud-transcribe')
+
+	/**
+	 * The code-switch pass, run last so it sees the clean-up model's spelling
+	 * too. It only ever changes which script a word is written in, never its
+	 * timing, so it is safe anywhere after the cues exist.
+	 */
+	const codeSwitch = async (cues: CaptionCue[], notices: string[]): Promise<CaptionCue[]> => {
+		if (!restoreEnglish) return cues
+		const { restoreEnglishWords } = await import('./tools')
+		const result = restoreEnglishWords(cues)
+		if (result.changed === 0) return cues
+		const shown = result.samples.map((sample) => `${sample.from} - ${sample.to}`).join(', ')
+		notices.push(
+			`${result.changed} English word${result.changed === 1 ? '' : 's'} written back in English (${shown}).`,
+		)
+		return result.cues
+	}
 
 	const status = engine === 'device' ? null : await cloudAsrStatus()
 	assertLive(signal)
@@ -639,6 +674,7 @@ export async function runTranscription(args: RunTranscriptionArgs): Promise<Tran
 					cues = refined.cues
 					if (refined.notice) notices.push(refined.notice)
 				}
+				cues = await codeSwitch(cues, notices)
 
 				onProgress({ stage: 'done', progress: 1, message: `${result.words.length} words transcribed` })
 				return {
@@ -687,6 +723,7 @@ export async function runTranscription(args: RunTranscriptionArgs): Promise<Tran
 				cues = refined.cues
 				if (refined.notice) notices.push(refined.notice)
 			}
+			cues = await codeSwitch(cues, notices)
 
 			onProgress({ stage: 'done', progress: 1, message: `${words.length} words transcribed` })
 			const report = alignmentReport(words, device.speech, device)

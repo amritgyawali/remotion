@@ -74,6 +74,8 @@ process.env.NVIDIA_ASR_DISABLE_GRPC = '1'
 const { streamAudioChunks } = require('../lib/captions/audio.ts')
 const vad = require('../lib/captions/vad.ts')
 const align = require('../lib/captions/align.ts')
+const script = require('../lib/captions/devanagari.ts')
+const loanwords = require('../lib/captions/loanwords.ts')
 const { transcribeInCloud } = require('../lib/captions/cloud-transcribe.ts')
 const transcribeRoute = require('../app/api/captions/transcribe/route.ts')
 const refineRoute = require('../app/api/captions/refine/route.ts')
@@ -178,6 +180,112 @@ function chatReply(content) {
 }
 
 /* ------------------------------------------------------------- the checks */
+
+function checkScript() {
+	console.log('\nDevanagari, both directions')
+
+	// Typing: romanised Nepali in, Devanagari out.
+	const typed = [
+		['namaste', '\u0928\u092e\u0938\u094d\u0924\u0947'],
+		['banda', '\u092c\u0928\u094d\u0926'],
+		['ghar', '\u0918\u0930'],
+		['kaam', '\u0915\u093e\u092e'],
+		['hajur', '\u0939\u091c\u0941\u0930'],
+		['chha', '\u091b'],
+		['lekhchhu', '\u0932\u0947\u0916\u094d\u091b\u0941'],
+	]
+	for (const [latin, expected] of typed) {
+		const actual = script.transliterateWord(latin)
+		check(`"${latin}" types as ${expected}`, actual === expected, actual)
+	}
+
+	// An acronym is what a bilingual speaker shouts in the middle of a Nepali
+	// sentence, and transliterating it produces nothing anybody wants to read.
+	check('OTP is left in Latin', script.transliterateWord('OTP') === 'OTP')
+	check('ATM is left in Latin', script.transliterateWord('ATM') === 'ATM')
+	check('a lowercase word is not', script.transliterateWord('otp') !== 'otp')
+	check(
+		'text already in Devanagari is untouched',
+		script.transliterateWord('\u0928\u092e\u0938\u094d\u0924\u0947') === '\u0928\u092e\u0938\u094d\u0924\u0947',
+	)
+	check(
+		'spacing survives a whole line',
+		script.transliterateToDevanagari('ma ghar jaanchhu') ===
+			'\u092e \u0918\u0930 \u091c\u093e\u0928\u094d\u091b\u0941',
+		script.transliterateToDevanagari('ma ghar jaanchhu'),
+	)
+
+	// The editor converts a word only once it is finished, so it has to find
+	// exactly the run of Latin the caret is sitting at the end of.
+	const run = script.trailingLatinRun('\u0928\u092e\u0938\u094d\u0924\u0947 namaste', 15)
+	check('the trailing Latin run is found', run !== null && run.from === 7 && run.to === 14, run)
+	check('a caret after Devanagari finds no run', script.trailingLatinRun('\u0928\u092e\u0938\u094d\u0924\u0947', 5) === null)
+
+	// Reading: Devanagari back out to something an English lexicon recognises.
+	check('a spelling sounds out', script.romanize('\u092c\u0948\u0902\u0915') === 'bainka', script.romanize('\u092c\u0948\u0902\u0915'))
+	check(
+		'the skeleton ignores the vowels a recogniser invents',
+		script.skeletonKey(script.romanize('\u0915\u092e\u094d\u092a\u094d\u092f\u0941\u091f\u0930')) === script.skeletonKey('computer'),
+		script.skeletonKey(script.romanize('\u0915\u092e\u094d\u092a\u094d\u092f\u0941\u091f\u0930')),
+	)
+}
+
+function checkLoanwords() {
+	console.log('\nCode switching')
+
+	const restored = [
+		['\u092c\u0948\u0902\u0915', 'bank'],
+		['\u090f\u0915\u093e\u0909\u0928', 'account'],
+		['\u0905\u092a\u0921\u0947\u091f', 'update'],
+		['\u0913\u091f\u093f\u0935\u0940', 'OTP'],
+		['\u0915\u092e\u094d\u092a\u094d\u092f\u0941\u091f\u0930', 'computer'],
+		['\u092c\u094d\u0930\u0938', 'brush'],
+		['\u0915\u093e\u0930', 'car'],
+		['\u092d\u094d\u092f\u093e\u0928', 'van'],
+		['\u092e\u094b\u092c\u093e\u0907\u0932', 'mobile'],
+		['\u0921\u093e\u0915\u094d\u091f\u0930', 'doctor'],
+		['\u0925\u0948\u0902\u0915\u094d\u092f\u0942', 'thank you'],
+		['\u0938\u094c\u0930\u094d', 'sir'],
+	]
+	for (const [devanagari, english] of restored) {
+		const actual = loanwords.englishFor(devanagari)
+		check(`${devanagari} is written as "${english}"`, actual === english, actual)
+	}
+
+	// The expensive mistake is the other direction, so it gets more checks than
+	// the feature itself: a Nepali word turned into an English one is a wrong
+	// transcript, while a loanword left in Devanagari is only an unpolished one.
+	const kept = [
+		'\u0915\u0930', // kar - "tax", shares a skeleton with "car"
+		'\u092c\u0938', // bas - "sit", shares one with "bus"
+		'\u092c\u0928\u094d\u0926', // banda - "closed", shares one with "band"
+		'\u092e\u0947\u0930\u094b', // mero - "my"
+		'\u0938\u0930\u0915\u093e\u0930', // sarkar - "government"
+		'\u092e\u093f\u0932\u0947\u0915\u094b', // mileko - shares a skeleton with "milk"
+		'\u092a\u094d\u0930\u0936\u094d\u0928', // prashna - "question"
+		'\u0939\u094b', // ho - "yes"
+	]
+	for (const word of kept) {
+		check(`${word} stays Nepali`, loanwords.englishFor(word) === null, loanwords.englishFor(word))
+	}
+
+	// A loanword that has taken a Nepali ending has stopped being foreign in
+	// that sentence, and "bank\u092e\u093e" is not an improvement on \u092c\u0948\u0902\u0915\u092e\u093e.
+	check('an inflected loanword is left whole', loanwords.englishFor('\u092c\u0948\u0902\u0915\u092e\u093e') === null)
+	check('so is a plural one', loanwords.englishFor('\u090f\u0915\u093e\u0909\u0928\u094d\u091f\u0939\u0930\u0942') === null)
+	check('English already in English is not touched', loanwords.englishFor('bank') === null)
+
+	const line = loanwords.restoreEnglishInText(
+		'\u0924\u092a\u093e\u0908\u0902\u0915\u094b \u092c\u0948\u0902\u0915 \u090f\u0915\u093e\u0909\u0928\u094d\u091f \u0905\u092a\u0921\u0947\u091f \u0939\u0941\u0901\u0926\u0948\u091b\u0964',
+	)
+	check('a code-switched line is rewritten', line.changed === 3, line)
+	check(
+		'and the Nepali around it survives',
+		line.text.startsWith('\u0924\u092a\u093e\u0908\u0902\u0915\u094b bank account update'),
+		line.text,
+	)
+	check('with its danda still attached', line.text.endsWith('\u0964'), line.text)
+}
 
 function checkSpeechDetection() {
 	console.log('\nSpeech detection')
@@ -917,6 +1025,62 @@ function checkTools() {
 	const nothing = tools.alignToSpeech(CUES, [], { durationMs: 4_000 })
 	check('with no speech map nothing is touched', nothing.cues === CUES && nothing.moved === 0)
 
+	// Restoring English must never cost a timing: the whole transcript is
+	// aligned to the audio by this point, and a script change knows nothing
+	// about when anything was said.
+	const switched = tools.restoreEnglishWords([
+		{
+			id: 'cue-x',
+			text: '\u092c\u0948\u0902\u0915 \u090f\u0915\u093e\u0909\u0928\u094d\u091f \u0930\u093e\u092e\u094d\u0930\u094b \u091b',
+			startMs: 0,
+			endMs: 2_000,
+			tokens: [
+				{ text: '\u092c\u0948\u0902\u0915', fromMs: 0, toMs: 500 },
+				{ text: '\u090f\u0915\u093e\u0909\u0928\u094d\u091f', fromMs: 500, toMs: 1_200 },
+				{ text: '\u0930\u093e\u092e\u094d\u0930\u094b', fromMs: 1_200, toMs: 1_700 },
+				{ text: '\u091b', fromMs: 1_700, toMs: 2_000 },
+			],
+		},
+	])
+	check('the loanwords in a cue are rewritten', switched.changed === 2, switched.changed)
+	check(
+		'the Nepali words are not',
+		switched.cues[0].tokens[2].text === '\u0930\u093e\u092e\u094d\u0930\u094b' && switched.cues[0].tokens[3].text === '\u091b',
+		switched.cues[0].tokens.map((token) => token.text),
+	)
+	check(
+		'every timing is exactly where it was',
+		switched.cues[0].tokens.every(
+			(token, index) => token.fromMs === [0, 500, 1_200, 1_700][index],
+		),
+		switched.cues[0].tokens,
+	)
+	check(
+		'and the line text is rebuilt from the tokens',
+		switched.cues[0].text === 'bank account \u0930\u093e\u092e\u094d\u0930\u094b \u091b',
+		switched.cues[0].text,
+	)
+
+	// One Devanagari word can be two English ones; the split stays inside the
+	// span the single token held.
+	const courtesy = tools.restoreEnglishWords([
+		{
+			id: 'cue-y',
+			text: '\u0925\u0948\u0902\u0915\u094d\u092f\u0942',
+			startMs: 1_000,
+			endMs: 1_800,
+			tokens: [{ text: '\u0925\u0948\u0902\u0915\u094d\u092f\u0942', fromMs: 1_000, toMs: 1_800 }],
+		},
+	])
+	check('a two-word replacement becomes two tokens', courtesy.cues[0].tokens.length === 2, courtesy.cues[0].tokens)
+	check(
+		'inside the span the one token held',
+		courtesy.cues[0].tokens[0].fromMs === 1_000 &&
+			courtesy.cues[0].tokens[1].toMs === 1_800,
+		courtesy.cues[0].tokens,
+	)
+	check('reading "thank you"', courtesy.cues[0].text === 'thank you', courtesy.cues[0].text)
+
 	const split = tools.splitLongCues(CUES, 1000)
 	check('long cues are split', split.length > CUES.length, split.length)
 	check(
@@ -963,6 +1127,8 @@ function checkAss() {
 }
 
 async function main() {
+	checkScript()
+	checkLoanwords()
 	checkSpeechDetection()
 	checkAlignment()
 	await checkChunker()

@@ -28,6 +28,7 @@ import { isCaptionFontId } from '../lib/captions/fonts'
 import {
 	alignToSpeech,
 	cleanPunctuation,
+	restoreEnglishWords,
 	findReplace,
 	holdThroughGaps,
 	mergeShortCues,
@@ -156,6 +157,9 @@ export default function CaptionStudio() {
 	const [cloudStatus, setCloudStatus] = useState<CloudAsrStatus | null>(null)
 	const [cloudModel, setCloudModel] = useState<string | null>(null)
 	const [polish, setPolish] = useState(true)
+	// On by default: a Nepali transcript with कम्प्युटर in it is wrong for every
+	// viewer, and the pass never touches a word that is genuinely Nepali.
+	const [restoreEnglish, setRestoreEnglish] = useState(true)
 	const [engineUsed, setEngineUsed] = useState<'nvidia' | 'device' | null>(null)
 	const [transcribing, setTranscribing] = useState(false)
 	const [transcribeProgress, setTranscribeProgress] = useState<TranscribeProgress>(IDLE_TRANSCRIBE)
@@ -497,6 +501,7 @@ export default function CaptionStudio() {
 				cloudModel,
 				layout,
 				polish,
+				restoreEnglish,
 				onProgress: setTranscribeProgress,
 				signal: controller.signal,
 			})
@@ -520,7 +525,17 @@ export default function CaptionStudio() {
 			transcribeAbortRef.current = null
 			setTranscribing(false)
 		}
-	}, [applyCues, cloudModel, engine, layout, polish, video, whisperLanguage, whisperModel])
+	}, [
+		applyCues,
+		cloudModel,
+		engine,
+		layout,
+		polish,
+		restoreEnglish,
+		video,
+		whisperLanguage,
+		whisperModel,
+	])
 
 	const handleAutoTime = useCallback(() => {
 		if (!video || !transcriptText.trim()) return
@@ -703,6 +718,20 @@ export default function CaptionStudio() {
 	 */
 	const toolActions = useMemo<ToolsActions>(
 		() => ({
+			onRestoreEnglish: () => {
+				let note = 'Every word is already in the script it belongs to.'
+				setHandEdited(true)
+				commitCues((current) => {
+					const result = restoreEnglishWords(current)
+					if (result.changed === 0) return current
+					const shown = result.samples.map((sample) => `${sample.from} - ${sample.to}`).join(', ')
+					note = `Wrote ${result.changed} English word${
+						result.changed === 1 ? '' : 's'
+					} back in English (${shown}).`
+					return normalizeCues(result.cues, durationMs)
+				})
+				setToolNote(note)
+			},
 			onAlignToSpeech: () => {
 				if (!video || aligning) return
 				setAligning(true)
@@ -1012,6 +1041,8 @@ export default function CaptionStudio() {
 					cloudStatus={cloudStatus}
 					cloudModel={cloudModel}
 					polish={polish}
+					restoreEnglish={restoreEnglish}
+					onRestoreEnglish={setRestoreEnglish}
 					whisperModel={whisperModel}
 					whisperLanguage={whisperLanguage}
 					whisperSupport={whisperSupport}

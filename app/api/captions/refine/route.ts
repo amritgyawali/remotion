@@ -29,7 +29,7 @@ const DEADLINE_MS = 100_000
 const LANGUAGE_LABEL: Record<string, string> = {
 	auto: 'the language already used in the lines',
 	en: 'English',
-	ne: 'Nepali (Devanagari), with English loanwords left in Latin script',
+	ne: 'Nepali written in Devanagari, with every English word written in Latin script',
 	hi: 'Hindi (Devanagari)',
 	es: 'Spanish',
 	fr: 'French',
@@ -51,10 +51,12 @@ function systemPrompt(language: string): string {
 		'Rules, all mandatory:',
 		'1. Return a JSON array of strings and nothing else - no prose, no markdown fence, no keys.',
 		'2. The array must have exactly the same number of entries as the input, in the same order.',
-		'3. Never translate. Never change the language or the script of a word. Code-switched speech stays code-switched.',
-		'4. Only fix what the recogniser got wrong: punctuation, capitalisation, obvious misheard words, spacing, and numerals.',
-		'5. Never merge, split, reorder or reword a line beyond those fixes. Keep the wording and the word order.',
-		'6. If a line is already correct, return it unchanged. If a line is unintelligible, return it unchanged.',
+		'3. Never translate. Code-switched speech stays code-switched: keep every word in the language it was spoken in.',
+		'4. Write each word in the script that word belongs to. A speech recogniser working in an Indic language spells the English words it hears in that script; those are still English words and must be written back in Latin - \u092c\u0948\u0902\u0915 is "bank", \u090f\u0915\u093e\u0909\u0928\u094d\u091f is "account", \u0905\u092a\u0921\u0947\u091f is "update", \u0915\u092e\u094d\u092a\u094d\u092f\u0941\u091f\u0930 is "computer", \u092c\u094d\u0930\u0938 is "brush", \u0915\u093e\u0930 is "car", \u092d\u094d\u092f\u093e\u0928 is "van", \u0913\u091f\u093f\u092a\u0940 is "OTP". Never do the reverse: a native word is never written in Latin.',
+		'5. A foreign word that has taken a native grammatical ending stays in the native script - \u092c\u0948\u0902\u0915\u092e\u093e stays \u092c\u0948\u0902\u0915\u092e\u093e, not "bank\u092e\u093e".',
+		'6. Only fix what the recogniser got wrong: punctuation, capitalisation, obvious misheard words, spacing, script, and numerals.',
+		'7. Never merge, split, reorder or reword a line beyond those fixes. Keep the wording and the word order.',
+		'8. If a line is already correct, return it unchanged. If a line is unintelligible, return it unchanged.',
 	].join('\n')
 }
 

@@ -29,6 +29,7 @@ import {
 	type CloudAsrModel,
 	type CloudWord,
 } from '../../../../lib/captions/asr-models'
+import { loanwordHints } from '../../../../lib/captions/loanwords'
 import { RIVA_GRPC_TARGET, rivaRecognize } from '../../../../lib/captions/riva/client'
 
 export const runtime = 'nodejs'
@@ -80,9 +81,12 @@ function httpEndpoints(model: CloudAsrModel): { endpoint: string; dialect: 'open
  * per request from the studio and, for a deployment that always covers the same
  * subject, from NVIDIA_ASR_PHRASES on the server.
  */
-function speechHints(requested: string | null): string[] {
+function speechHints(requested: string | null, language: string): string[] {
 	const fromEnv = process.env.NVIDIA_ASR_PHRASES?.trim() ?? ''
-	const merged = [requested ?? '', fromEnv]
+	// Nepali speech is code-switched by default, so the English a speaker is
+	// likely to drop in is offered to the recogniser without being asked for.
+	const codeSwitch = language.split('-')[0] === 'ne' ? loanwordHints().join(',') : ''
+	const merged = [requested ?? '', fromEnv, codeSwitch]
 		.join('\n')
 		.split(/[\n,;|]+/)
 		.map((phrase) => phrase.trim())
@@ -559,7 +563,7 @@ export async function POST(request: Request) {
 	const durationValue = Number((form.get('durationMs') as string | null) ?? '')
 	const durationMs = Number.isFinite(durationValue) && durationValue > 0 ? durationValue : 30_000
 	const fileName = (form.get('fileName') as string | null)?.trim() || 'chunk.wav'
-	const hints = speechHints((form.get('hints') as string | null) ?? null)
+	const hints = speechHints((form.get('hints') as string | null) ?? null, language)
 	// Echoed back untouched: the studio needs it to map the recogniser's clock,
 	// which starts at the blob, back onto the clip's clock.
 	const contextValue = Number((form.get('contextMs') as string | null) ?? '')

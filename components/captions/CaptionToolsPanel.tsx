@@ -21,6 +21,7 @@ export type ToolsActions = {
 	onCleanPunctuation: () => void
 	onSplitSpeakers: () => void
 	onAlignToSpeech: () => void
+	onRestoreEnglish: () => void
 	onStretch: (factor: number) => void
 	onHoldGaps: (maxHoldMs: number) => void
 	onSnapToFrames: () => void
@@ -200,10 +201,20 @@ export default function CaptionToolsPanel({
 						<button className="btn btn--sm" disabled={disabled} onClick={actions.onSplitSpeakers}>
 							<IconScissors size={12} /> Split "Name:" lines
 						</button>
+						<button className="btn btn--sm" disabled={disabled} onClick={actions.onRestoreEnglish}>
+							<IconSparkle size={12} /> Put English back in English
+						</button>
 					</div>
 					<p className="hint-text" style={{ margin: 0 }}>
 						Tidying collapses double spaces, pulls punctuation back onto the word, turns three
 						dots into an ellipsis and keeps the Devanagari danda attached.
+					</p>
+					<p className="hint-text" style={{ margin: 0 }}>
+						A recogniser working in Nepali writes the English it hears in Devanagari -
+						<span className="devanagari"> कम्प्युटर</span> for computer,
+						<span className="devanagari"> बैंक</span> for bank. Those go back into Latin, with
+						every word timing untouched. Nepali words never move, and a word carrying a Nepali
+						ending is left whole.
 					</p>
 				</div>
 			</div>
