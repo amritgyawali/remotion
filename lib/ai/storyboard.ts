@@ -21,6 +21,15 @@ import {
 	type MusicId,
 	type PaletteId,
 } from './kit'
+import {
+	creativeFingerprint,
+	normalizeAvoidFingerprints,
+	normalizeCreativeProfile,
+	normalizeCreativeSeed,
+	resolveCreativeProfile,
+	type CreativeProfile,
+	type TemplateId,
+} from './variation'
 
 export type AspectId = '16:9' | '9:16' | '1:1' | '4:5' | '21:9'
 
@@ -58,7 +67,7 @@ export const TIME_OF_DAY_IDS: TimeOfDayId[] = ['dawn', 'day', 'dusk', 'night']
  * How dimensional the film is.
  *
  * flat  - graphic layers only
- * depth - perspective staging, extruded type, tilted cards, floor grid (CSS 3D)
+ * depth - perspective staging, extruded type, tilted cards and layered atmosphere
  * three - real WebGL geometry, lights and shadows through @remotion/three
  */
 export type DimensionId = 'flat' | 'depth' | 'three'
@@ -106,6 +115,13 @@ export const SCENE_TYPES: SceneType[] = [
 
 /** Scene types that mount a WebGL canvas. */
 export const THREE_SCENE_TYPES: SceneType[] = ['object3d', 'globe3d', 'terrain3d']
+
+/**
+ * Every scene that reads as three-dimensional, including the carousel rig,
+ * which is CSS rather than WebGL but looks just as dimensional on screen.
+ * These are only available when the user asked for 3D.
+ */
+export const DIMENSIONAL_SCENE_TYPES: SceneType[] = ['object3d', 'globe3d', 'terrain3d', 'carousel3d']
 
 type Base = { seconds: number }
 
@@ -260,6 +276,12 @@ export type Storyboard = {
 	motion: MotionId
 	dimension: DimensionId
 	scenes: Scene[]
+	/** Request-scoped entropy. It is embedded into the output for deterministic replay. */
+	creativeSeed: string
+	/** Normalized, finite visual decisions selected before composition. */
+	creativeProfile: CreativeProfile
+	/** Hash of visible design decisions; deliberately excludes creativeSeed. */
+	designFingerprint: string
 }
 
 export type SceneTiming = {
@@ -547,18 +569,94 @@ function normalizeScene(raw: unknown, subject: string): Scene | null {
 }
 
 /**
+ * Rewrites a dimensional scene as the flat scene that shows the same content.
+ * Nothing the director wrote is thrown away: the headline, caption, places and
+ * items all survive into the 2D equivalent.
+ */
+export function flattenScene(scene: Scene): Scene {
+	switch (scene.type) {
+		case 'object3d':
+			return {
+				type: 'statement',
+				seconds: scene.seconds,
+				text: scene.headline,
+				highlight: scene.headline.split(' ')[0] ?? '',
+				footnote: scene.caption,
+			}
+		case 'globe3d':
+			return {
+				type: 'map',
+				seconds: scene.seconds,
+				headline: scene.headline,
+				caption: scene.caption,
+				places: scene.places,
+				connect: true,
+			}
+		case 'terrain3d':
+			return {
+				type: 'landscape',
+				seconds: scene.seconds,
+				terrain: scene.terrain,
+				timeOfDay: 'dawn',
+				headline: scene.headline,
+				caption: scene.caption,
+			}
+		case 'carousel3d':
+			return { type: 'gallery', seconds: scene.seconds, headline: scene.headline, items: scene.items }
+		default:
+			return scene
+	}
+}
+
+/**
+ * Three-dimensional treatment is opt-in per request.
+ *
+ * The director is asked for flat design by default, but a model can still
+ * return `dimension: "three"` or a 3D scene type. This is the gate that holds
+ * it to the user's actual brief, so consecutive videos do not all arrive as lit
+ * objects on a turntable.
+ */
+export function applyDimensionPolicy<T extends { dimension: DimensionId; scenes: Scene[] }>(
+	storyboard: T,
+	allowThreeDimensional: boolean,
+): T {
+	if (allowThreeDimensional) return storyboard
+	const scenes = storyboard.scenes.map(flattenScene)
+	const dimension: DimensionId = storyboard.dimension === 'three' ? 'flat' : storyboard.dimension
+	return { ...storyboard, dimension, scenes }
+}
+
+/**
  * Turns whatever the model returned into a storyboard that is guaranteed to be
  * renderable. Anything missing or malformed falls back to the locally planned
  * storyboard, so a partial answer still produces a complete video.
  */
-export function normalizeStoryboard(raw: unknown, fallback: Storyboard): Storyboard {
+export type NormalizeStoryboardOptions = {
+	avoidDesignFingerprints?: readonly string[]
+	/** House styles the caller has recently shipped, never reused back to back. */
+	avoidTemplates?: readonly TemplateId[]
+	/** False unless the user asked for 3D in this chat. Defaults to false. */
+	allowThreeDimensional?: boolean
+}
+
+export function normalizeStoryboard(
+	raw: unknown,
+	fallback: Storyboard,
+	options: NormalizeStoryboardOptions | readonly string[] = {},
+): Storyboard {
+	// The third argument used to be the avoid list on its own.
+	const settings: NormalizeStoryboardOptions = Array.isArray(options)
+		? { avoidDesignFingerprints: options as readonly string[] }
+		: (options as NormalizeStoryboardOptions)
+	const avoidDesignFingerprints = settings.avoidDesignFingerprints ?? []
+	const allowThreeDimensional = settings.allowThreeDimensional === true
 	const source = record(raw)
 	const subject = text(source.subject ?? source.title, fallback.subject, 70)
 	const scenes = list(source.scenes)
 		.map((scene) => normalizeScene(scene, subject))
 		.filter((scene): scene is Scene => scene !== null)
-
-	return {
+	const normalizedScenes = scenes.length > 0 ? scenes.slice(0, MAX_SCENES) : fallback.scenes
+	const core = {
 		title: text(source.title, fallback.title, 80),
 		concept: text(source.concept ?? source.logline, fallback.concept, 240),
 		subject,
@@ -573,8 +671,40 @@ export function normalizeStoryboard(raw: unknown, fallback: Storyboard): Storybo
 		leak: pickEnum(source.leak, ['warm', 'cool', 'none'] as LeakId[], fallback.leak),
 		motion: pickEnum(source.motion, MOTION_IDS, fallback.motion),
 		dimension: pickEnum(source.dimension ?? source.depth, DIMENSION_IDS, fallback.dimension),
-		scenes: scenes.length > 0 ? scenes.slice(0, MAX_SCENES) : fallback.scenes,
+		scenes: normalizedScenes,
 	}
+
+	// Held to the user's actual brief before anything is fingerprinted, so the
+	// design identity describes the film that will really be rendered.
+	const gated = applyDimensionPolicy(core, allowThreeDimensional)
+
+	const creativeSeed = normalizeCreativeSeed(fallback.creativeSeed, fallback.creativeSeed)
+	const avoided = normalizeAvoidFingerprints(avoidDesignFingerprints)
+	const descriptor = {
+		palette: gated.palette,
+		displayFont: gated.displayFont,
+		textFont: gated.textFont,
+		motion: gated.motion,
+		dimension: gated.dimension,
+		sceneTypes: gated.scenes.map((scene) => scene.type),
+	}
+	const resolved = resolveCreativeProfile({
+		seed: creativeSeed,
+		descriptor,
+		avoidFingerprints: avoided,
+		avoidTemplates: settings.avoidTemplates,
+	})
+	let creativeProfile = normalizeCreativeProfile(source.creativeProfile, resolved.profile)
+	let designFingerprint = creativeFingerprint(creativeProfile, descriptor)
+
+	// A model may optionally return a known profile, but it cannot force a recent
+	// collision or replace the trusted request seed.
+	if (avoided.includes(designFingerprint)) {
+		creativeProfile = resolved.profile
+		designFingerprint = resolved.fingerprint
+	}
+
+	return { ...gated, creativeSeed, creativeProfile, designFingerprint }
 }
 
 /** Keeps the number of scenes honest for the requested runtime. */
@@ -612,7 +742,9 @@ export function layoutStoryboard(storyboard: Storyboard): StoryboardLayout {
 	const weightSum = weights.reduce((total, weight) => total + weight, 0) || scenes.length
 	const minFrames = Math.max(24, Math.round(fps * 1.2))
 
-	const transitionBase = storyboard.motion === 'punchy' ? 0.24 : storyboard.motion === 'calm' ? 0.6 : 0.4
+	const transitionBase =
+		(storyboard.motion === 'punchy' ? 0.24 : storyboard.motion === 'calm' ? 0.6 : 0.4) /
+		storyboard.creativeProfile.tempoScale
 	const sum = (values: number[]) => values.reduce((total, value) => total + value, 0)
 	const transitionsFor = (values: number[]): number[] => {
 		const list: number[] = []

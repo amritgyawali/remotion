@@ -160,11 +160,11 @@ export default function SourcePanel({
 		<div className="card">
 			<div className="card-head">
 				<strong className="card-title">Production asset kit</strong>
-				<span className="badge badge--green">CC0</span>
+				<span className="badge badge--green">OPEN</span>
 			</div>
 			<p className="card-text">
-				41 editable SVGs, 20 textures (grain, matcaps, 3D environment maps), 10 self-hosted fonts, 8
-				music loops and 20 sound effects - free to use in anything you make here.
+				1,241 editable SVGs, production textures, 64 self-hosted creative fonts, 8 music loops and
+				560 motion-ready sound effects. Every raw file is saved locally for reliable future renders.
 			</p>
 			<div className="card-actions">
 				<a className="btn btn--sm" href="/assets/index.html" target="_blank" rel="noreferrer">

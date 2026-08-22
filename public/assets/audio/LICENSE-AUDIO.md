@@ -1,4 +1,4 @@
-# Audio Asset License — CC0 1.0
+# Audio Asset License - CC0 1.0
 
 The generated WAV files under `public/assets/audio/v1/` and the accompanying
 catalog are dedicated to the public domain under the Creative Commons CC0 1.0
@@ -10,8 +10,9 @@ copy, modify, distribute, perform, and use the assets, including commercially,
 without asking permission or providing attribution.
 
 The assets are provided without warranty. The generator uses only original
-procedural synthesis—oscillators, envelopes, filters, and deterministic noise—
-and contains no third-party recordings or samples.
+procedural synthesis - oscillators, envelopes, filters, delays, and
+deterministic noise - and contains no third-party recordings, samples, or
+presets.
 
 License details: <https://creativecommons.org/publicdomain/zero/1.0/>
 

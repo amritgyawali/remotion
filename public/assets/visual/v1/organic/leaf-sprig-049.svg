@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Leaf Sprig 049</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#00A6FB"/><stop offset="1" stop-color="#00D4A8"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#00D4A8"/><stop offset="1" stop-color="#00A6FB"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#E8FBFF"/><stop offset=".34" stop-color="#7AE7FF"/><stop offset="1" stop-color="#00D4A8"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#052A45" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><path d="M274.57 462C261.27 350,250.73 186,235.36 48" fill="none" stroke="#052A45" stroke-width="12" stroke-linecap="round"/><path d="M223.59 398q-76.28 -25.54 -93.06 -53.63q72.46 -4.09 93.06 53.63Z" fill="url(#paint-reverse)" stroke="#E8FBFF" stroke-width="3"/><path d="M285.51 359.89q69.55 -28.18 84.85 -59.18q-66.07 -4.51 -84.85 59.18Z" fill="url(#paint)" stroke="#E8FBFF" stroke-width="3"/><path d="M216.98 335.42q-65.76 -28.56 -80.22 -59.97q62.47 -4.57 80.22 59.97Z" fill="url(#paint)" stroke="#E8FBFF" stroke-width="3"/><path d="M276.55 269.31q83.85 -27.04 102.3 -56.78q-79.66 -4.33 -102.3 56.78Z" fill="url(#paint-reverse)" stroke="#E8FBFF" stroke-width="3"/><path d="M208.54 261.1q-61.64 -39.73 -75.2 -83.42q58.56 -6.36 75.2 83.42Z" fill="url(#paint)" stroke="#E8FBFF" stroke-width="3"/><path d="M266.5 205.66q75.23 -31.84 91.78 -66.87q-71.47 -5.09 -91.78 66.87Z" fill="url(#paint)" stroke="#E8FBFF" stroke-width="3"/><path d="M189.74 153.88q-73.88 -30.84 -90.14 -64.77q70.19 -4.93 90.14 64.77Z" fill="url(#paint-reverse)" stroke="#E8FBFF" stroke-width="3"/><path d="M259.45 142.1q50.88 -30.14 62.07 -63.3q-48.33 -4.82 -62.07 63.3Z" fill="url(#paint)" stroke="#E8FBFF" stroke-width="3"/></g>
+</svg>

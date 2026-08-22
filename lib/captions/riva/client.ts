@@ -124,6 +124,15 @@ export type RivaRecognizeArgs = {
 	/** optional Riva model name; hosted functions serve one model each */
 	model?: string
 	target?: string
+	/**
+	 * Phrases the recogniser should expect - names, products, places. Riva
+	 * raises their probability against similar-sounding alternatives, which is
+	 * the only lever that reliably fixes a word written differently from the way
+	 * it was spoken.
+	 */
+	hints?: string[]
+	/** how hard to push those phrases; NVIDIA recommends 0 - 20 */
+	hintBoost?: number
 }
 
 export type RivaRecognizeResult = {
@@ -154,6 +163,8 @@ export function rivaRecognize(args: RivaRecognizeArgs): Promise<RivaRecognizeRes
 	metadata.set('function-id', args.functionId)
 	metadata.set('authorization', `Bearer ${args.apiKey}`)
 
+	const hints = (args.hints ?? []).filter((phrase) => phrase.trim().length > 0)
+
 	const request = {
 		config: {
 			encoding: 'LINEAR_PCM',
@@ -163,7 +174,17 @@ export function rivaRecognize(args: RivaRecognizeArgs): Promise<RivaRecognizeRes
 			audio_channel_count: 1,
 			enable_word_time_offsets: true,
 			enable_automatic_punctuation: true,
+			// Inverse text normalisation on: "two thousand twenty five" becomes
+			// "2025", which is what a subtitle should read.
 			verbatim_transcripts: false,
+			profanity_filter: false,
+			...(hints.length > 0
+				? {
+						speech_contexts: [
+							{ phrases: hints, boost: args.hintBoost ?? 6 },
+						],
+					}
+				: {}),
 			...(args.model ? { model: args.model } : {}),
 		},
 		audio: args.pcm,

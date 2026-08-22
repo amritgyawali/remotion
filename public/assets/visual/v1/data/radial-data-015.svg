@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Radial Data 015</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#3366FF"/><stop offset="1" stop-color="#E7A93C"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#E7A93C"/><stop offset="1" stop-color="#3366FF"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF8DF"/><stop offset=".34" stop-color="#79A3FF"/><stop offset="1" stop-color="#E7A93C"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#111D4A" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><circle cx="256" cy="256" r="48" fill="none" stroke="#111D4A" stroke-width="15.19" opacity=".14"/><circle cx="256" cy="256" r="48" fill="none" stroke="#FFF8DF" stroke-width="14.66" stroke-linecap="round" stroke-dasharray="92.61 301.59" transform="rotate(-58.69 256 256)"/><circle cx="256" cy="256" r="85.2" fill="none" stroke="#111D4A" stroke-width="12.49" opacity=".14"/><circle cx="256" cy="256" r="85.2" fill="none" stroke="url(#paint)" stroke-width="13.66" stroke-linecap="round" stroke-dasharray="138.94 535.34" transform="rotate(48.28 256 256)"/><circle cx="256" cy="256" r="115.33" fill="none" stroke="#111D4A" stroke-width="9.81" opacity=".14"/><circle cx="256" cy="256" r="115.33" fill="none" stroke="#FFF8DF" stroke-width="10.6" stroke-linecap="round" stroke-dasharray="542.33 724.63" transform="rotate(59.4 256 256)"/><circle cx="256" cy="256" r="148.5" fill="none" stroke="#111D4A" stroke-width="9.12" opacity=".14"/><circle cx="256" cy="256" r="148.5" fill="none" stroke="url(#paint)" stroke-width="14.6" stroke-linecap="round" stroke-dasharray="419.62 933.07" transform="rotate(-142.57 256 256)"/><polygon points="284.28,256 265.71,285.89 230.2,274.75 228.2,235.8 267.55,220.47" fill="url(#halo)"/></g>
+</svg>

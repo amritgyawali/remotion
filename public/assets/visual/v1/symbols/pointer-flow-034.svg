@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Pointer Flow 034</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FF7AA8"/><stop offset="1" stop-color="#335C9F"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#335C9F"/><stop offset="1" stop-color="#FF7AA8"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF2F7"/><stop offset=".34" stop-color="#FFB5CD"/><stop offset="1" stop-color="#335C9F"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#1B2A4A" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><g><path d="M138.56 138.23Q256 190.85 332.21 423.79" fill="none" stroke="#FFF2F7" stroke-width="16.48" stroke-linecap="round"/><path d="M294.33 399.86L332.21 423.79L344.87 391.63" fill="none" stroke="#FF7AA8" stroke-width="11.44" stroke-linecap="round" stroke-linejoin="round"/></g><g><path d="M179.03 385.65Q256 331.52 440.8 444.3" fill="none" stroke="url(#paint)" stroke-width="17.66" stroke-linecap="round"/><path d="M401.03 450.03L440.8 444.3L426.5 402.77" fill="none" stroke="#335C9F" stroke-width="12.55" stroke-linecap="round" stroke-linejoin="round"/></g><g><path d="M214.12 446.46Q256 511.26 310.52 242.83" fill="none" stroke="#FFF2F7" stroke-width="14.16" stroke-linecap="round"/><path d="M329.44 278.24L310.52 242.83L275.11 271.42" fill="none" stroke="#FF7AA8" stroke-width="15.95" stroke-linecap="round" stroke-linejoin="round"/></g></g>
+</svg>

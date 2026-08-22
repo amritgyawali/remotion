@@ -12,6 +12,8 @@
 
 import type { TranscriptionItemWithTimestamp, WhisperWebLanguage } from '@remotion/whisper-web'
 import { groupWordsIntoCues, type WordTiming } from './cues'
+import { alignmentReport, snapWordsToSpeech } from './align'
+import { detectSpeech, type SpeechSegment } from './vad'
 import type {
 	CaptionCue,
 	CaptionLayoutOptions,
@@ -355,12 +357,28 @@ function assertLive(signal: AbortSignal): void {
 	if (signal.aborted) throw new TranscriptionCancelled()
 }
 
+export type DeviceTranscription = {
+	words: WordTiming[]
+	/** where speech actually is, measured from the same waveform Whisper heard */
+	speech: SpeechSegment[]
+	/** constant offset removed from the model's timings, ms */
+	offsetMs: number
+	/** words that had to be pulled out of a silence */
+	rescued: number
+}
+
 /**
  * Runs the on-device pipeline and returns one timed word per entry.
- * Word timings come straight from the model, so karaoke highlighting lines up
- * with the speaker without any manual work.
+ *
+ * Whisper's word timings come from its own attention, not from a forced
+ * aligner, so they drift on long segments and sit slightly late after a pause.
+ * The waveform is right here, so it is measured too, and the timings are put
+ * back on the speech before anything downstream sees them - which is what makes
+ * a karaoke highlight land on the syllable rather than near it.
  */
-export async function transcribeOnDevice(args: Omit<TranscribeArgs, 'layout'>): Promise<WordTiming[]> {
+export async function transcribeOnDevice(
+	args: Omit<TranscribeArgs, 'layout'>,
+): Promise<DeviceTranscription> {
 	const { source, model, language, onProgress, signal } = args
 	assertLive(signal)
 
@@ -451,14 +469,24 @@ export async function transcribeOnDevice(args: Omit<TranscribeArgs, 'layout'>): 
 		)
 	}
 
+	// Whisper heard exactly this waveform, so measuring it here is the closest
+	// thing to a forced alignment the on-device path can get.
+	const speech = detectSpeech(channelWaveform, { sampleRate: 16_000 }).segments
+	const snapped = snapWordsToSpeech(words, speech, { maxShiftMs: 1_200 })
+
 	onProgress({ stage: 'transcribing', progress: 1, message: `${words.length} words transcribed` })
-	return words
+	return {
+		words: snapped.words,
+		speech,
+		offsetMs: snapped.offsetMs,
+		rescued: snapped.rescued,
+	}
 }
 
 /** Kept for callers that only want cues from the on-device engine. */
 export async function transcribeToCues(args: TranscribeArgs): Promise<CaptionCue[]> {
-	const words = await transcribeOnDevice(args)
-	return groupWordsIntoCues(words, args.layout)
+	const { words, speech } = await transcribeOnDevice(args)
+	return groupWordsIntoCues(words, args.layout, { speech })
 }
 
 /* --------------------------------------------------------- engine routing */
@@ -471,6 +499,12 @@ export type TranscriptionOutcome = {
 	model: string
 	/** anything the user should know that is not an outright failure */
 	notice?: string
+	/** where speech is, so a later re-cut can still break on real pauses */
+	speech?: SpeechSegment[]
+	/** share of words that landed on measured speech, 0 - 1 */
+	onSpeech?: number
+	/** constant offset the aligner took out of the transcript, ms */
+	offsetMs?: number
 }
 
 export type RunTranscriptionArgs = {
@@ -569,13 +603,32 @@ export async function runTranscription(args: RunTranscriptionArgs): Promise<Tran
 						`${result.failedChunks} of ${result.chunks} audio chunks could not be transcribed, so a few seconds may be missing.`,
 					)
 				}
-				if (result.estimatedTimings) {
+				// Say what actually happened to the clock. "Estimated" used to mean
+				// "spread evenly and probably wrong"; it now means "aligned to the
+				// speech in your audio", which is a different promise entirely.
+				if (result.timing === 'aligned') {
 					notices.push(
-						'The endpoint returned text without word timings, so word timing was estimated from word length - karaoke styles will be approximate.',
+						'That model returns text without word timings, so each word was aligned to the speech measured in your audio rather than spread across the clip.',
+					)
+				} else if (result.timing === 'spread') {
+					notices.push(
+						'That model returned no word timings and no speech could be measured in parts of the audio, so some word timing is an estimate from word length.',
+					)
+				}
+				if (Math.abs(result.alignment.offsetMs) >= 120) {
+					notices.push(
+						`The recogniser ran ${Math.abs(result.alignment.offsetMs)}ms ${
+							result.alignment.offsetMs > 0 ? 'early' : 'late'
+						}; the transcript was shifted onto the speech.`,
+					)
+				}
+				if (result.alignment.onSpeech < 0.75) {
+					notices.push(
+						`Only ${Math.round(result.alignment.onSpeech * 100)}% of words landed on detected speech - check the timing on a noisy or music-heavy clip.`,
 					)
 				}
 
-				let cues = groupWordsIntoCues(result.words, layout)
+				let cues = groupWordsIntoCues(result.words, layout, { speech: result.speech })
 				if (polish) {
 					onProgress({
 						stage: 'polishing',
@@ -594,6 +647,9 @@ export async function runTranscription(args: RunTranscriptionArgs): Promise<Tran
 					engine: 'nvidia',
 					model: result.model || 'NVIDIA',
 					notice: notices.length > 0 ? notices.join(' ') : undefined,
+					speech: result.speech,
+					onSpeech: result.alignment.onSpeech,
+					offsetMs: result.alignment.offsetMs,
 				}
 			}
 
@@ -606,7 +662,7 @@ export async function runTranscription(args: RunTranscriptionArgs): Promise<Tran
 				)
 			}
 
-			const words = await transcribeOnDevice({
+			const device = await transcribeOnDevice({
 				source: blob,
 				model: whisperModel,
 				language,
@@ -615,8 +671,16 @@ export async function runTranscription(args: RunTranscriptionArgs): Promise<Tran
 			})
 			assertLive(signal)
 
-			let cues = groupWordsIntoCues(words, layout)
+			const words = device.words
+			let cues = groupWordsIntoCues(words, layout, { speech: device.speech })
 			const notices = failures.length > 0 ? [failures[failures.length - 1]] : []
+			if (Math.abs(device.offsetMs) >= 120) {
+				notices.push(
+					`Whisper ran ${Math.abs(device.offsetMs)}ms ${
+						device.offsetMs > 0 ? 'early' : 'late'
+					}; the transcript was shifted onto the speech.`,
+				)
+			}
 			if (polish) {
 				onProgress({ stage: 'polishing', progress: 0.99, message: 'Tidying punctuation with NVIDIA' })
 				const refined = await refineCues(cues, { language, signal })
@@ -625,12 +689,16 @@ export async function runTranscription(args: RunTranscriptionArgs): Promise<Tran
 			}
 
 			onProgress({ stage: 'done', progress: 1, message: `${words.length} words transcribed` })
+			const report = alignmentReport(words, device.speech, device)
 			return {
 				cues,
 				origin: 'whisper',
 				engine: 'device',
 				model: whisperModel,
 				notice: notices.length > 0 ? notices.join(' ') : undefined,
+				speech: device.speech,
+				onSpeech: report.onSpeech,
+				offsetMs: device.offsetMs,
 			}
 		} catch (error) {
 			if (error instanceof TranscriptionCancelled || signal.aborted) throw new TranscriptionCancelled()

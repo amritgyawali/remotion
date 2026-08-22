@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Kinetic Petals 035</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FF7AA8"/><stop offset="1" stop-color="#335C9F"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#335C9F"/><stop offset="1" stop-color="#FF7AA8"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF2F7"/><stop offset=".34" stop-color="#FFB5CD"/><stop offset="1" stop-color="#335C9F"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#1B2A4A" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><ellipse cx="343.32" cy="250.28" rx="51.62" ry="89.62" transform="rotate(86.25 343.32 250.28)" fill="url(#paint-reverse)" opacity="0.77" stroke="#FFF2F7" stroke-width="3"/><ellipse cx="304.45" cy="328.87" rx="39.82" ry="100.33" transform="rotate(146.38 304.45 328.87)" fill="url(#paint)" opacity="0.72" stroke="#FFF2F7" stroke-width="3"/><ellipse cx="212.79" cy="332.09" rx="44.27" ry="83.62" transform="rotate(209.59 212.79 332.09)" fill="url(#paint-reverse)" opacity="0.56" stroke="#FFF2F7" stroke-width="3"/><ellipse cx="168.5" cy="254.86" rx="45.36" ry="72.8" transform="rotate(270.75 168.5 254.86)" fill="url(#paint)" opacity="0.68" stroke="#FFF2F7" stroke-width="3"/><ellipse cx="211.74" cy="180.52" rx="32.69" ry="68.76" transform="rotate(329.61 211.74 180.52)" fill="url(#paint-reverse)" opacity="0.64" stroke="#FFF2F7" stroke-width="3"/><ellipse cx="303.53" cy="182.53" rx="33.62" ry="71.03" transform="rotate(392.9 303.53 182.53)" fill="url(#paint)" opacity="0.44" stroke="#FFF2F7" stroke-width="3"/><circle cx="256" cy="256" r="62.59" fill="url(#halo)" stroke="#1B2A4A" stroke-width="6"/></g>
+</svg>

@@ -58,25 +58,39 @@ export const MODULE_REGISTRY: Record<string, unknown> = {
 	'@remotion/captions': RemotionCaptions,
 }
 
-const OPTIONAL_MODULES = ['@remotion/three', '@react-three/fiber', 'three'] as const
+/**
+ * Three's GLTFLoader is an add-on rather than a root `three` export. Keep the
+ * official specifier explicit so uploaded compositions resolve the same module
+ * in the browser compiler that Remotion's Node bundler resolves for renders.
+ */
+const THREE_GLTF_LOADER = 'three/addons/loaders/GLTFLoader.js' as const
+
+const OPTIONAL_MODULES = [
+	'@remotion/three',
+	'@react-three/fiber',
+	'three',
+	THREE_GLTF_LOADER,
+] as const
 
 export const SUPPORTED_MODULES = [...Object.keys(MODULE_REGISTRY), ...OPTIONAL_MODULES]
 
 /** Three.js is large; only load its client chunks when uploaded source imports it. */
 export async function moduleRegistryForSource(source: string): Promise<Record<string, unknown>> {
-	if (!/(?:@remotion\/three|@react-three\/fiber|['"]three['"])/.test(source)) {
+	if (!/(?:@remotion\/three|@react-three\/fiber|['"]three(?:\/addons\/[^'"]+)?['"])/.test(source)) {
 		return MODULE_REGISTRY
 	}
-	const [RemotionThree, ReactThreeFiber, Three] = await Promise.all([
+	const [RemotionThree, ReactThreeFiber, Three, ThreeGltfLoader] = await Promise.all([
 		import('@remotion/three'),
 		import('@react-three/fiber'),
 		import('three'),
+		import('three/addons/loaders/GLTFLoader.js'),
 	])
 	return {
 		...MODULE_REGISTRY,
 		'@remotion/three': RemotionThree,
 		'@react-three/fiber': ReactThreeFiber,
 		three: Three,
+		[THREE_GLTF_LOADER]: ThreeGltfLoader,
 	}
 }
 

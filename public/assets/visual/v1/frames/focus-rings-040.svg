@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Focus Rings 040</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#F4F1E8"/><stop offset="1" stop-color="#9EA3AE"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#9EA3AE"/><stop offset="1" stop-color="#F4F1E8"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFFFFF"/><stop offset=".34" stop-color="#D6D9E1"/><stop offset="1" stop-color="#9EA3AE"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#17191F" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-glow)"><circle cx="256" cy="256" r="52" fill="none" stroke="#FFFFFF" stroke-width="11.41" stroke-linecap="round" stroke-dasharray="55.57 38.27" stroke-dashoffset="61.04" opacity="0.64"/><circle cx="256" cy="256" r="87.91" fill="none" stroke="url(#paint)" stroke-width="9.04" stroke-linecap="round" stroke-dasharray="71.03 14.79" stroke-dashoffset="30.63" opacity="0.93"/><circle cx="256" cy="256" r="125.14" fill="none" stroke="#FFFFFF" stroke-width="7.76" stroke-linecap="round" stroke-dasharray="82.64 43.22" stroke-dashoffset="1.88" opacity="0.65"/><circle cx="256" cy="256" r="158.6" fill="none" stroke="url(#paint)" stroke-width="10.72" stroke-linecap="round" stroke-dasharray="36.03 18.11" stroke-dashoffset="-18.35" opacity="0.67"/><circle cx="256" cy="256" r="169.75" fill="none" stroke="#FFFFFF" stroke-width="11" stroke-linecap="round" stroke-dasharray="24.99 31.3" stroke-dashoffset="-13.23" opacity="0.8"/><circle cx="256" cy="256" r="26.82" fill="url(#halo)"/><circle cx="230.06" cy="381.74" r="17.36" fill="#FFFFFF"/></g>
+</svg>

@@ -48,6 +48,15 @@ How a generation runs:
    built-in scene library and the bundled asset kit, then compiles it in the
    browser and loads the preview.
 
+Every request also receives a fresh creative seed. It selects a different
+background recipe, layout, camera, transition language, typography pair,
+foreground artwork and SFX variants, while a compact design fingerprint keeps
+recent results from repeating in the same browser. The seed and fingerprint are
+embedded in the generated file, so a result remains exactly reproducible when
+you intentionally reuse it. Background grids are prohibited; charts may still
+draw the axes required to explain real data, and CSS Grid remains available for
+ordinary layout.
+
 Because the code is generated locally from a validated plan, a generation cannot
 fail on a syntax error, a hallucinated import, a missing asset or a truncated
 file - the failure modes that make "ask an LLM for a whole file" unreliable.
@@ -58,15 +67,41 @@ plus the dimensional set below.
 Duration, aspect ratio (16:9, 9:16, 1:1, 4:5, 21:9), palette, fonts and music are
 read from the prompt when you state them and inferred when you do not.
 
+### House styles
+
+No two generations are handed the same design. Before a single line of TSX is
+written the Studio draws a **template** - a complete house style that decides
+which backgrounds, layouts, type recipes, accents, finish, camera, rhythm,
+palettes and font categories are even eligible:
+
+`editorial-press` · `swiss-poster` · `kinetic-type` · `broadcast-strip` ·
+`zine-collage` · `minimal-air` · `neon-arcade` · `gallery-frame` · `data-brief` ·
+`story-cards` · `cinema-bars` · `terminal-log` · `pop-sticker` · `luxe-serif` ·
+`split-duo` · `archive-paper`
+
+Inside the chosen style the Studio then picks a background recipe, a page
+layout, a type pairing, a headline treatment (plate, box, underline, margin bar
+or outline), a rule language, a corner language, a casing rule, an accent shape,
+a finish, a camera and a tempo - plus a hue rotation applied to the palette's
+accents. The result is hashed into a **design fingerprint**, and both the
+fingerprint and the house style of your recent videos are sent back with the
+next request, so a design identity is never served twice and the same template
+never runs back to back.
+
+Palette and typography follow the same rule: a brief that names a colour
+("neon", "monochrome", "gold") or a typeface class ("serif", "monospace",
+"handwritten") pins that choice, and everything it leaves unsaid is chosen fresh
+by the house style each time.
+
 ### Dimension
 
-Every storyboard picks one of three looks:
+Three-dimensional treatment is opt-in, per chat:
 
-| Mode | What it renders | Cost |
+| Mode | What it renders | When |
 | --- | --- | --- |
-| `depth` (default) | Perspective stage with a drifting camera, extruded headlines, tilted cards and a receding floor grid. Pure CSS/SVG. | free |
-| `three` | Everything in `depth`, plus real WebGL scenes through `@remotion/three`: lights, shadows, materials and a moving camera. | a GPU frame per scene |
-| `flat` | Graphic layers only. Asked for with "flat design", "2D" or "typographic". | lowest |
+| `flat` (default) | Graphic design only: type, colour, shape, layout and motion. | always, unless you ask otherwise |
+| `depth` | Perspective stage with a drifting camera, extruded headlines, tilted cards and layered atmosphere. Pure CSS/SVG. | you say "depth", "parallax", "layered", "perspective" or ask for a camera move |
+| `three` | Everything in `depth`, plus real WebGL scenes through `@remotion/three`: lights, shadows, materials and a moving camera. | you say "3D", "WebGL", "CGI", "turntable", "rotating globe" or similar |
 
 WebGL scenes: `object3d` (lit turntable of a procedural solid - crystal, sphere,
 torus knot, cube, prism, capsule or ring - with wireframe overlay, orbiting
@@ -76,10 +111,12 @@ cage, atmosphere shell and markers placed at real latitude/longitude),
 wireframe topography and depth fog). `carousel3d` puts cards on a rotating rig
 using CSS 3D and needs no WebGL.
 
-Say "3D", "rendered", "product turntable", "globe" or "terrain" and the director
-switches to `three` on its own. Everything still animates from
-`useCurrentFrame()`, so previews, browser exports and server renders match frame
-for frame.
+All four are unavailable unless you ask for 3D. The request is remembered for
+the whole chat, so a follow-up such as "now make it 20 seconds" keeps the 3D you
+already asked for, and a model answer that reaches for `three` on its own is
+rewritten to the flat scene that shows the same content. Everything still
+animates from `useCurrentFrame()`, so previews, browser exports and server
+renders match frame for frame.
 
 ### Optional: connect NVIDIA for AI-written scripts
 
@@ -102,7 +139,9 @@ route public on a public deployment, so configure Vercel rate limiting and NVIDI
 spend controls to protect the quota.
 
 Run `npm run ai:check` to compose a spread of prompts and verify every generated
-file satisfies the Studio contract.
+file satisfies the Studio contract, seeded replay is deterministic, varied seeds
+produce distinct design fingerprints, and no forbidden background-grid recipe
+can enter generated source.
 
 The previous manual workflow still works: download **AI Master Template**, edit it
 with any coding assistant, and upload the completed `.tsx` file.
@@ -131,13 +170,18 @@ Open **Subtitle a video** in the top bar, or go straight to
    * **Auto** - speech recognition, with two engines behind one button.
 
      **NVIDIA cloud** (used first whenever the server has an `NVIDIA_API_KEY`)
-     decodes the audio in the browser, resamples it to 16 kHz mono, cuts it at
-     the quietest point near each boundary and uploads those chunks to
-     `/api/captions/transcribe`, which calls NVIDIA's hosted recognisers -
-     Whisper large-v3 for Nepali and the other 98 languages, Parakeet and Canary
-     for English and the major European ones. The video never leaves the device,
-     there is nothing to download, and a chunk that fails is retried and then
-     skipped rather than losing the whole transcript.
+     decodes the audio in the browser, resamples it to 16 kHz mono, conditions
+     it (DC removal, an 85 Hz high-pass under the voice, and a level pass
+     measured over speech only), cuts it in the longest pause near each boundary
+     and uploads those chunks to `/api/captions/transcribe`, which calls
+     NVIDIA's hosted recognisers - Whisper large-v3 for Nepali and the other 98
+     languages, Parakeet and Canary for English and the major European ones. The
+     video never leaves the device, there is nothing to download, and a chunk
+     that fails is retried and then skipped rather than losing the whole
+     transcript. When a boundary genuinely cannot be placed in a pause, the next
+     chunk carries a second and a half of overlap so the word sitting on the cut
+     is transcribed whole by somebody, and the two copies are stitched back into
+     one.
 
      **On this device** runs Whisper as WebAssembly inside the tab. Six models
      from tiny to small, English-only or multilingual (77 MB - 488 MB),
@@ -149,6 +193,21 @@ Open **Subtitle a video** in the top bar, or go straight to
      music/silence hallucinations and the credit-loop lines Whisper falls into
      on long clips. **Auto** falls back to the other engine when one fails, so a
      missing key or a browser without SharedArrayBuffer still produces captions.
+
+     **Every timestamp is then checked against the audio itself.** The same pass
+     that cut the chunks also measured where speech is, frame by frame, using a
+     two-threshold detector whose speech/silence split is recomputed per three
+     seconds by Otsu's method rather than assumed. That map does three jobs. A
+     recogniser that returns no word timings at all - which is what NVIDIA's
+     hosted Whisper function does - has its text laid down on the speech,
+     weighted by syllables, so a pause on screen is a pause in the audio instead
+     of the text being smeared evenly across a whole minute. A recogniser that
+     does return timings has its constant offset measured by cross-correlating
+     its word activity against the real speech and taken back out, and any word
+     left stranded in a silence is pulled onto the speech beside it. Line breaks
+     are placed on real pauses rather than on whatever gap the word timings
+     happened to leave. The studio reports what it did - the offset it removed,
+     and the share of words that landed on speech.
 
      Optionally an NVIDIA language model then tidies the transcript - one
      rewritten line per recognised line, so punctuation and spelling improve
@@ -186,12 +245,15 @@ Open **Subtitle a video** in the top bar, or go straight to
      punctuation. The Tools tab ranks the candidates for you.
    * **Reveal**: word by word, whole line, or a typewriter that types each word
      across its own timestamp without the line ever reflowing.
-5. **Work in bulk** in the Tools tab: find and replace (word timings survive a
-   same-length replacement), sentence/title/upper/lower rewriting, punctuation
-   tidying, `Name:` speaker splitting, speed correction for a transcript that
-   drifts, holding captions through short pauses, frame snapping, splitting long
-   cues, folding short flashes into their neighbour, and copy/paste of the whole
-   look as JSON.
+5. **Work in bulk** in the Tools tab: **align every line to the speech** (reads
+   the audio, finds where the voice is, and moves each word onto it without
+   touching a single line break - the fix for an imported `.srt` cut for a
+   different edit, or a hand-typed script), find and replace (word timings
+   survive a same-length replacement), sentence/title/upper/lower rewriting,
+   punctuation tidying, `Name:` speaker splitting, speed correction for a
+   transcript that drifts, holding captions through short pauses, frame
+   snapping, splitting long cues, folding short flashes into their neighbour,
+   and copy/paste of the whole look as JSON.
 6. **Render** with the same browser or server engine the code studio uses. The
    output carries the original audio unless you mute it. Subtitles also export
    as `.srt`, `.vtt` and a fully styled `.ass` with per-word karaoke tags.
@@ -251,6 +313,13 @@ English, à la *"यो feature धेरै राम्रो छ"*.
   frame N is identical in the preview, in a browser export and on a render farm.
   `npm run captions:check` compiles all 18 presets and all 64 faces and asserts
   exactly that.
+* **Audio is conditioned before it is recognised**: DC removal, a second-order
+  high-pass at 85 Hz under the voice, and a level pass that measures loudness
+  over the detected speech only and never over the pauses. Measuring the whole
+  chunk makes a talker who leaves long pauses quieter than one who does not,
+  and amplifies a near-silent chunk until its noise floor sounds like whispering
+  - which is the classic way to make a model hallucinate a sentence into
+  silence.
 * **On-device speech recognition** uses `@remotion/whisper-web` -
   whisper.cpp compiled to WebAssembly, running entirely in the tab.
   `getLoadedModels()` tells the UI which models are already cached so it can
@@ -272,11 +341,34 @@ English, à la *"यो feature धेरै राम्रो छ"*.
   returned to the browser, so a misconfiguration names itself instead of hiding
   behind "could not transcribe".
 * **Word timings** come back as milliseconds from Riva and seconds from the
-  OpenAI-shaped payloads; both are normalised, and a reply with text but no
-  timings is spread by word length and labelled as estimated. Chunks are cut at
-  the quietest 20 ms frame within four seconds of the target boundary, so a word
-  is not split across two requests, and the WAV header is stripped before the
-  PCM goes on the wire.
+  OpenAI-shaped payloads. Which unit a payload is using is read off the key
+  name, not guessed from magnitude, because a Riva reply holding small
+  millisecond values looks exactly like an OpenAI reply holding seconds. Timings
+  that cannot be true - all zeros, everything crammed into the first instant, or
+  a transcript claiming to run past the audio it came from - are rejected as
+  timings and the text is aligned to the audio instead, which is a better answer
+  than pinning captions to a clock that is wrong.
+* **Alignment is measured, not assumed.** `lib/captions/vad.ts` finds where
+  speech is: 10 ms frames, two thresholds with a hangover so a stop consonant
+  does not end a word, and a speech/silence split recomputed every three seconds
+  by Otsu's method rather than taken as a fixed percentile - a percentile floor
+  only works on a window that happens to be about that percent silent, and gets
+  unbroken narration and long pauses both wrong. `lib/captions/align.ts` then
+  places words on that map: syllable-weighted distribution when no timings came
+  back (Devanagari clusters are counted by nuclei, English by vowel groups with
+  the common hiatus cases), and for timings that did come back, a
+  cross-correlation of word activity against real speech to measure the constant
+  offset, remove it, and rescue any word stranded in a silence. Both are pure
+  functions over `Float32Array` and plain data, so `npm run captions:check`
+  exercises them directly.
+* **Chunks are cut in real pauses**: the window around each boundary is scanned
+  for the longest silence rather than the single quietest 20 ms frame, and when
+  a boundary genuinely falls mid-word - unbroken speech, or a music bed under it
+  - the next chunk carries 1.5 s of overlap so that word is heard whole by at
+  least one request, with the two copies stitched back into one afterwards. The
+  chunk clock comes from the demuxer's own timestamps, so a container whose
+  audio starts late or drops a packet shifts nothing; the hole becomes a hole of
+  silence. The WAV header is stripped before the PCM goes on the wire.
 * **Where the audio goes**: the video file itself is never uploaded. Only the
   decoded speech is, and only when the NVIDIA engine is selected; the on-device
   engine sends nothing at all. `npm run captions:check` exercises the chunker,
@@ -347,6 +439,8 @@ your deployment retention policy.
 | `NVIDIA_ASR_ENDPOINT` | unset | Full URL of an HTTP `/v1/audio/transcriptions` endpoint, e.g. a self-hosted NIM. |
 | `NVIDIA_ASR_FUNCTION_ID` | unset | Pin one NVCF function id instead of the one belonging to the selected model. |
 | `NVIDIA_ASR_MODEL` | unset | Pin one speech model instead of choosing by spoken language. |
+| `NVIDIA_ASR_PHRASES` | unset | Comma-separated names, products or places the recogniser should expect. Riva boosts them against similar-sounding words - the one lever that fixes a proper noun written differently from the way it was spoken. |
+| `NVIDIA_ASR_PHRASE_BOOST` | `6` | How hard to push those phrases. NVIDIA recommends 0 - 20; higher recall costs false positives. |
 | `MAX_RENDER_FRAMES` | `1800` | Frame ceiling for a single server render. |
 | `MAX_RENDER_PIXELS` | `8294400` | Resolution ceiling (4K) for a single server render. |
 | `REMOTION_CONCURRENCY` | `auto` | Remotion chooses a memory-safe worker count; a number pins it. |
@@ -415,18 +509,21 @@ source.
 ### Production asset kit
 
 Open `/assets/index.html` in the running app, or click **Browse** under
-**Production asset kit** in the left panel. 99 assets ship with the app:
+**Production asset kit** in the left panel. The searchable, paginated gallery
+and downloadable archive contain more than 1,800 production assets:
 
 | Pack | Contents | Licence |
 | --- | --- | --- |
-| Visuals | 41 editable SVGs: objects, icons, arrows, neon graphics, geometry, depth art | CC0-1.0 |
+| Visuals | 1,241 editable SVGs: 1,200 deterministic variants in 24 kinetic, organic, cosmic, framing, data and symbol families, plus 41 compatible originals | CC0-1.0 |
 | Textures | 20 PNGs: film grain, paper, halftone, scanlines, vignette, light leaks, glow/bokeh/spark/smoke sprites, 4 matcaps, 3 equirectangular environment maps | CC0-1.0 |
 | Typography | 64 self-hosted families across sans, grotesk, rounded, condensed, display, comic, serif, tech, retro, pixel, mono, script and handwriting, including 13 Devanagari faces (Noto Sans/Serif Devanagari, Anek, Mukta, Hind, Baloo 2, Rozha One, Yatra One, Kalam, Tiro, Martel Sans, Teko, Khand) | OFL-1.1 and Apache-2.0 |
-| Audio | 8 loopable music beds (neon, warm, cinematic, ambient, epic, lofi, corporate, tension) and 20 SFX | CC0-1.0 |
+| Audio | 8 loopable music beds and 560 SFX: 540 compact motion-ready variants in 15 families plus 20 compatible originals | CC0-1.0 |
 
 ```tsx
 staticFile('assets/visual/v1/objects/phone.svg')
+staticFile('assets/visual/v1/kinetic/ribbon-017.svg')
 staticFile('assets/texture/v1/overlays/film-grain.png')
+staticFile('assets/audio/v1/sfx/variants/motion/motion-whoosh/motion-whoosh-v017.wav')
 <Audio src={staticFile('assets/audio/v1/music/ambient-calm-70bpm-loop.wav')} />   // @remotion/media
 loadFont({family: 'Anton', url: staticFile('assets/fonts/v1/anton/Anton-Regular.ttf')})  // @remotion/fonts
 ```
@@ -440,16 +537,16 @@ Regenerate and validate the library with:
 
 ```bash
 npm run assets           # visuals, audio, textures, fonts, then the combined catalog + ZIP
-npm run assets:verify    # offline: hashes and audio levels for all three generated packs
+npm run assets:verify    # offline: counts, hashes, duplicates, stale files and audio levels
 ```
 
 Everything except the fonts is synthesised from seeded math by the scripts in
 `scripts/`, so there is no third-party artwork, sample or recording in this
 repository. The font families come from the official
-[google/fonts](https://github.com/google/fonts) repository under the SIL Open
-Font License, which permits redistribution as long as each family keeps its
-`OFL.txt` - `npm run assets:fonts` downloads both and records SHA-256 hashes in
-`public/assets/fonts/fonts.lock.json`.
+[google/fonts](https://github.com/google/fonts) repository under their bundled
+OFL-1.1 or Apache-2.0 terms. Each family keeps its licence file;
+`npm run assets:fonts` downloads the raw face and licence together and records
+SHA-256 hashes in `public/assets/fonts/fonts.lock.json`.
 
 ### Samples
 
@@ -509,8 +606,8 @@ lib/
     style-presets.ts    the six caption looks and the studio font kit
 samples/                the uploadable examples
 scripts/
-  generate-audio-assets.mjs   deterministic original WAV library + verifier
-  generate-visual-assets.mjs  deterministic original SVG library
+  generate-audio-assets.mjs   560-SFX deterministic WAV library + verifier
+  generate-visual-assets.mjs  1,241-file deterministic SVG library + verifier
   generate-texture-assets.mjs deterministic PNG grain/sprite/matcap/env library
   fetch-fonts.mjs             self-hosted OFL font kit + hash lock + verifier
   build-asset-library.mjs     combined catalog, gallery and ZIP

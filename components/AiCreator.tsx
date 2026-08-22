@@ -17,6 +17,10 @@ export type AiGenerationRequest = {
 	model: AiModelId
 	renderAfterGenerate: boolean
 	history: Array<Pick<AiChatMessage, 'role' | 'text'>>
+	creativeSeed: string
+	avoidDesignFingerprints: string[]
+	/** House styles of the caller's recent videos, so none repeats back to back. */
+	avoidTemplates: string[]
 }
 
 export type AiGenerationResult = {
@@ -27,6 +31,9 @@ export type AiGenerationResult = {
 	scenes: string[]
 	seconds: number
 	title: string
+	generationId: string
+	designFingerprint: string
+	template?: string
 	notice?: string
 	renderQueued: boolean
 }
@@ -40,6 +47,14 @@ export type AiGenerationResult = {
  */
 const MODEL: AiModelId = 'auto'
 const RENDER_AFTER_GENERATE = true
+const DESIGN_HISTORY_KEY = 'remotion-video-studio:recent-design-fingerprints:v1'
+const TEMPLATE_HISTORY_KEY = 'remotion-video-studio:recent-templates:v1'
+const MAX_RECENT_DESIGNS = 32
+/**
+ * Only the last few house styles are withheld. Blocking more of them would
+ * shrink the pool faster than it refills and force the resolver into repeats.
+ */
+const MAX_RECENT_TEMPLATES = 5
 
 const STARTERS: Array<{ label: string; prompt: string }> = [
 	{
@@ -109,8 +124,29 @@ export default function AiCreator({
 	const [generating, setGenerating] = useState(false)
 	const [stage, setStage] = useState(0)
 	const chatRef = useRef<HTMLDivElement>(null)
+	const recentDesignsRef = useRef<string[]>([])
+	const recentTemplatesRef = useRef<string[]>([])
 
 	const disabled = busy || generating
+
+	useEffect(() => {
+		try {
+			const stored = JSON.parse(window.localStorage.getItem(DESIGN_HISTORY_KEY) ?? '[]') as unknown
+			recentDesignsRef.current = Array.isArray(stored)
+				? stored.filter((item): item is string => typeof item === 'string').slice(-MAX_RECENT_DESIGNS)
+				: []
+		} catch {
+			recentDesignsRef.current = []
+		}
+		try {
+			const stored = JSON.parse(window.localStorage.getItem(TEMPLATE_HISTORY_KEY) ?? '[]') as unknown
+			recentTemplatesRef.current = Array.isArray(stored)
+				? stored.filter((item): item is string => typeof item === 'string').slice(-MAX_RECENT_TEMPLATES)
+				: []
+		} catch {
+			recentTemplatesRef.current = []
+		}
+	}, [])
 
 	useEffect(() => {
 		if (!generating) {
@@ -140,6 +176,7 @@ export default function AiCreator({
 			text: requestText,
 		}
 		const history = messages.slice(-8).map(({ role, text }) => ({ role, text }))
+		const creativeSeed = window.crypto.randomUUID()
 		onMessages((current) => [...current, userMessage])
 		setPrompt('')
 		setGenerating(true)
@@ -150,7 +187,34 @@ export default function AiCreator({
 				model: MODEL,
 				renderAfterGenerate: RENDER_AFTER_GENERATE,
 				history,
+				creativeSeed,
+				avoidDesignFingerprints: recentDesignsRef.current,
+				avoidTemplates: recentTemplatesRef.current,
 			})
+			if (result.designFingerprint) {
+				const nextDesigns = [
+					...recentDesignsRef.current.filter((item) => item !== result.designFingerprint),
+					result.designFingerprint,
+				].slice(-MAX_RECENT_DESIGNS)
+				recentDesignsRef.current = nextDesigns
+				try {
+					window.localStorage.setItem(DESIGN_HISTORY_KEY, JSON.stringify(nextDesigns))
+				} catch {
+					// Storage may be disabled; variation still works for the current request.
+				}
+			}
+			if (result.template) {
+				const nextTemplates = [
+					...recentTemplatesRef.current.filter((item) => item !== result.template),
+					result.template,
+				].slice(-MAX_RECENT_TEMPLATES)
+				recentTemplatesRef.current = nextTemplates
+				try {
+					window.localStorage.setItem(TEMPLATE_HISTORY_KEY, JSON.stringify(nextTemplates))
+				} catch {
+					// Storage may be disabled; variation still works for the current request.
+				}
+			}
 
 			const director = result.source === 'nvidia' ? result.model : 'the Studio director'
 			const scenes = result.scenes.map((scene) => SCENE_LABELS[scene] ?? scene)
@@ -164,7 +228,11 @@ export default function AiCreator({
 							? 'The final render is starting automatically.'
 							: 'Preview it now, then ask for a revision or render it.'
 					}`,
-					meta: scenes,
+					meta: [
+						...scenes,
+						`Design ${result.designFingerprint.replace(/^design-/, '').slice(0, 8)}`,
+						`Generation ${result.generationId.slice(0, 8)}`,
+					],
 				},
 			]
 			if (result.notice) {

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Focus Rings 037</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FF6B63"/><stop offset="1" stop-color="#52E0B5"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#52E0B5"/><stop offset="1" stop-color="#FF6B63"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF8F0"/><stop offset=".34" stop-color="#FFC0A8"/><stop offset="1" stop-color="#52E0B5"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#43202A" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-glow)"><circle cx="256" cy="256" r="52" fill="none" stroke="#FFF8F0" stroke-width="11.78" stroke-linecap="round" stroke-dasharray="88.29 44.63" stroke-dashoffset="-86.03" opacity="0.95"/><circle cx="256" cy="256" r="92" fill="none" stroke="url(#paint)" stroke-width="14.13" stroke-linecap="round" stroke-dasharray="52.75 36.24" stroke-dashoffset="-29.31" opacity="0.96"/><circle cx="256" cy="256" r="131.99" fill="none" stroke="#FFF8F0" stroke-width="12.11" stroke-linecap="round" stroke-dasharray="33.54 39.83" stroke-dashoffset="83.29" opacity="0.68"/><circle cx="256" cy="256" r="177.28" fill="none" stroke="url(#paint)" stroke-width="16.15" stroke-linecap="round" stroke-dasharray="22.5 15.4" stroke-dashoffset="95.09" opacity="1"/><circle cx="256" cy="256" r="29.48" fill="url(#halo)"/><circle cx="97.52" cy="218.38" r="11.07" fill="#FFF8F0"/></g>
+</svg>

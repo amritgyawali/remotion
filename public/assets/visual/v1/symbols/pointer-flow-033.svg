@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Pointer Flow 033</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FF6B63"/><stop offset="1" stop-color="#52E0B5"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#52E0B5"/><stop offset="1" stop-color="#FF6B63"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF8F0"/><stop offset=".34" stop-color="#FFC0A8"/><stop offset="1" stop-color="#52E0B5"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#43202A" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><g><path d="M125.19 377.81Q256 332.61 359.74 439.88" fill="none" stroke="#FFF8F0" stroke-width="11.16" stroke-linecap="round"/><path d="M329.21 436.48L359.74 439.88L356.34 396.08" fill="none" stroke="#FF6B63" stroke-width="9.2" stroke-linecap="round" stroke-linejoin="round"/></g><g><path d="M194.26 364.04Q256 345.92 301.76 119.02" fill="none" stroke="url(#paint)" stroke-width="17.45" stroke-linecap="round"/><path d="M319.24 151.63L301.76 119.02L268.89 145.64" fill="none" stroke="#52E0B5" stroke-width="15.36" stroke-linecap="round" stroke-linejoin="round"/></g><g><path d="M92.9 151.12Q256 91.72 339.72 442.36" fill="none" stroke="#FFF8F0" stroke-width="10.17" stroke-linecap="round"/><path d="M306.39 417.27L339.72 442.36L355.47 410.32" fill="none" stroke="#FF6B63" stroke-width="8.48" stroke-linecap="round" stroke-linejoin="round"/></g><g><path d="M54.15 221.82Q256 190.89 363.03 86.45" fill="none" stroke="url(#paint)" stroke-width="11.6" stroke-linecap="round"/><path d="M358.78 126.23L363.03 86.45L338.11 88.5" fill="none" stroke="#52E0B5" stroke-width="11.6" stroke-linecap="round" stroke-linejoin="round"/></g></g>
+</svg>

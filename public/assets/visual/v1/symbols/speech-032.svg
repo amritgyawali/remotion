@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Speech Stack 032</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FF3158"/><stop offset="1" stop-color="#7A2CFF"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#7A2CFF"/><stop offset="1" stop-color="#FF3158"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF0F4"/><stop offset=".34" stop-color="#FF6F91"/><stop offset="1" stop-color="#7A2CFF"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#230716" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><g><rect x="80.87" y="52" width="319.43" height="129" rx="37.93" fill="url(#paint)" opacity="0.69" stroke="#FFF0F4" stroke-width="4"/><path d="M292.86 177L344.86 210.79L328.86 177Z" fill="#FF3158"/><circle cx="170.31" cy="116.5" r="8" fill="#FFF0F4"/><rect x="208.64" y="107.47" width="116.76" height="14" rx="7" fill="#230716" opacity=".65"/></g><g><rect x="219.68" y="172" width="220.25" height="101.02" rx="26.29" fill="url(#paint-reverse)" opacity="0.92" stroke="#FFF0F4" stroke-width="4"/><path d="M360.26 269.02L412.26 304.85L396.26 269.02Z" fill="#7A2CFF"/><circle cx="281.35" cy="222.51" r="8" fill="#FFF0F4"/><rect x="307.78" y="215.44" width="63.64" height="14" rx="7" fill="#230716" opacity=".65"/></g><g><rect x="39.49" y="292" width="266.8" height="110.39" rx="44.14" fill="url(#paint)" opacity="0.76" stroke="#FFF0F4" stroke-width="4"/><path d="M213.58 398.39L265.58 437.84L249.58 398.39Z" fill="#FF3158"/><circle cx="114.19" cy="347.2" r="8" fill="#FFF0F4"/><rect x="146.2" y="339.47" width="104.26" height="14" rx="7" fill="#230716" opacity=".65"/></g><g><rect x="243.94" y="412" width="140.2" height="129.18" rx="41.12" fill="url(#paint-reverse)" opacity="0.9" stroke="#FFF0F4" stroke-width="4"/><path d="M326.89 537.18L378.89 577.18L362.89 537.18Z" fill="#7A2CFF"/><circle cx="283.2" cy="476.59" r="8" fill="#FFF0F4"/><rect x="300.02" y="467.55" width="40.09" height="14" rx="7" fill="#230716" opacity=".65"/></g></g>
+</svg>

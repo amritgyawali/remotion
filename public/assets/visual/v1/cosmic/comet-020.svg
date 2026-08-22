@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Motion Comet 020</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FFB000"/><stop offset="1" stop-color="#FF4D6D"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#FF4D6D"/><stop offset="1" stop-color="#FFB000"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF4C7"/><stop offset=".34" stop-color="#FFD166"/><stop offset="1" stop-color="#FF4D6D"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#40142B" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-glow)"><path d="M40.81 216.26C200.21 203.92,195.94 211.14,351.84 166.58" fill="none" stroke="#FFF4C7" stroke-width="7.29" stroke-linecap="round" opacity="0.64"/><path d="M40.81 200.33C184.62 234.91,261.55 130.24,351.84 166.58" fill="none" stroke="url(#paint)" stroke-width="16.11" stroke-linecap="round" opacity="0.79"/><path d="M40.81 165.92C156.98 129.22,250.17 201.75,351.84 166.58" fill="none" stroke="#FFF4C7" stroke-width="12.64" stroke-linecap="round" opacity="0.52"/><path d="M40.81 141.66C180.94 155.14,178.23 191.45,351.84 166.58" fill="none" stroke="url(#paint)" stroke-width="8.45" stroke-linecap="round" opacity="0.57"/><path d="M40.81 133.78C229.17 201.9,234.6 210.72,351.84 166.58" fill="none" stroke="#FFF4C7" stroke-width="6.63" stroke-linecap="round" opacity="0.71"/><path d="M40.81 224.3C150.73 169.77,231.56 149.92,351.84 166.58" fill="none" stroke="url(#paint)" stroke-width="13.3" stroke-linecap="round" opacity="0.48"/><path d="M40.81 203.39C160.83 88.63,258.1 179.89,351.84 166.58" fill="none" stroke="#FFF4C7" stroke-width="5.44" stroke-linecap="round" opacity="0.91"/><circle cx="351.84" cy="166.58" r="40.22" fill="url(#halo)"/><circle cx="343.84" cy="156.58" r="10.47" fill="#FFF4C7" opacity=".8"/></g>
+</svg>

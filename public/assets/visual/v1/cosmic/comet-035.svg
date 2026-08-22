@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Motion Comet 035</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FF6B63"/><stop offset="1" stop-color="#52E0B5"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#52E0B5"/><stop offset="1" stop-color="#FF6B63"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF8F0"/><stop offset=".34" stop-color="#FFC0A8"/><stop offset="1" stop-color="#52E0B5"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#43202A" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-glow)"><path d="M68.55 282.48C212.24 297.58,227.92 270.02,308.7 271.53" fill="none" stroke="#FFF8F0" stroke-width="8.19" stroke-linecap="round" opacity="0.56"/><path d="M68.55 266.03C182.26 259.72,185.65 298.56,308.7 271.53" fill="none" stroke="url(#paint)" stroke-width="11.99" stroke-linecap="round" opacity="0.77"/><path d="M68.55 255.03C173.62 266.52,204.65 307.06,308.7 271.53" fill="none" stroke="#FFF8F0" stroke-width="14.68" stroke-linecap="round" opacity="0.5"/><path d="M68.55 237.7C143.32 283.61,227.81 266.67,308.7 271.53" fill="none" stroke="url(#paint)" stroke-width="16.76" stroke-linecap="round" opacity="0.57"/><path d="M68.55 273.65C155.38 252.58,181.72 310.31,308.7 271.53" fill="none" stroke="#FFF8F0" stroke-width="7.12" stroke-linecap="round" opacity="0.9"/><path d="M68.55 284.92C211.48 303.45,219.95 264.5,308.7 271.53" fill="none" stroke="url(#paint)" stroke-width="14.43" stroke-linecap="round" opacity="0.57"/><path d="M68.55 309.55C157.76 308.07,220.98 307.72,308.7 271.53" fill="none" stroke="#FFF8F0" stroke-width="13.31" stroke-linecap="round" opacity="0.89"/><path d="M68.55 254.6C228.79 265.07,185.86 293.49,308.7 271.53" fill="none" stroke="url(#paint)" stroke-width="11.96" stroke-linecap="round" opacity="0.49"/><circle cx="308.7" cy="271.53" r="61.85" fill="url(#halo)"/><circle cx="300.7" cy="261.53" r="11.87" fill="#FFF8F0" opacity=".8"/></g>
+</svg>

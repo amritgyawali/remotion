@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Kinetic Petals 026</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#E8C77A"/><stop offset="1" stop-color="#5267C9"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#5267C9"/><stop offset="1" stop-color="#E8C77A"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF9E9"/><stop offset=".34" stop-color="#FFE7A5"/><stop offset="1" stop-color="#5267C9"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#262944" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><ellipse cx="351.3" cy="251.61" rx="40.4" ry="96.22" transform="rotate(87.36 351.3 251.61)" fill="url(#paint-reverse)" opacity="0.75" stroke="#FFF9E9" stroke-width="3"/><ellipse cx="320.68" cy="326.13" rx="49.19" ry="78.24" transform="rotate(137.32 320.68 326.13)" fill="url(#paint)" opacity="0.45" stroke="#FFF9E9" stroke-width="3"/><ellipse cx="249.49" cy="351.18" rx="44.88" ry="67.89" transform="rotate(183.91 249.49 351.18)" fill="url(#paint-reverse)" opacity="0.49" stroke="#FFF9E9" stroke-width="3"/><ellipse cx="192.55" cy="327.24" rx="38.44" ry="73.28" transform="rotate(221.69 192.55 327.24)" fill="url(#paint)" opacity="0.65" stroke="#FFF9E9" stroke-width="3"/><ellipse cx="160.77" cy="250.23" rx="26.07" ry="76.66" transform="rotate(273.47 160.77 250.23)" fill="url(#paint-reverse)" opacity="0.54" stroke="#FFF9E9" stroke-width="3"/><ellipse cx="185.95" cy="191.24" rx="29.01" ry="63.47" transform="rotate(312.75 185.95 191.24)" fill="url(#paint)" opacity="0.7" stroke="#FFF9E9" stroke-width="3"/><ellipse cx="258.35" cy="160.63" rx="39.14" ry="79.15" transform="rotate(361.41 258.35 160.63)" fill="url(#paint-reverse)" opacity="0.58" stroke="#FFF9E9" stroke-width="3"/><ellipse cx="326.55" cy="191.77" rx="42.81" ry="78.24" transform="rotate(407.68 326.55 191.77)" fill="url(#paint)" opacity="0.61" stroke="#FFF9E9" stroke-width="3"/><circle cx="256" cy="256" r="41.41" fill="url(#halo)" stroke="#262944" stroke-width="6"/></g>
+</svg>

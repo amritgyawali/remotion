@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Focus Rings 049</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#E8C77A"/><stop offset="1" stop-color="#5267C9"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#5267C9"/><stop offset="1" stop-color="#E8C77A"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF9E9"/><stop offset=".34" stop-color="#FFE7A5"/><stop offset="1" stop-color="#5267C9"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#262944" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-glow)"><circle cx="256" cy="256" r="52" fill="none" stroke="#FFF9E9" stroke-width="14.26" stroke-linecap="round" stroke-dasharray="40.39 48.24" stroke-dashoffset="-79.35" opacity="0.59"/><circle cx="256" cy="256" r="82.07" fill="none" stroke="url(#paint)" stroke-width="8.74" stroke-linecap="round" stroke-dasharray="85.53 49.7" stroke-dashoffset="78.65" opacity="0.71"/><circle cx="256" cy="256" r="125.69" fill="none" stroke="#FFF9E9" stroke-width="8.63" stroke-linecap="round" stroke-dasharray="33.42 16.15" stroke-dashoffset="-29.18" opacity="0.94"/><circle cx="256" cy="256" r="171.34" fill="none" stroke="url(#paint)" stroke-width="14.22" stroke-linecap="round" stroke-dasharray="80.54 48.34" stroke-dashoffset="-64.07" opacity="0.92"/><circle cx="256" cy="256" r="204.74" fill="none" stroke="#FFF9E9" stroke-width="9.51" stroke-linecap="round" stroke-dasharray="72.23 35.11" stroke-dashoffset="-85.49" opacity="0.6"/><circle cx="256" cy="256" r="231.03" fill="none" stroke="url(#paint)" stroke-width="11.93" stroke-linecap="round" stroke-dasharray="69.84 35.12" stroke-dashoffset="-84.2" opacity="0.82"/><circle cx="256" cy="256" r="254.27" fill="none" stroke="#FFF9E9" stroke-width="15.6" stroke-linecap="round" stroke-dasharray="89.46 15.24" stroke-dashoffset="-20.13" opacity="0.72"/><circle cx="256" cy="256" r="43.28" fill="url(#halo)"/><circle cx="216.44" cy="169" r="18.8" fill="#FFF9E9"/></g>
+</svg>

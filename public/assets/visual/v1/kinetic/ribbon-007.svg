@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Flow Ribbon 007</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FF7AA8"/><stop offset="1" stop-color="#335C9F"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#335C9F"/><stop offset="1" stop-color="#FF7AA8"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF2F7"/><stop offset=".34" stop-color="#FFB5CD"/><stop offset="1" stop-color="#335C9F"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#1B2A4A" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><path d="M38 105C250.33 15,229.67 146,474 56" fill="none" stroke="url(#paint)" stroke-width="20.76" stroke-linecap="round" opacity="1"/><path d="M38 173.84C-18.14 83.84,498.14 319.65,474 229.65" fill="none" stroke="url(#paint-reverse)" stroke-width="14.5" stroke-linecap="round" opacity="0.92"/><path d="M38 205.99C265.16 115.99,214.84 354.33,474 264.33" fill="none" stroke="url(#paint)" stroke-width="12.6" stroke-linecap="round" opacity="0.84"/><circle cx="239.52" cy="238.78" r="12.56" fill="#FFF2F7"/></g>
+</svg>

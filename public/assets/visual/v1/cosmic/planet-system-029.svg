@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Planet System 029</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FF6B63"/><stop offset="1" stop-color="#52E0B5"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#52E0B5"/><stop offset="1" stop-color="#FF6B63"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF8F0"/><stop offset=".34" stop-color="#FFC0A8"/><stop offset="1" stop-color="#52E0B5"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#43202A" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><ellipse cx="272.66" cy="305.28" rx="127.41" ry="30.2" transform="rotate(35.69 272.66 305.28)" fill="none" stroke="url(#paint)" stroke-width="5.38" opacity="0.69"/><ellipse cx="272.66" cy="305.28" rx="146.29" ry="36.81" transform="rotate(42.69 272.66 305.28)" fill="none" stroke="#FFF8F0" stroke-width="7.86" opacity="0.65"/><ellipse cx="272.66" cy="305.28" rx="165.17" ry="43.41" transform="rotate(49.69 272.66 305.28)" fill="none" stroke="url(#paint)" stroke-width="5.38" opacity="0.71"/><ellipse cx="272.66" cy="305.28" rx="184.04" ry="50.02" transform="rotate(56.69 272.66 305.28)" fill="none" stroke="#FFF8F0" stroke-width="10.88" opacity="0.67"/><ellipse cx="272.66" cy="305.28" rx="202.92" ry="56.63" transform="rotate(63.69 272.66 305.28)" fill="none" stroke="url(#paint)" stroke-width="6.86" opacity="0.69"/><circle cx="272.66" cy="305.28" r="94.38" fill="url(#halo)" stroke="#43202A" stroke-width="7"/><path d="M204.71 288.29Q272.66 338.31 343.45 299.61" fill="none" stroke="#FFF8F0" stroke-width="8" opacity=".72"/><circle cx="141.21" cy="219.58" r="19.38" fill="#52E0B5" stroke="#FFF8F0" stroke-width="3"/><circle cx="438.41" cy="367.11" r="10.49" fill="#FF6B63" stroke="#FFF8F0" stroke-width="3"/><circle cx="456.05" cy="382.7" r="14.06" fill="#52E0B5" stroke="#FFF8F0" stroke-width="3"/></g>
+</svg>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Speech Stack 048</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#42F5D7"/><stop offset="1" stop-color="#756BFF"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#756BFF"/><stop offset="1" stop-color="#42F5D7"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#F7FDFF"/><stop offset=".34" stop-color="#53E8FF"/><stop offset="1" stop-color="#756BFF"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#0A1530" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><g><rect x="56.97" y="52" width="253.75" height="124.73" rx="33.95" fill="url(#paint)" opacity="0.67" stroke="#F7FDFF" stroke-width="4"/><path d="M110.02 172.73L94.02 226.46L146.02 172.73Z" fill="#42F5D7"/><circle cx="128.02" cy="114.36" r="8" fill="#F7FDFF"/><rect x="158.47" y="105.63" width="81.38" height="14" rx="7" fill="#0A1530" opacity=".65"/></g><g><rect x="59.54" y="232" width="201.2" height="87.22" rx="26.77" fill="url(#paint-reverse)" opacity="0.73" stroke="#F7FDFF" stroke-width="4"/><path d="M97.88 315.22L81.88 360.06L133.88 315.22Z" fill="#756BFF"/><circle cx="115.88" cy="275.61" r="8" fill="#F7FDFF"/><rect x="140.02" y="269.51" width="50.43" height="14" rx="7" fill="#0A1530" opacity=".65"/></g><g><rect x="279.41" y="412" width="188.85" height="119.06" rx="46.21" fill="url(#paint)" opacity="0.92" stroke="#F7FDFF" stroke-width="4"/><path d="M314.28 527.06L298.28 584.86L350.28 527.06Z" fill="#42F5D7"/><circle cx="332.28" cy="471.53" r="8" fill="#F7FDFF"/><rect x="354.95" y="463.2" width="75.9" height="14" rx="7" fill="#0A1530" opacity=".65"/></g></g>
+</svg>

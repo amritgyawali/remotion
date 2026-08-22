@@ -5,6 +5,10 @@ and related or neighboring rights to the generated visual assets in this
 folder. You may copy, modify, distribute, and use them, including commercially,
 without asking permission or providing attribution.
 
+The assets are deterministic outputs of project-owned SVG geometry recipes.
+They do not incorporate downloaded artwork, stock illustrations, third-party
+icon paths, or traced source material.
+
 The generator source and the rest of the application remain under the project
 license. Product and company names mentioned in example video copy are not part
 of this asset pack.

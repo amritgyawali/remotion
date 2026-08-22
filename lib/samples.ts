@@ -51,6 +51,14 @@ export const SAMPLES: SampleDefinition[] = [
 		badge: '3d',
 	},
 	{
+		id: '3d-asset-turntable',
+		file: '3d-asset-turntable.tsx',
+		name: 'Local GLB Turntable',
+		description: '1920x1080 - 12s - a bundled Hero Bot model on a polished WebGL turntable.',
+		technique: 'GLTFLoader + render delay, auto-framing, PBR lights and frame-driven rotation.',
+		badge: '3d',
+	},
+	{
 		id: 'event-loop-orbit',
 		file: 'event-loop-orbit.tsx',
 		name: 'Event Loop Orbit',

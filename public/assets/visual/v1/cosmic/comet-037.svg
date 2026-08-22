@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Motion Comet 037</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#42F5D7"/><stop offset="1" stop-color="#756BFF"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#756BFF"/><stop offset="1" stop-color="#42F5D7"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#F7FDFF"/><stop offset=".34" stop-color="#53E8FF"/><stop offset="1" stop-color="#756BFF"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#0A1530" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-glow)"><path d="M76.15 177.99C158.71 139.01,175.73 175.97,329.97 208.13" fill="none" stroke="#F7FDFF" stroke-width="16.98" stroke-linecap="round" opacity="0.52"/><path d="M76.15 127.62C161.33 191.3,206.55 172.86,329.97 208.13" fill="none" stroke="url(#paint)" stroke-width="10.72" stroke-linecap="round" opacity="0.7"/><path d="M76.15 259.97C143.99 153.72,181.73 238.74,329.97 208.13" fill="none" stroke="#F7FDFF" stroke-width="16.36" stroke-linecap="round" opacity="0.67"/><path d="M76.15 246.71C157.75 239.15,241.81 228.59,329.97 208.13" fill="none" stroke="url(#paint)" stroke-width="16.84" stroke-linecap="round" opacity="0.78"/><path d="M76.15 159.17C204.51 251.17,235.09 234.48,329.97 208.13" fill="none" stroke="#F7FDFF" stroke-width="17.47" stroke-linecap="round" opacity="0.79"/><path d="M76.15 147.66C130.69 164.76,160.52 233.75,329.97 208.13" fill="none" stroke="url(#paint)" stroke-width="14.14" stroke-linecap="round" opacity="0.83"/><circle cx="329.97" cy="208.13" r="38.34" fill="url(#halo)"/><circle cx="321.97" cy="198.13" r="15.25" fill="#F7FDFF" opacity=".8"/></g>
+</svg>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Leaf Sprig 019</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#2ED6C5"/><stop offset="1" stop-color="#8B3D8F"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#8B3D8F"/><stop offset="1" stop-color="#2ED6C5"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#F2FFFC"/><stop offset=".34" stop-color="#85F4E8"/><stop offset="1" stop-color="#8B3D8F"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#21324A" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><path d="M233.87 462C170.82 350,341.18 186,280.59 48" fill="none" stroke="#21324A" stroke-width="12" stroke-linecap="round"/><path d="M219.53 398q-54.32 -40.57 -66.27 -85.19q51.61 -6.49 66.27 85.19Z" fill="url(#paint-reverse)" stroke="#F2FFFC" stroke-width="3"/><path d="M296.06 365.95q67.92 -37.05 82.86 -77.81q-64.53 -5.93 -82.86 77.81Z" fill="url(#paint)" stroke="#F2FFFC" stroke-width="3"/><path d="M238.09 321.04q-80.09 -29.45 -97.71 -61.85q76.08 -4.71 97.71 61.85Z" fill="url(#paint)" stroke="#F2FFFC" stroke-width="3"/><path d="M311.31 284.34q65.65 -32.34 80.09 -67.92q-62.36 -5.18 -80.09 67.92Z" fill="url(#paint-reverse)" stroke="#F2FFFC" stroke-width="3"/><path d="M259.08 245.81q-72.73 -29.93 -88.73 -62.85q69.09 -4.79 88.73 62.85Z" fill="url(#paint)" stroke="#F2FFFC" stroke-width="3"/><path d="M312.62 214.6q64.84 -30.19 79.1 -63.4q-61.59 -4.83 -79.1 63.4Z" fill="url(#paint)" stroke="#F2FFFC" stroke-width="3"/><path d="M262.16 186.22q-60.83 -38.61 -74.21 -81.07q57.79 -6.18 74.21 81.07Z" fill="url(#paint-reverse)" stroke="#F2FFFC" stroke-width="3"/><path d="M334.3 119.66q56.48 -25.56 68.91 -53.68q-53.66 -4.09 -68.91 53.68Z" fill="url(#paint)" stroke="#F2FFFC" stroke-width="3"/><path d="M262.64 85.65q-79.61 -48.82 -97.12 -102.53q75.63 -7.81 97.12 102.53Z" fill="url(#paint)" stroke="#F2FFFC" stroke-width="3"/><path d="M322.39 88.98q83.66 -33.85 102.07 -71.07q-79.48 -5.42 -102.07 71.07Z" fill="url(#paint-reverse)" stroke="#F2FFFC" stroke-width="3"/></g>
+</svg>

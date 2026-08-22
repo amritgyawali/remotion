@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Flow Ribbon 024</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#2ED6C5"/><stop offset="1" stop-color="#8B3D8F"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#8B3D8F"/><stop offset="1" stop-color="#2ED6C5"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#F2FFFC"/><stop offset=".34" stop-color="#85F4E8"/><stop offset="1" stop-color="#8B3D8F"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#21324A" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><path d="M38 105C-21.91 15,501.91 245.26,474 155.26" fill="none" stroke="url(#paint)" stroke-width="21.57" stroke-linecap="round" opacity="1"/><path d="M38 167.13C211.18 77.13,268.82 237.01,474 147.01" fill="none" stroke="url(#paint-reverse)" stroke-width="20.45" stroke-linecap="round" opacity="0.92"/><path d="M38 221.27C-26.89 131.27,506.89 382.84,474 292.84" fill="none" stroke="url(#paint)" stroke-width="15.54" stroke-linecap="round" opacity="0.84"/><path d="M38 311.99C202.17 221.99,277.83 472.25,474 382.25" fill="none" stroke="url(#paint-reverse)" stroke-width="11.62" stroke-linecap="round" opacity="0.76"/><path d="M38 369.12C18.83 279.12,461.17 516.26,474 426.26" fill="none" stroke="url(#paint)" stroke-width="18.83" stroke-linecap="round" opacity="0.68"/><path d="M38 384.3C164.71 294.3,315.29 480.2,474 390.2" fill="none" stroke="url(#paint-reverse)" stroke-width="20.07" stroke-linecap="round" opacity="0.6"/><circle cx="307.66" cy="311.1" r="12.71" fill="#F2FFFC"/></g>
+</svg>

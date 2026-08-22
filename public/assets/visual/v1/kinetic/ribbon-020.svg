@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Flow Ribbon 020</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#25A66A"/><stop offset="1" stop-color="#B8D95A"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#B8D95A"/><stop offset="1" stop-color="#25A66A"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#F4FFD8"/><stop offset=".34" stop-color="#A8F0B8"/><stop offset="1" stop-color="#B8D95A"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#143526" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><path d="M38 105C183.39 15,296.61 203.65,474 113.65" fill="none" stroke="url(#paint)" stroke-width="25.66" stroke-linecap="round" opacity="1"/><path d="M38 164.31C18.06 74.31,461.94 313.73,474 223.73" fill="none" stroke="url(#paint-reverse)" stroke-width="26.36" stroke-linecap="round" opacity="0.92"/><path d="M38 235.95C215.41 145.95,264.59 286.45,474 196.45" fill="none" stroke="url(#paint)" stroke-width="19" stroke-linecap="round" opacity="0.84"/><path d="M38 311.73C26.27 221.73,453.73 335.64,474 245.64" fill="none" stroke="url(#paint-reverse)" stroke-width="23.7" stroke-linecap="round" opacity="0.76"/><path d="M38 322.57C245.77 232.57,234.23 344.02,474 254.02" fill="none" stroke="url(#paint)" stroke-width="20.68" stroke-linecap="round" opacity="0.68"/><path d="M38 363.93C63.26 273.93,416.74 510.76,474 420.76" fill="none" stroke="url(#paint-reverse)" stroke-width="22.22" stroke-linecap="round" opacity="0.6"/><circle cx="182.44" cy="207.98" r="22.99" fill="#F4FFD8"/></g>
+</svg>

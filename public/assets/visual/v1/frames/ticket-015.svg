@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Ticket Frame 015</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#C45BFF"/><stop offset="1" stop-color="#FF5DA2"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#FF5DA2"/><stop offset="1" stop-color="#C45BFF"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF1FB"/><stop offset=".34" stop-color="#E7A3FF"/><stop offset="1" stop-color="#FF5DA2"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#261039" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><path d="M107.9 86.43H404.1Q438.1 86.43 438.1 120.43V230.99A25.01 25.01 0 0 0 438.1 281.01V391.57Q438.1 425.57 404.1 425.57H107.9Q73.9 425.57 73.9 391.57V281.01A25.01 25.01 0 0 0 73.9 230.99V120.43Q73.9 86.43 107.9 86.43Z" fill="url(#paint)" opacity=".66" stroke="#261039" stroke-width="7"/><path d="M118.9 256H393.1" stroke="#FFF1FB" stroke-width="5" stroke-linecap="round" opacity=".72"/><circle cx="119.43" cy="256" r="6.92" fill="#FF5DA2"/><circle cx="164.95" cy="256" r="12.85" fill="#C45BFF"/><circle cx="210.48" cy="256" r="8.72" fill="#FF5DA2"/><circle cx="256" cy="256" r="7.86" fill="#C45BFF"/><circle cx="301.52" cy="256" r="12.43" fill="#FF5DA2"/></g>
+</svg>

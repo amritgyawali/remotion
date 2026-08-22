@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Wave Bands 039</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#56E8FF"/><stop offset="1" stop-color="#FF82DB"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#FF82DB"/><stop offset="1" stop-color="#56E8FF"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFFFFF"/><stop offset=".34" stop-color="#A6F3FF"/><stop offset="1" stop-color="#FF82DB"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#171A3B" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><polyline points="24,80.45 53,69.14 82,61.16 111,57.35 140,58.13 169,63.42 198,72.65 227,84.81 256,98.62 285,112.57 314,125.17 343,135.06 372,141.18 401,142.86 430,139.94 459,132.71 488,121.97" fill="none" stroke="url(#paint)" stroke-width="14.82" stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/><polyline points="24,205.7 53,227.98 82,246.58 111,258.62 140,262.26 169,256.93 198,243.45 227,223.9 256,201.3 285,179.1 314,160.74 343,149.04 372,145.79 401,151.5 430,165.3 459,185.04 488,207.71" fill="none" stroke="url(#paint-reverse)" stroke-width="15.97" stroke-linecap="round" stroke-linejoin="round" opacity="0.78"/><polyline points="24,284.87 53,280.93 82,290.65 111,309.12 140,327.03 169,335.33 198,329.84 227,313.33 256,294.13 285,281.92 314,282.88 343,296.51 372,315.94 401,331.36 430,335 459,325 488,306.43" fill="none" stroke="url(#paint)" stroke-width="17.63" stroke-linecap="round" stroke-linejoin="round" opacity="0.93"/><polyline points="24,373.93 53,368.42 82,385.24 111,415.76 140,444.36 169,456.38 198,445.66 227,417.7 256,386.82 285,368.84 314,372.97 343,397.1 372,428.86 401,451.99 430,454.63 459,435.43 488,404.23" fill="none" stroke="url(#paint-reverse)" stroke-width="14.41" stroke-linecap="round" stroke-linejoin="round" opacity="0.83"/></g>
+</svg>

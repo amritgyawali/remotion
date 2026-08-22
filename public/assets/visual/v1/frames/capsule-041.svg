@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Layered Capsule 041</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#C45BFF"/><stop offset="1" stop-color="#FF5DA2"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#FF5DA2"/><stop offset="1" stop-color="#C45BFF"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF1FB"/><stop offset=".34" stop-color="#E7A3FF"/><stop offset="1" stop-color="#FF5DA2"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#261039" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g transform="rotate(38.56 256 256)" filter="url(#soft-shadow)"><rect x="123.4" y="49.64" width="265.21" height="68.72" rx="34.36" fill="url(#paint)" opacity="0.58" stroke="#FFF1FB" stroke-width="4"/><rect x="98" y="138.18" width="316.01" height="63.64" rx="31.82" fill="url(#paint-reverse)" opacity="0.86" stroke="#FFF1FB" stroke-width="4"/><rect x="156.7" y="211.46" width="198.61" height="89.08" rx="44.54" fill="url(#paint)" opacity="0.87" stroke="#FFF1FB" stroke-width="4"/><rect x="110.62" y="305.24" width="290.75" height="73.52" rx="36.76" fill="url(#paint-reverse)" opacity="0.72" stroke="#FFF1FB" stroke-width="4"/><rect x="139.6" y="399.65" width="232.8" height="56.71" rx="28.35" fill="url(#paint)" opacity="0.88" stroke="#FFF1FB" stroke-width="4"/></g>
+</svg>

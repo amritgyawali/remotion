@@ -26,6 +26,7 @@ import { captionProject, captionSourceFor, downloadFileName, planComposition } f
 import { cuesToAss } from '../lib/captions/ass'
 import { isCaptionFontId } from '../lib/captions/fonts'
 import {
+	alignToSpeech,
 	cleanPunctuation,
 	findReplace,
 	holdThroughGaps,
@@ -47,6 +48,7 @@ import {
 	type WhisperSupport,
 } from '../lib/captions/transcribe'
 import { cloudAsrStatus } from '../lib/captions/cloud-transcribe'
+import type { SpeechSegment } from '../lib/captions/vad'
 import type { CloudAsrStatus } from '../lib/captions/asr-models'
 import { isVideoFile, probeVideo, releaseVideoSource } from '../lib/captions/video-source'
 import type {
@@ -170,7 +172,17 @@ export default function CaptionStudio() {
 	const [currentFrame, setCurrentFrame] = useState(0)
 	const [isolated, setIsolated] = useState(false)
 	const [placingCaption, setPlacingCaption] = useState(false)
+	const [aligning, setAligning] = useState(false)
 	const [cueHistory, setCueHistory] = useState({ canUndo: false, canRedo: false })
+
+	/**
+	 * Where speech is in the current video, as measured during transcription.
+	 *
+	 * Re-cutting the cue list into different line lengths has to break on the
+	 * same pauses the transcript was aligned to, otherwise a wider preset
+	 * silently moves every line break away from where the speaker breathes.
+	 */
+	const speechRef = useRef<SpeechSegment[]>([])
 
 	const playerRef = useRef<PlayerRef | null>(null)
 	const transcribeAbortRef = useRef<AbortController | null>(null)
@@ -396,6 +408,7 @@ export default function CaptionStudio() {
 				setVideo(next)
 				if (previous) releaseVideoSource(previous)
 				setFps(timelineFps(next.fps))
+				speechRef.current = []
 				cuesRef.current = []
 				setCues([])
 				clearCueHistory()
@@ -441,6 +454,7 @@ export default function CaptionStudio() {
 		videoRef.current = null
 		setVideo(null)
 		if (previous) releaseVideoSource(previous)
+		speechRef.current = []
 		cuesRef.current = []
 		setCues([])
 		clearCueHistory()
@@ -487,6 +501,7 @@ export default function CaptionStudio() {
 				signal: controller.signal,
 			})
 
+			speechRef.current = outcome.speech ?? []
 			applyCues(outcome.cues, outcome.origin)
 			setEngineUsed(outcome.engine)
 			setTranscribeNotice(outcome.notice ?? null)
@@ -530,7 +545,9 @@ export default function CaptionStudio() {
 	)
 
 	const handleRegroup = useCallback(() => {
-		commitCues((current) => normalizeCues(regroupCues(current, layout), durationMs))
+		commitCues((current) =>
+			normalizeCues(regroupCues(current, layout, { speech: speechRef.current }), durationMs),
+		)
 		setHandEdited(false)
 	}, [commitCues, durationMs, layout])
 
@@ -686,6 +703,65 @@ export default function CaptionStudio() {
 	 */
 	const toolActions = useMemo<ToolsActions>(
 		() => ({
+			onAlignToSpeech: () => {
+				if (!video || aligning) return
+				setAligning(true)
+				setToolNote('Reading the audio to find the speech...')
+				void (async () => {
+					try {
+						// The map is free after a transcription run; for a pasted .srt or a
+						// hand-typed script there has never been one, so it is measured now.
+						if (speechRef.current.length === 0) {
+							const { measureSpeech } = await import('../lib/captions/audio')
+							const source = video.file ?? (await (await fetch(video.url)).blob())
+							const measured = await measureSpeech({
+								source,
+								durationHintSeconds: video.durationInSeconds,
+								signal: new AbortController().signal,
+							})
+							speechRef.current = measured.speech
+							if (measured.silent || measured.speech.length === 0) {
+								setToolNote('No speech could be found in that audio, so nothing was moved.')
+								return
+							}
+						}
+
+						let note = 'Nothing to align.'
+						setHandEdited(true)
+						commitCues((current) => {
+							const result = alignToSpeech(current, speechRef.current, { durationMs })
+							if (result.moved === 0) {
+								note = 'Every line already sits on the speech - nothing needed moving.'
+								return current
+							}
+							const shifted =
+								Math.abs(result.offsetMs) >= 40
+									? ` The transcript ran ${Math.abs(result.offsetMs)}ms ${
+											result.offsetMs > 0 ? 'early' : 'late'
+										}.`
+									: ''
+							note =
+								result.mode === 'redistribute'
+									? `Re-timed all ${current.length} lines across the speech in the audio.${shifted} ${Math.round(
+											result.onSpeech * 100,
+										)}% of words now land on speech.`
+									: `Moved ${result.moved} of ${current.length} lines onto the speech.${shifted} ${Math.round(
+											result.onSpeech * 100,
+										)}% of words now land on speech.`
+							return normalizeCues(result.cues, durationMs)
+						})
+						setToolNote(note)
+					} catch (error) {
+						setToolNote(
+							`The audio could not be read for alignment (${
+								error instanceof Error ? error.message : String(error)
+							}).`,
+						)
+					} finally {
+						setAligning(false)
+					}
+				})()
+			},
 			onFindReplace: (options) => {
 				let replaced = 0
 				setHandEdited(true)
@@ -820,7 +896,7 @@ export default function CaptionStudio() {
 				setToolNote('Exported a styled .ass subtitle with per-word karaoke timing.')
 			},
 		}),
-		[commitCues, durationMs, fps, plan, video],
+		[aligning, commitCues, durationMs, fps, plan, video],
 	)
 
 	const handlePreviewPlacement = useCallback((clientY: number, top: number, height: number) => {
@@ -853,7 +929,10 @@ export default function CaptionStudio() {
 				setLayout(preset.layout)
 				commitCues((current) =>
 					current.length > 0
-						? normalizeCues(regroupCues(current, preset.layout), durationMs)
+						? normalizeCues(
+								regroupCues(current, preset.layout, { speech: speechRef.current }),
+								durationMs,
+							)
 						: current,
 				)
 			}
@@ -1130,6 +1209,7 @@ export default function CaptionStudio() {
 								style={style}
 								fps={fps}
 								disabled={busy}
+								aligning={aligning}
 								lastAction={toolNote}
 								actions={toolActions}
 							/>

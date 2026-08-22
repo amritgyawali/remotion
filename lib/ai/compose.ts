@@ -14,9 +14,14 @@ import {
 	LEAK_KIT,
 	MUSIC_KIT,
 	PALETTES,
-	SFX_KIT,
+	SFX_LEGACY_FAMILY,
 	VIGNETTE_TEXTURE,
+	sfxVariantPath,
+	visualVariantPath,
 	type IconId,
+	type Palette,
+	type SfxId,
+	type SfxVariantFamilyId,
 } from './kit'
 import {
 	THREE_SCENE_TYPES,
@@ -27,6 +32,7 @@ import {
 	type Storyboard,
 	type StoryboardLayout,
 } from './storyboard'
+import { creativeSeedSuffix, seededIndex, type CreativeProfile } from './variation'
 
 export type ComposedVideo = {
 	code: string
@@ -71,6 +77,68 @@ function pascalCase(value: string): string {
 	return /^[A-Za-z]/.test(cleaned) ? cleaned : `Ai${cleaned}`
 }
 
+/**
+ * Rotates a hex colour around the colour wheel, keeping its saturation and
+ * lightness. The twelve palettes are hand-tuned for contrast, so shifting only
+ * the hue of the accents multiplies the colour worlds available without ever
+ * producing an unreadable pairing.
+ */
+function rotateHue(hex: string, degrees: number): string {
+	const value = hex.replace('#', '')
+	const r = Number.parseInt(value.slice(0, 2), 16) / 255
+	const g = Number.parseInt(value.slice(2, 4), 16) / 255
+	const b = Number.parseInt(value.slice(4, 6), 16) / 255
+	const max = Math.max(r, g, b)
+	const min = Math.min(r, g, b)
+	const lightness = (max + min) / 2
+	const delta = max - min
+	if (delta === 0 || degrees % 360 === 0) return hex.toUpperCase()
+
+	const saturation = delta / (1 - Math.abs(2 * lightness - 1))
+	let hue: number
+	if (max === r) hue = ((g - b) / delta) % 6
+	else if (max === g) hue = (b - r) / delta + 2
+	else hue = (r - g) / delta + 4
+	hue = (((hue * 60 + degrees) % 360) + 360) % 360
+
+	const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation
+	const second = chroma * (1 - Math.abs(((hue / 60) % 2) - 1))
+	const match = lightness - chroma / 2
+	const [rp, gp, bp] =
+		hue < 60
+			? [chroma, second, 0]
+			: hue < 120
+				? [second, chroma, 0]
+				: hue < 180
+					? [0, chroma, second]
+					: hue < 240
+						? [0, second, chroma]
+						: hue < 300
+							? [second, 0, chroma]
+							: [chroma, 0, second]
+	const channel = (part: number) =>
+		Math.round(Math.min(255, Math.max(0, (part + match) * 255)))
+			.toString(16)
+			.padStart(2, '0')
+	return `#${channel(rp)}${channel(gp)}${channel(bp)}`.toUpperCase()
+}
+
+/**
+ * The palette as this generation actually uses it: the accent hues rotated by
+ * the creative profile, and optionally swapped so the same base palette leads
+ * with its secondary colour.
+ */
+function themeFor(palette: Palette, profile: CreativeProfile): Palette {
+	const accent = rotateHue(palette.accent, profile.paletteShift)
+	const accentAlt = rotateHue(palette.accentAlt, profile.paletteShift)
+	return {
+		...palette,
+		accent: profile.accentSwap ? accentAlt : accent,
+		accentAlt: profile.accentSwap ? accent : accentAlt,
+		glow: rotateHue(palette.glow, profile.paletteShift),
+	}
+}
+
 function usedIcons(storyboard: Storyboard): IconId[] {
 	const icons = new Set<IconId>(['spark', 'arrow'])
 	for (const scene of storyboard.scenes) {
@@ -105,6 +173,54 @@ const withAlpha = (hex: string, alpha: number): string => {
 	return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + alpha + ')'
 }
 
+const safeTextWeight = (desired: number): number =>
+	Math.round(Math.min(TEXT_WEIGHT_MAX, Math.max(TEXT_WEIGHT_MIN, desired)))
+
+/* ---------------------------------------------------------------------- */
+/*  Design tokens for this generation's house style                       */
+/* ---------------------------------------------------------------------- */
+
+/** Corner radius in design units. 'sharp' means genuinely square. */
+const cornerRadius = (unit: number, scale = 1): number =>
+	CREATIVE.cornerStyle === 'sharp' ? 0 : CREATIVE.cornerStyle === 'pill' ? unit * 100 : unit * 14 * scale
+
+/** Extra letter-spacing the type recipe wants, as a fraction of the size. */
+const trackingFor = (size: number): number =>
+	CREATIVE.typography === 'technical' || CREATIVE.typography === 'mono-terminal'
+		? size * 0.018
+		: CREATIVE.typography === 'condensed-stack'
+			? size * 0.008
+			: CREATIVE.typography === 'editorial' || CREATIVE.typography === 'serif-luxe'
+				? -size * 0.012
+				: CREATIVE.typography === 'brutalist'
+					? -size * 0.02
+					: 0
+
+/** Type recipes that read wrong in italics or with an extruded side. */
+const TYPE_IS_FLAT =
+	CREATIVE.typography === 'editorial' ||
+	CREATIVE.typography === 'friendly' ||
+	CREATIVE.typography === 'serif-luxe' ||
+	CREATIVE.typography === 'handwritten' ||
+	CREATIVE.typography === 'mono-terminal'
+
+/** Type recipes that must never be shouted in capitals. */
+const TYPE_KEEPS_CASE =
+	CREATIVE.typography === 'editorial' ||
+	CREATIVE.typography === 'friendly' ||
+	CREATIVE.typography === 'serif-luxe' ||
+	CREATIVE.typography === 'handwritten'
+
+/** Applies the house style's casing to one piece of copy. */
+const casedText = (value: string, uppercase: boolean): string => {
+	if (TYPE_KEEPS_CASE) return value
+	if (CREATIVE.textCase === 'upper' || uppercase) return value.toUpperCase()
+	if (CREATIVE.textCase === 'sentence') {
+		return value.length > 1 ? value[0].toUpperCase() + value.slice(1).toLowerCase() : value.toUpperCase()
+	}
+	return value
+}
+
 /** Mixes a colour toward black, used for the shaded sides of extruded type. */
 const shade = (hex: string, amount: number): string => {
 	const value = hex.replace('#', '')
@@ -126,9 +242,34 @@ const useSpringIn = (delay: number, damping = 190): number => {
 }
 
 /**
+ * The page geometry for this generation's house style.
+ *
+ * Every component reads these three constants rather than testing the layout id
+ * itself, so the headline, the artwork and the stage can never disagree about
+ * which edge the film is composed against.
+ */
+const LAYOUT_LEFT =
+	CREATIVE.layout === 'editorial-left' ||
+	CREATIVE.layout === 'offset-stack' ||
+	CREATIVE.layout === 'banner-top' ||
+	CREATIVE.layout === 'corner-anchor' ||
+	CREATIVE.layout === 'split-vertical'
+const LAYOUT_RIGHT = CREATIVE.layout === 'column-right'
+/** Fraction of the frame kept as breathing room on each side. */
+const LAYOUT_INSET =
+	CREATIVE.layout === 'full-bleed'
+		? 0.038
+		: CREATIVE.layout === 'poster'
+			? 0.105
+			: CREATIVE.layout === 'wide-stage'
+				? 0.06
+				: 0.078
+
+/**
  * The camera. In depth and three modes the whole layout lives on a perspective
  * stage that dollies in and drifts a couple of degrees, so flat elements pick
- * up parallax instead of sitting on glass.
+ * up parallax instead of sitting on glass. In flat mode the same component
+ * still owns the page geometry, minus the perspective.
  */
 const SceneFrame: React.FC<{
 	children: React.ReactNode
@@ -140,67 +281,51 @@ const SceneFrame: React.FC<{
 }> = ({ children, align = 'center', justify = 'center', push = 0.04, gap = 0, tilt = DEPTH }) => {
 	const frame = useCurrentFrame()
 	const { width, height } = useVideoConfig()
-	const scale = interpolate(frame, [0, 260], [1 + push, 1], CLAMP)
-	const yaw = Math.sin(frame / 130) * 2.6 * tilt
-	const pitch = interpolate(frame, [0, 200], [3.4 * tilt, 0.5 * tilt], CLAMP)
+	const cameraAmount = CREATIVE.camera === 'still' ? 0.18 : CREATIVE.camera === 'drift' ? 0.65 : CREATIVE.camera === 'orbit' ? 1.25 : 0.9
+	const scale = interpolate(frame, [0, 260], [1 + push * cameraAmount, 1], CLAMP)
+	const yaw = Math.sin(frame / (CREATIVE.camera === 'orbit' ? 86 : 130)) * 2.6 * tilt * cameraAmount
+	const pitch = interpolate(frame, [0, 200], [3.4 * tilt * cameraAmount, 0.5 * tilt], CLAMP)
+	const resolvedAlign = align === 'center' && (LAYOUT_LEFT || LAYOUT_RIGHT) ? 'flex-start' : align
+	const resolvedJustify =
+		justify === 'center' && CREATIVE.layout === 'banner-top'
+			? 'flex-start'
+			: justify === 'center' && CREATIVE.layout === 'corner-anchor'
+				? 'flex-end'
+				: justify
+	const offsetX =
+		CREATIVE.layout === 'offset-stack'
+			? width * 0.045
+			: CREATIVE.layout === 'wide-stage'
+				? -width * 0.025
+				: CREATIVE.layout === 'column-right'
+					? width * 0.185
+					: CREATIVE.layout === 'split-vertical'
+						? -width * 0.14
+						: 0
+	const perspectiveOrigin = LAYOUT_RIGHT ? '64% 44%' : LAYOUT_LEFT ? '38% 44%' : '50% 44%'
+	const inset = Math.round(width * LAYOUT_INSET)
 
 	return (
-		<AbsoluteFill style={{ perspective: tilt > 0 ? width * 1.35 : undefined, perspectiveOrigin: '50% 44%' }}>
+		<AbsoluteFill style={{ perspective: tilt > 0 ? width * 1.35 : undefined, perspectiveOrigin }}>
 			<AbsoluteFill
 				style={{
-					paddingLeft: Math.round(width * 0.078),
-					paddingRight: Math.round(width * 0.078),
-					paddingTop: Math.round(height * 0.095),
-					paddingBottom: Math.round(height * 0.095),
+					paddingLeft: inset,
+					paddingRight: inset,
+					paddingTop: Math.round(height * (CREATIVE.layout === 'banner-top' ? 0.13 : 0.095)),
+					paddingBottom: Math.round(height * (CREATIVE.layout === 'corner-anchor' ? 0.125 : 0.095)),
 					display: 'flex',
 					flexDirection: 'column',
-					alignItems: align,
-					justifyContent: justify,
-					textAlign: align === 'center' ? 'center' : 'left',
+					alignItems: resolvedAlign,
+					justifyContent: resolvedJustify,
+					textAlign: resolvedAlign === 'center' ? 'center' : 'left',
 					gap,
 					transformStyle: 'preserve-3d',
 					transform:
-						'scale(' + scale.toFixed(4) + ') rotateX(' + pitch.toFixed(3) + 'deg) rotateY(' + yaw.toFixed(3) + 'deg)',
+						'translateX(' + offsetX.toFixed(2) + 'px) scale(' + scale.toFixed(4) + ') rotateX(' + pitch.toFixed(3) + 'deg) rotateY(' + yaw.toFixed(3) + 'deg)',
 				}}
 			>
 				{children}
 			</AbsoluteFill>
-		</AbsoluteFill>
-	)
-}
-
-/** Receding floor plane. Sells the horizon behind title, statement and CTA. */
-const FloorGrid: React.FC<{ color?: string; opacity?: number; speed?: number }> = ({
-	color = THEME.accent,
-	opacity = 0.4,
-	speed = 1.1,
-}) => {
-	const frame = useCurrentFrame()
-	const { width, height } = useVideoConfig()
-	if (DEPTH === 0) return null
-	const cell = Math.round(height * 0.085)
-	const scroll = (frame * speed) % cell
-
-	return (
-		<AbsoluteFill style={{ overflow: 'hidden', perspective: width * 0.8, perspectiveOrigin: '50% 0%' }}>
-			<div
-				style={{
-					position: 'absolute',
-					left: '-60%',
-					top: '56%',
-					width: '220%',
-					height: '150%',
-					transformOrigin: '50% 0%',
-					transform: 'rotateX(76deg) translateY(' + scroll.toFixed(2) + 'px)',
-					backgroundImage:
-						'repeating-linear-gradient(90deg, ' + withAlpha(color, opacity) + ' 0px, ' + withAlpha(color, opacity) +
-						' 2px, rgba(0,0,0,0) 2px, rgba(0,0,0,0) ' + cell + 'px), repeating-linear-gradient(0deg, ' +
-						withAlpha(color, opacity) + ' 0px, ' + withAlpha(color, opacity) +
-						' 2px, rgba(0,0,0,0) 2px, rgba(0,0,0,0) ' + cell + 'px)',
-					maskImage: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,1) 22%, rgba(0,0,0,0) 72%)',
-					WebkitMaskImage: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,1) 22%, rgba(0,0,0,0) 72%)',
-				}}
-			/>
 		</AbsoluteFill>
 	)
 }
@@ -319,13 +444,13 @@ const Kicker: React.FC<{ text: string; delay?: number; color?: string }> = ({
 				alignItems: 'center',
 				gap: unit * 10,
 				padding: unit * 9 + 'px ' + unit * 18 + 'px',
-				borderRadius: unit * 100,
+				borderRadius: cornerRadius(unit),
 				border: '1px solid ' + withAlpha(color, 0.45),
 				backgroundColor: withAlpha(color, 0.09),
 				color,
 				fontFamily: TEXT_FONT,
 				fontSize: unit * 22,
-				fontWeight: 600,
+				fontWeight: safeTextWeight(600),
 				letterSpacing: unit * 3.4,
 				textTransform: 'uppercase',
 				opacity: enter,
@@ -337,7 +462,7 @@ const Kicker: React.FC<{ text: string; delay?: number; color?: string }> = ({
 				style={{
 					width: unit * 7,
 					height: unit * 7,
-					borderRadius: unit * 7,
+					borderRadius: CREATIVE.cornerStyle === 'sharp' ? 0 : unit * 7,
 					backgroundColor: color,
 					display: 'block',
 				}}
@@ -371,10 +496,18 @@ const Word: React.FC<{
 				display: 'inline-block',
 				fontFamily: family,
 				fontSize: size,
-				fontWeight: weight,
+				fontWeight: family === DISPLAY_FONT ? DISPLAY_WEIGHT : weight,
 				letterSpacing: tracking,
 				lineHeight: 1.02,
 				color: face,
+				fontStyle:
+					(CREATIVE.typography === 'editorial' || CREATIVE.typography === 'handwritten') && family === DISPLAY_FONT
+						? 'italic'
+						: undefined,
+				WebkitTextStroke:
+					(CREATIVE.typography === 'poster' || CREATIVE.typography === 'brutalist') && family === DISPLAY_FONT && !accent
+						? Math.max(1, size * (CREATIVE.typography === 'brutalist' ? 0.02 : 0.012)).toFixed(1) + 'px ' + withAlpha(THEME.ink, CREATIVE.typography === 'brutalist' ? 0.32 : 0.16)
+						: undefined,
 				opacity: enter,
 				transform:
 					'translateY(' + ((1 - enter) * size * 0.42).toFixed(2) + 'px) scale(' + (0.94 + enter * 0.06).toFixed(4) + ')',
@@ -437,30 +570,39 @@ const Headline: React.FC<{
 		.toLowerCase()
 		.split(' ')
 		.filter(Boolean)
+	const leftBiased = LAYOUT_LEFT
+	const effectiveAlign = align === 'center' && leftBiased ? 'flex-start' : align
+	const creativeTracking = tracking + trackingFor(size)
+	const creativeExtrude = TYPE_IS_FLAT ? 0 : extrude
+	// 'condensed-stack' sets each word on its own line, which is the whole point
+	// of the recipe; every other recipe wraps normally.
+	const stacked = CREATIVE.typography === 'condensed-stack' && words.length > 1 && words.length <= 5
 
 	return (
 		<div
 			style={{
 				display: 'flex',
 				flexWrap: 'wrap',
-				gap: size * 0.24,
-				rowGap: size * 0.12,
-				justifyContent: align === 'center' ? 'center' : 'flex-start',
+				flexDirection: stacked ? 'column' : 'row',
+				alignItems: stacked ? (effectiveAlign === 'center' ? 'center' : 'flex-start') : undefined,
+				gap: stacked ? size * 0.02 : size * 0.24,
+				rowGap: stacked ? size * 0.02 : size * 0.12,
+				justifyContent: effectiveAlign === 'center' ? 'center' : 'flex-start',
 				maxWidth,
 			}}
 		>
 			{words.map((word, index) => (
 				<Word
 					key={word + '-' + index}
-					text={uppercase ? word.toUpperCase() : word}
+					text={casedText(word, uppercase)}
 					delay={delay + index * stagger}
 					size={size}
 					color={color}
 					family={family}
 					weight={weight}
-					tracking={tracking}
+					tracking={creativeTracking}
 					accent={accents.includes(word.toLowerCase().replace(/[^a-z0-9]/g, ''))}
-					extrude={extrude}
+					extrude={creativeExtrude}
 				/>
 			))}
 		</div>
@@ -486,7 +628,7 @@ const Copy: React.FC<{
 				margin: 0,
 				fontFamily: TEXT_FONT,
 				fontSize: size ?? unit * 30,
-				fontWeight: weight,
+				fontWeight: safeTextWeight(weight),
 				lineHeight: 1.45,
 				color,
 				textAlign: align,
@@ -500,7 +642,11 @@ const Copy: React.FC<{
 	)
 }
 
-/** Solid-colour rule that wipes open - safe for every export engine. */
+/**
+ * The divider under a headline, drawn in the house style's rule language.
+ * It wipes open from a solid colour, which every export engine renders
+ * identically - no gradients, no masks.
+ */
 const Rule: React.FC<{ delay?: number; width: number; height?: number; color?: string }> = ({
 	delay = 0,
 	width,
@@ -509,60 +655,336 @@ const Rule: React.FC<{ delay?: number; width: number; height?: number; color?: s
 }) => {
 	const unit = useUnit()
 	const enter = useSpringIn(delay, 210)
-	const thickness = height ?? Math.max(2, unit * 4)
+	if (CREATIVE.ruleStyle === 'none') return null
 
-	return (
-		<div style={{ width, height: thickness, backgroundColor: withAlpha(color, 0.18), borderRadius: thickness }}>
+	const thickness =
+		height ?? Math.max(CREATIVE.ruleStyle === 'thin' ? 1 : 2, unit * (CREATIVE.ruleStyle === 'thin' ? 1.6 : 4))
+	const radius = CREATIVE.cornerStyle === 'sharp' ? 0 : thickness
+	const glow = CREATIVE.finish === 'luminous' || CREATIVE.finish === 'film'
+
+	if (CREATIVE.ruleStyle === 'dotted') {
+		const dots = 24
+		return (
+			<div style={{ width, height: thickness * 2, display: 'flex', gap: thickness * 1.6, alignItems: 'center' }}>
+				{new Array(dots).fill(null).map((_, index) => (
+					<div
+						key={'rule-dot-' + index}
+						style={{
+							width: thickness * 1.4,
+							height: thickness * 1.4,
+							borderRadius: thickness * 2,
+							backgroundColor: index / dots <= enter ? color : withAlpha(color, 0.18),
+						}}
+					/>
+				))}
+			</div>
+		)
+	}
+
+	const line = (
+		<div style={{ width, height: thickness, backgroundColor: withAlpha(color, 0.18), borderRadius: radius }}>
 			<div
 				style={{
 					width: (enter * 100).toFixed(2) + '%',
 					height: '100%',
 					backgroundColor: color,
-					borderRadius: thickness,
-					boxShadow: '0 0 ' + (thickness * 4).toFixed(0) + 'px ' + withAlpha(color, 0.6),
+					borderRadius: radius,
+					boxShadow: glow ? '0 0 ' + (thickness * 4).toFixed(0) + 'px ' + withAlpha(color, 0.6) : undefined,
 				}}
 			/>
+		</div>
+	)
+
+	if (CREATIVE.ruleStyle === 'double') {
+		return (
+			<div style={{ display: 'flex', flexDirection: 'column', gap: thickness * 1.8 }}>
+				{line}
+				<div style={{ width: width * 0.42, height: thickness, backgroundColor: withAlpha(color, 0.18), borderRadius: radius }}>
+					<div style={{ width: (enter * 100).toFixed(2) + '%', height: '100%', backgroundColor: color, borderRadius: radius }} />
+				</div>
+			</div>
+		)
+	}
+
+	return line
+}
+
+/**
+ * The signature treatment around a scene's main headline.
+ *
+ * Each house style decorates its headline differently - a printed plate, a
+ * drawn box, a heavy underline, a margin bar - which is the single loudest
+ * difference a viewer reads between two videos built from the same scenes.
+ */
+const TitlePlate: React.FC<{ children: React.ReactNode; delay?: number }> = ({ children, delay = 0 }) => {
+	const unit = useUnit()
+	const enter = useSpringIn(delay, 200)
+	const treatment = CREATIVE.titleTreatment
+
+	if (treatment === 'stack' || treatment === 'inline') return <>{children}</>
+
+	if (treatment === 'sidebar') {
+		return (
+			<div style={{ display: 'flex', alignItems: 'stretch', gap: unit * 26 }}>
+				<div
+					style={{
+						width: Math.max(3, unit * 7),
+						borderRadius: cornerRadius(unit, 0.4),
+						backgroundColor: THEME.accent,
+						transformOrigin: 'top',
+						transform: 'scaleY(' + enter.toFixed(4) + ')',
+					}}
+				/>
+				<div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>{children}</div>
+			</div>
+		)
+	}
+
+	if (treatment === 'underline') {
+		return (
+			<div style={{ display: 'inline-flex', flexDirection: 'column', gap: unit * 14 }}>
+				{children}
+				<div
+					style={{
+						height: Math.max(4, unit * 12),
+						borderRadius: cornerRadius(unit, 0.3),
+						backgroundColor: withAlpha(THEME.accent, 0.85),
+						transformOrigin: LAYOUT_LEFT ? 'left' : 'center',
+						transform: 'scaleX(' + enter.toFixed(4) + ')',
+					}}
+				/>
+			</div>
+		)
+	}
+
+	const boxed = treatment === 'boxed'
+	return (
+		<div
+			style={{
+				display: 'inline-flex',
+				padding: unit * (boxed ? 28 : 24) + 'px ' + unit * (boxed ? 40 : 34) + 'px',
+				borderRadius: cornerRadius(unit, 1.6),
+				backgroundColor: boxed ? withAlpha(THEME.accent, 0.12) : 'transparent',
+				border: Math.max(2, unit * (boxed ? 2.5 : 3.5)) + 'px solid ' + withAlpha(boxed ? THEME.accent : THEME.ink, boxed ? 0.42 : 0.3),
+				opacity: enter,
+				transform: 'scale(' + (0.96 + enter * 0.04).toFixed(4) + ')',
+			}}
+		>
+			{children}
 		</div>
 	)
 }
 
 const Backdrop: React.FC<{ seed?: number; intensity?: number }> = ({ seed = 0, intensity = 1 }) => {
 	const frame = useCurrentFrame()
-	const drift = Math.sin(frame / 110 + seed) * 3
-	const lift = Math.cos(frame / 140 + seed) * 2.5
+	const { width, height } = useVideoConfig()
+	const seedKey = CREATIVE_SEED + ':backdrop:' + seed
+	const originX = 18 + random(seedKey + ':x') * 64
+	const originY = 12 + random(seedKey + ':y') * 70
+	const drift = Math.sin(frame / 110 + seed) * (2 + random(seedKey + ':drift') * 4)
+	const lift = Math.cos(frame / 140 + seed) * (1.5 + random(seedKey + ':lift') * 3)
+	const accent = withAlpha(THEME.accent, 0.12 * intensity)
+	const accentAlt = withAlpha(THEME.accentAlt, 0.17 * intensity)
+	let background =
+		'radial-gradient(125% 95% at ' + (originX + drift).toFixed(2) + '% ' + (originY + lift).toFixed(2) + '%, ' +
+		THEME.backgroundAlt + ' 0%, ' + THEME.background + ' 68%)'
+
+	if (CREATIVE.background === 'spotlight') {
+		background =
+			'radial-gradient(42% 70% at ' + (originX + drift).toFixed(2) + '% -4%, ' + accent + ' 0%, rgba(0,0,0,0) 74%), ' +
+			'linear-gradient(155deg, ' + THEME.backgroundAlt + ' 0%, ' + THEME.background + ' 72%)'
+	} else if (CREATIVE.background === 'paper-wash') {
+		background =
+			'radial-gradient(85% 68% at ' + (originX + drift).toFixed(2) + '% ' + (originY + lift).toFixed(2) + '%, ' + accent + ' 0%, rgba(0,0,0,0) 72%), ' +
+			'linear-gradient(128deg, ' + THEME.background + ' 0%, ' + THEME.backgroundAlt + ' 100%)'
+	} else if (CREATIVE.background === 'soft-orbits') {
+		background =
+			'radial-gradient(38% 48% at ' + (originX + drift).toFixed(2) + '% ' + (originY + lift).toFixed(2) + '%, ' + accentAlt + ' 0%, rgba(0,0,0,0) 76%), ' +
+			'radial-gradient(54% 44% at ' + (100 - originX - drift).toFixed(2) + '% 82%, ' + accent + ' 0%, rgba(0,0,0,0) 72%), ' + THEME.background
+	} else if (CREATIVE.background === 'cinematic-bands') {
+		background =
+			'linear-gradient(116deg, ' + THEME.background + ' 0%, ' + THEME.background + ' 28%, ' + accentAlt + ' 54%, ' + THEME.backgroundAlt + ' 76%, ' + THEME.background + ' 100%)'
+	} else if (CREATIVE.background === 'ink-bloom') {
+		background =
+			'radial-gradient(70% 88% at ' + (originX + drift).toFixed(2) + '% ' + (originY + lift).toFixed(2) + '%, ' + THEME.backgroundAlt + ' 0%, ' + accentAlt + ' 42%, rgba(0,0,0,0) 75%), ' + THEME.background
+	} else if (CREATIVE.background === 'duotone-split') {
+		/* Two flat fields meeting on a hard diagonal, with no gradient haze. */
+		const cut = (52 + drift * 0.8).toFixed(2)
+		background =
+			'linear-gradient(' + (108 + lift).toFixed(2) + 'deg, ' + THEME.backgroundAlt + ' 0%, ' + THEME.backgroundAlt + ' ' + cut + '%, ' +
+			THEME.background + ' ' + cut + '%, ' + THEME.background + ' 100%)'
+	} else if (CREATIVE.background === 'halo-sweep') {
+		background =
+			'radial-gradient(closest-side circle at ' + (originX + drift).toFixed(2) + '% ' + (originY + lift).toFixed(2) + '%, rgba(0,0,0,0) 46%, ' +
+			accent + ' 52%, rgba(0,0,0,0) 60%), ' +
+			'linear-gradient(200deg, ' + THEME.backgroundAlt + ' 0%, ' + THEME.background + ' 78%)'
+	} else if (CREATIVE.background === 'noir-fade') {
+		background =
+			'radial-gradient(120% 120% at 50% 42%, ' + THEME.backgroundAlt + ' 0%, ' + THEME.background + ' 52%, #000000 132%)'
+	} else if (CREATIVE.background === 'gradient-mesh') {
+		background =
+			'radial-gradient(34% 42% at ' + (originX + drift).toFixed(2) + '% 22%, ' + accent + ' 0%, rgba(0,0,0,0) 70%), ' +
+			'radial-gradient(30% 38% at ' + (100 - originX).toFixed(2) + '% 68%, ' + accentAlt + ' 0%, rgba(0,0,0,0) 70%), ' +
+			'radial-gradient(46% 52% at 50% ' + (100 - originY + lift).toFixed(2) + '%, ' + THEME.backgroundAlt + ' 0%, rgba(0,0,0,0) 74%), ' + THEME.background
+	} else if (CREATIVE.background === 'vertical-fade') {
+		background = 'linear-gradient(180deg, ' + THEME.backgroundAlt + ' 0%, ' + THEME.background + ' 62%, ' + THEME.backgroundAlt + ' 100%)'
+	} else if (CREATIVE.background === 'corner-glow') {
+		background =
+			'radial-gradient(64% 58% at 102% -2%, ' + accentAlt + ' 0%, rgba(0,0,0,0) 68%), ' +
+			'radial-gradient(52% 48% at -4% 104%, ' + accent + ' 0%, rgba(0,0,0,0) 66%), ' + THEME.background
+	} else if (CREATIVE.background === 'editorial-slab') {
+		/* A printed colour block holding one third of the page. */
+		background =
+			'linear-gradient(90deg, ' + THEME.backgroundAlt + ' 0%, ' + THEME.backgroundAlt + ' 34%, ' +
+			THEME.background + ' 34%, ' + THEME.background + ' 100%)'
+	} else if (CREATIVE.background === 'flat-field') {
+		background = THEME.background
+	}
 
 	return (
-		<AbsoluteFill style={{ backgroundColor: THEME.background }}>
-			<AbsoluteFill
-				style={{
-					background:
-						'radial-gradient(125% 95% at ' + (30 + drift).toFixed(2) + '% ' + (16 + lift).toFixed(2) + '%, ' +
-						THEME.backgroundAlt + ' 0%, ' + THEME.background + ' 68%)',
-				}}
-			/>
-			<AbsoluteFill
-				style={{
-					background:
-						'radial-gradient(60% 55% at ' + (76 - drift).toFixed(2) + '% 80%, ' +
-						withAlpha(THEME.accentAlt, 0.22 * intensity) + ' 0%, rgba(0,0,0,0) 70%)',
-				}}
-			/>
-			<AbsoluteFill
-				style={{
-					background:
-						'radial-gradient(45% 40% at ' + (18 + drift).toFixed(2) + '% 72%, ' +
-						withAlpha(THEME.accent, 0.16 * intensity) + ' 0%, rgba(0,0,0,0) 72%)',
-				}}
-			/>
+		<AbsoluteFill style={{ backgroundColor: THEME.background, background, overflow: 'hidden' }}>
+			{CREATIVE.accentShape === 'rings' ? (
+				<div style={{ position: 'absolute', width: width * 0.58, height: width * 0.58, borderRadius: width, border: Math.max(2, width * 0.002) + 'px solid ' + withAlpha(THEME.accent, 0.14), left: -width * 0.18 + drift * 4, top: height * 0.5 + lift * 5 }} />
+			) : null}
+			{CREATIVE.accentShape === 'ribbons' ? (
+				<div style={{ position: 'absolute', width: width * 1.4, height: height * 0.13, backgroundColor: withAlpha(THEME.accentAlt, 0.08), left: -width * 0.2, top: height * 0.62 + lift * 4, rotate: '-11deg', borderRadius: height }} />
+			) : null}
+			{CREATIVE.accentShape === 'discs' ? (
+				<div style={{ position: 'absolute', width: width * 0.34, height: width * 0.34, borderRadius: width, backgroundColor: withAlpha(THEME.accent, 0.09), right: -width * 0.08 + drift * 3, top: height * 0.12 }} />
+			) : null}
+			{CREATIVE.accentShape === 'frames' ? (
+				<div style={{ position: 'absolute', inset: Math.min(width, height) * 0.045, border: Math.max(1, width * 0.0015) + 'px solid ' + withAlpha(THEME.accentAlt, 0.13), borderRadius: Math.min(width, height) * 0.04 }} />
+			) : null}
+			{CREATIVE.accentShape === 'arcs' ? (
+				<div aria-hidden style={{ position: 'absolute', width: width * 0.86, height: width * 0.86, borderRadius: width, border: Math.max(2, width * 0.0026) + 'px solid ' + withAlpha(THEME.accentAlt, 0.16), borderRightColor: 'transparent', borderTopColor: 'transparent', left: width * 0.2 + drift * 3, top: -width * 0.3 + lift * 4, transform: 'rotate(' + (18 + drift).toFixed(2) + 'deg)' }} />
+			) : null}
+			{CREATIVE.accentShape === 'slashes'
+				? new Array(4).fill(null).map((_, index) => (
+						<div
+							key={seedKey + ':slash:' + index}
+							aria-hidden
+							style={{
+								position: 'absolute',
+								width: Math.max(3, width * 0.004),
+								height: height * 1.6,
+								backgroundColor: withAlpha(index % 2 === 0 ? THEME.accent : THEME.accentAlt, 0.11),
+								left: width * (0.08 + index * 0.27) + drift * 2,
+								top: -height * 0.3,
+								transform: 'rotate(16deg)',
+							}}
+						/>
+					))
+				: null}
+			{CREATIVE.accentShape === 'blocks'
+				? new Array(3).fill(null).map((_, index) => (
+						<div
+							key={seedKey + ':block:' + index}
+							aria-hidden
+							style={{
+								position: 'absolute',
+								width: width * (0.16 + index * 0.05),
+								height: width * (0.16 + index * 0.05),
+								backgroundColor: withAlpha(index === 1 ? THEME.accentAlt : THEME.accent, 0.085),
+								left: index % 2 === 0 ? width * (0.03 + index * 0.06) + drift : undefined,
+								right: index % 2 === 0 ? undefined : width * 0.04 - drift,
+								top: height * (0.1 + index * 0.28) + lift * 2,
+							}}
+						/>
+					))
+				: null}
+			{CREATIVE.accentShape === 'halo' ? (
+				<div aria-hidden style={{ position: 'absolute', width: width * 0.62, height: width * 0.62, borderRadius: width, background: 'radial-gradient(circle, ' + withAlpha(THEME.glow, 0.16) + ' 0%, rgba(0,0,0,0) 68%)', left: width * 0.19 + drift * 2, top: height * 0.5 - width * 0.31 + lift * 3 }} />
+			) : null}
+			{CREATIVE.accentShape === 'sparks'
+				? new Array(9).fill(null).map((_, index) => {
+						const sparkKey = seedKey + ':spark:' + index
+						const diameter = Math.max(2, width * (0.002 + random(sparkKey + ':size') * 0.005))
+						return (
+							<div
+								key={sparkKey}
+								style={{
+									position: 'absolute',
+									width: diameter,
+									height: diameter,
+									borderRadius: diameter,
+									backgroundColor: index % 2 === 0 ? accent : accentAlt,
+									left: width * (0.08 + random(sparkKey + ':x') * 0.84) + drift * (index % 3),
+									top: height * (0.08 + random(sparkKey + ':y') * 0.8) + lift * (index % 4),
+									boxShadow: '0 0 ' + (diameter * 5).toFixed(1) + 'px ' + accent,
+								}}
+							/>
+						)
+				  })
+				: null}
 		</AbsoluteFill>
 	)
 }
 
-const ParticleField: React.FC<{ count?: number; color?: string; speed?: number; size?: number }> = ({
+const SceneArtwork: React.FC<{ src: string; variant: number }> = ({ src, variant }) => {
+	const frame = useCurrentFrame()
+	const { width, height } = useVideoConfig()
+	const enter = interpolate(frame, [0, 20], [0, 1], CLAMP)
+	const leftBiased = LAYOUT_LEFT
+	const placeRight = leftBiased || variant % 2 === 0
+	const driftX = Math.sin(frame / (82 + variant * 5) + variant) * width * 0.008
+	const driftY = Math.cos(frame / (96 + variant * 7) + variant) * height * 0.012
+	const size = Math.min(width, height) * (variant === 3 ? 0.66 : 0.52)
+	const opacity =
+		(CREATIVE.finish === 'clean' || CREATIVE.finish === 'matte'
+			? 0.13
+			: CREATIVE.finish === 'luminous'
+				? 0.22
+				: CREATIVE.finish === 'print'
+					? 0.2
+					: 0.17) * enter
+
+	return (
+		<Img
+			aria-hidden
+			src={src}
+			style={{
+				position: 'absolute',
+				width: size,
+				height: size,
+				objectFit: 'contain',
+				pointerEvents: 'none',
+				opacity,
+				left: placeRight ? undefined : -size * 0.2 + driftX,
+				right: placeRight ? -size * 0.18 - driftX : undefined,
+				top: height * (variant === 1 ? 0.06 : 0.24) + driftY,
+				transform: 'rotate(' + (-9 + variant * 5) + 'deg) scale(' + (0.9 + enter * 0.1).toFixed(3) + ')',
+				filter: 'saturate(1.08) drop-shadow(0 ' + (height * 0.018).toFixed(1) + 'px ' + (height * 0.045).toFixed(1) + 'px rgba(0,0,0,.24))',
+				mixBlendMode: CREATIVE.finish === 'paper' || CREATIVE.finish === 'print' ? 'multiply' : 'screen',
+				maskImage: 'radial-gradient(circle, black 48%, transparent 78%)',
+				WebkitMaskImage: 'radial-gradient(circle, black 48%, transparent 78%)',
+			}}
+		/>
+	)
+}
+
+const CreativeSceneShell: React.FC<{ variant: number; artworkSrc: string; children: React.ReactNode }> = ({ variant, artworkSrc, children }) => {
+	const frame = useCurrentFrame()
+	const { width, height } = useVideoConfig()
+	const breathe = 0.82 + Math.sin(frame / 72 + variant) * 0.12
+	return (
+		<AbsoluteFill>
+			{children}
+			<SceneArtwork src={artworkSrc} variant={variant} />
+			{variant === 0 ? <div aria-hidden style={{ position: 'absolute', width: width * 0.44, height: width * 0.44, borderRadius: width, border: Math.max(1, width * 0.0014) + 'px solid ' + withAlpha(THEME.accent, 0.12 * breathe), right: -width * 0.2, top: height * 0.08, pointerEvents: 'none' }} /> : null}
+			{variant === 1 ? <div aria-hidden style={{ position: 'absolute', width: width * 0.9, height: height * 0.055, borderRadius: height, backgroundColor: withAlpha(THEME.accentAlt, 0.07 * breathe), left: -width * 0.24, bottom: height * 0.12, rotate: '18deg', pointerEvents: 'none' }} /> : null}
+			{variant === 2 ? <div aria-hidden style={{ position: 'absolute', width: width * 0.2, height: width * 0.2, borderRadius: width, backgroundColor: withAlpha(THEME.accent, 0.065 * breathe), left: width * 0.055, bottom: height * 0.09, pointerEvents: 'none' }} /> : null}
+			{variant === 3 ? <div aria-hidden style={{ position: 'absolute', width: width * 0.26, height: height * 0.22, borderLeft: Math.max(2, width * 0.002) + 'px solid ' + withAlpha(THEME.accentAlt, 0.16 * breathe), borderTop: Math.max(2, width * 0.002) + 'px solid ' + withAlpha(THEME.accentAlt, 0.16 * breathe), left: width * 0.035, top: height * 0.045, pointerEvents: 'none' }} /> : null}
+			{variant === 4 ? <div aria-hidden style={{ position: 'absolute', width: width * 0.08, height: height * 0.72, borderRadius: width, backgroundColor: withAlpha(THEME.accent, 0.045 * breathe), right: width * 0.05, top: height * 0.14, rotate: '8deg', pointerEvents: 'none' }} /> : null}
+		</AbsoluteFill>
+	)
+}
+
+const ParticleField: React.FC<{ count?: number; color?: string; speed?: number; size?: number; sceneSeed?: number }> = ({
 	count = 26,
 	color = THEME.accent,
 	speed = 0.5,
 	size = 5,
+	sceneSeed = 0,
 }) => {
 	const frame = useCurrentFrame()
 	const { width, height } = useVideoConfig()
@@ -570,9 +992,9 @@ const ParticleField: React.FC<{ count?: number; color?: string; speed?: number; 
 	return (
 		<AbsoluteFill style={{ overflow: 'hidden' }}>
 			{new Array(count).fill(0).map((_, index) => {
-				const seedX = random('particle-x-' + index)
-				const seedY = random('particle-y-' + index)
-				const seedS = random('particle-s-' + index)
+				const seedX = random(CREATIVE_SEED + ':particle-' + sceneSeed + '-x-' + index)
+				const seedY = random(CREATIVE_SEED + ':particle-' + sceneSeed + '-y-' + index)
+				const seedS = random(CREATIVE_SEED + ':particle-' + sceneSeed + '-s-' + index)
 				const travel = (seedY * height + frame * speed * (0.35 + seedS)) % (height + 120)
 				const dot = size * (0.4 + seedS)
 
@@ -617,21 +1039,22 @@ const TitleScene: React.FC<{
 	return (
 		<AbsoluteFill>
 			<Backdrop seed={1} />
-			<FloorGrid opacity={0.32} />
-			<ParticleField count={30} speed={0.45} />
+			<ParticleField count={30} speed={0.45} sceneSeed={1} />
 			<SceneFrame gap={unit * 26} push={0.06}>
 				<IconBadge name={icon} size={unit * 118} delay={2} />
 				<Kicker text={kicker} delay={8} />
-				<Headline
-					text={headline}
-					size={unit * 104}
-					delay={12}
-					stagger={4}
-					uppercase
-					weight={800}
-					tracking={-unit * 1.5}
-					maxWidth={unit * 980}
-				/>
+				<TitlePlate delay={10}>
+					<Headline
+						text={headline}
+						size={unit * 104}
+						delay={12}
+						stagger={4}
+						uppercase
+						weight={800}
+						tracking={-unit * 1.5}
+						maxWidth={unit * 980}
+					/>
+				</TitlePlate>
 				<Rule delay={26} width={ruleWidth} />
 				<Copy text={subline} delay={30} size={unit * 32} maxWidth={unit * 820} />
 			</SceneFrame>
@@ -817,14 +1240,14 @@ const TimelineEntry: React.FC<{
 					style={{
 						fontFamily: DISPLAY_FONT,
 						fontSize: unit * 44,
-						fontWeight: 800,
+						fontWeight: DISPLAY_WEIGHT,
 						color: THEME.accent,
 						letterSpacing: -unit * 0.5,
 					}}
 				>
 					{event.marker}
 				</span>
-				<span style={{ fontFamily: TEXT_FONT, fontSize: unit * 30, fontWeight: 700, color: THEME.ink, lineHeight: 1.25 }}>
+				<span style={{ fontFamily: TEXT_FONT, fontSize: unit * 30, fontWeight: safeTextWeight(700), color: THEME.ink, lineHeight: 1.25 }}>
 					{event.title}
 				</span>
 				{event.detail ? (
@@ -856,12 +1279,11 @@ const MapScene: React.FC<{
 	const lead = 16
 	const step = Math.max(8, (frames - lead - 14) / places.length)
 
-	const grid = new Array(9).fill(0)
 	const landmass = new Array(3).fill(0).map((_, index) => {
-		const cx = 260 + random('land-x-' + index) * 480
-		const cy = 260 + random('land-y-' + index) * 460
-		const rx = 150 + random('land-rx-' + index) * 190
-		const ry = 110 + random('land-ry-' + index) * 150
+		const cx = 260 + random(CREATIVE_SEED + ':land-x-' + index) * 480
+		const cy = 260 + random(CREATIVE_SEED + ':land-y-' + index) * 460
+		const rx = 150 + random(CREATIVE_SEED + ':land-rx-' + index) * 190
+		const ry = 110 + random(CREATIVE_SEED + ':land-ry-' + index) * 150
 		return { cx, cy, rx, ry }
 	})
 
@@ -870,28 +1292,6 @@ const MapScene: React.FC<{
 			<Backdrop seed={4} intensity={0.7} />
 			<div style={{ position: 'absolute', left, top, width: board, height: board }}>
 				<svg width={Math.round(board)} height={Math.round(board)} viewBox="0 0 1000 1000" style={{ display: 'block' }}>
-					{grid.map((_, index) => (
-						<line
-							key={'v-' + index}
-							x1={index * 125}
-							y1={0}
-							x2={index * 125}
-							y2={1000}
-							stroke={withAlpha(THEME.ink, 0.09)}
-							strokeWidth={1.4}
-						/>
-					))}
-					{grid.map((_, index) => (
-						<line
-							key={'h-' + index}
-							x1={0}
-							y1={index * 125}
-							x2={1000}
-							y2={index * 125}
-							stroke={withAlpha(THEME.ink, 0.09)}
-							strokeWidth={1.4}
-						/>
-					))}
 					{landmass.map((blob, index) => {
 						const grow = interpolate(frame, [index * 6, 26 + index * 6], [0, 1], { ...CLAMP, easing: EASE_OUT })
 						return (
@@ -1020,7 +1420,7 @@ const ridgePath = (
 
 	for (let index = 0; index <= steps; index += 1) {
 		const x = -60 + ((width + 120) * index) / steps
-		const noise = random('ridge-' + seed + '-' + index)
+		const noise = random(CREATIVE_SEED + ':ridge-' + seed + '-' + index)
 		let y = baseY
 
 		if (terrain === 'mountain') {
@@ -1030,11 +1430,11 @@ const ridgePath = (
 			const phase = (index / steps) * peaks
 			const slot = Math.floor(phase)
 			const local = phase - slot
-			const peakHeight = amplitude * (0.42 + random('peak-' + seed + '-' + slot) * 0.85)
-			const apex = 0.3 + random('apex-' + seed + '-' + slot) * 0.4
+			const peakHeight = amplitude * (0.42 + random(CREATIVE_SEED + ':peak-' + seed + '-' + slot) * 0.85)
+			const apex = 0.3 + random(CREATIVE_SEED + ':apex-' + seed + '-' + slot) * 0.4
 			const rise = local < apex ? local / apex : (1 - local) / (1 - apex)
 			const shoulder = Math.pow(Math.max(0, rise), 0.6)
-			const foot = amplitude * 0.14 * random('foot-' + seed + '-' + slot)
+			const foot = amplitude * 0.14 * random(CREATIVE_SEED + ':foot-' + seed + '-' + slot)
 			y = baseY + foot - peakHeight * shoulder - (noise - 0.5) * amplitude * 0.04
 		} else if (terrain === 'desert') {
 			y = baseY - (Math.sin(index * 0.5 + seed * 1.7) * 0.5 + 0.5) * amplitude * (0.45 + noise * 0.35)
@@ -1140,8 +1540,8 @@ const LandscapeScene: React.FC<{
 				/>
 				{timeOfDay === 'night'
 					? new Array(40).fill(0).map((_, index) => {
-							const starX = random('star-x-' + index) * width
-							const starY = random('star-y-' + index) * height * 0.55
+							const starX = random(CREATIVE_SEED + ':star-x-' + index) * width
+							const starY = random(CREATIVE_SEED + ':star-y-' + index) * height * 0.55
 							const twinkle = 0.35 + Math.abs(Math.sin(frame / 22 + index)) * 0.5
 							return <circle key={'star-' + index} cx={starX} cy={starY} r={unit * 2} fill={withAlpha('#FFFFFF', twinkle)} />
 						})
@@ -1272,7 +1672,7 @@ const MonumentScene: React.FC<{ frames: number; structure: string; headline: str
 	return (
 		<AbsoluteFill>
 			<Backdrop seed={5} intensity={0.9} />
-			<ParticleField count={22} speed={0.28} color={THEME.accentAlt} size={4} />
+			<ParticleField count={22} speed={0.28} color={THEME.accentAlt} size={4} sceneSeed={5} />
 			<AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center' }}>
 				<div
 					style={{
@@ -1387,7 +1787,7 @@ const GalleryCard: React.FC<{ item: GalleryItemData; delay: number }> = ({ item,
 			}}
 		>
 			<VectorIcon name={item.icon} size={unit * 46} color={THEME.accent} strokeWidth={1.7} glow />
-			<span style={{ fontFamily: DISPLAY_FONT, fontSize: unit * 34, fontWeight: 800, color: THEME.ink, lineHeight: 1.15 }}>
+			<span style={{ fontFamily: DISPLAY_FONT, fontSize: unit * 34, fontWeight: DISPLAY_WEIGHT, color: THEME.ink, lineHeight: 1.15 }}>
 				{item.title}
 			</span>
 			{item.detail ? (
@@ -1453,7 +1853,7 @@ const StatCounter: React.FC<{ stat: StatData; delay: number }> = ({ stat, delay 
 				style={{
 					fontFamily: DISPLAY_FONT,
 					fontSize: unit * 112,
-					fontWeight: 800,
+					fontWeight: DISPLAY_WEIGHT,
 					color: THEME.accent,
 					letterSpacing: -unit * 2,
 					lineHeight: 1,
@@ -1532,7 +1932,7 @@ const ChartScene: React.FC<{ frames: number; headline: string; unit: string; bar
 									key={bar.label + '-' + index}
 									style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: u * 10 }}
 								>
-									<span style={{ fontFamily: DISPLAY_FONT, fontSize: u * 30, fontWeight: 800, color: THEME.ink, opacity: grow }}>
+									<span style={{ fontFamily: DISPLAY_FONT, fontSize: u * 30, fontWeight: DISPLAY_WEIGHT, color: THEME.ink, opacity: grow }}>
 										{value.toFixed(value >= 100 ? 0 : 1) + valueUnit}
 									</span>
 									<div
@@ -1637,7 +2037,7 @@ const ProcessCard: React.FC<{ step: ProcessStepData; index: number; delay: numbe
 					style={{
 						fontFamily: DISPLAY_FONT,
 						fontSize: unit * 30,
-						fontWeight: 800,
+						fontWeight: DISPLAY_WEIGHT,
 						color: THEME.background,
 						backgroundColor: THEME.accent,
 						width: unit * 46,
@@ -1652,7 +2052,7 @@ const ProcessCard: React.FC<{ step: ProcessStepData; index: number; delay: numbe
 				</span>
 				<VectorIcon name={step.icon} size={unit * 32} color={THEME.accentAlt} strokeWidth={1.7} />
 			</div>
-			<span style={{ fontFamily: DISPLAY_FONT, fontSize: unit * 32, fontWeight: 800, color: THEME.ink, lineHeight: 1.15 }}>
+			<span style={{ fontFamily: DISPLAY_FONT, fontSize: unit * 32, fontWeight: DISPLAY_WEIGHT, color: THEME.ink, lineHeight: 1.15 }}>
 				{step.title}
 			</span>
 			{step.detail ? (
@@ -1742,20 +2142,21 @@ const CtaScene: React.FC<{
 	return (
 		<AbsoluteFill>
 			<Backdrop seed={11} intensity={1.3} />
-			<FloorGrid opacity={0.36} speed={1.5} />
-			<ParticleField count={34} speed={0.6} color={THEME.accentAlt} />
+			<ParticleField count={34} speed={0.6} color={THEME.accentAlt} sceneSeed={11} />
 			<SceneFrame gap={unit * 26} push={0.05}>
 				<IconBadge name={icon} size={unit * 104} delay={2} color={THEME.accentAlt} />
-				<Headline
-					text={headline}
-					size={unit * 96}
-					delay={8}
-					stagger={3.5}
-					uppercase
-					weight={800}
-					tracking={-unit * 1.4}
-					maxWidth={unit * 1000}
-				/>
+				<TitlePlate delay={6}>
+					<Headline
+						text={headline}
+						size={unit * 96}
+						delay={8}
+						stagger={3.5}
+						uppercase
+						weight={800}
+						tracking={-unit * 1.4}
+						maxWidth={unit * 1000}
+					/>
+				</TitlePlate>
 				<Rule delay={22} width={Math.min(width * 0.4, unit * 480)} />
 				<Copy text={subline} delay={26} size={unit * 30} />
 				{tagline ? (
@@ -1763,7 +2164,7 @@ const CtaScene: React.FC<{
 						style={{
 							marginTop: unit * 12,
 							padding: unit * 12 + 'px ' + unit * 26 + 'px',
-							borderRadius: unit * 100,
+							borderRadius: cornerRadius(unit),
 							backgroundColor: withAlpha(THEME.accent, 0.14),
 							border: '1px solid ' + withAlpha(THEME.accent, 0.4),
 							fontFamily: TEXT_FONT,
@@ -1886,7 +2287,7 @@ const Globe3dScene: React.FC<{
 	return (
 		<AbsoluteFill>
 			<Backdrop seed={13} intensity={1} />
-			<ParticleField count={40} speed={0.22} color={THEME.accentAlt} size={4} />
+			<ParticleField count={40} speed={0.22} color={THEME.accentAlt} size={4} sceneSeed={13} />
 			<ThreeStage distance={distance} yaw={Math.sin(frame / 200) * 0.22} pitch={0.16} fov={36}>
 				<group rotation={[0.32, spin, 0.06]} scale={0.4 + enter * 0.6}>
 					<mesh castShadow receiveShadow>
@@ -2022,8 +2423,9 @@ const GlobeChip: React.FC<{ name: string; delay: number }> = ({ name, delay }) =
 	terrain3d: `
 /** Deterministic height field - the same seed always builds the same range. */
 const terrainHeight = (x: number, y: number, profile: string): number => {
-	const ridge = Math.sin(x * 0.52 + 1.3) * Math.cos(y * 0.44)
-	const detail = Math.sin(x * 1.7 + y * 0.9) * 0.32 + Math.cos(x * 2.6 - y * 1.4) * 0.19
+	const phase = random(CREATIVE_SEED + ':terrain-phase') * Math.PI * 2
+	const ridge = Math.sin(x * 0.52 + 1.3 + phase) * Math.cos(y * 0.44 - phase * 0.4)
+	const detail = Math.sin(x * 1.7 + y * 0.9 + phase * 0.7) * 0.32 + Math.cos(x * 2.6 - y * 1.4 - phase) * 0.19
 	if (profile === 'desert') return (Math.abs(ridge) * 0.85 + detail * 0.2) * 1.15
 	if (profile === 'ocean') return Math.sin(x * 0.85 + y * 0.55) * 0.34 + detail * 0.12
 	if (profile === 'valley') return Math.min(2.6, Math.abs(x) * 0.34) + ridge * 0.42
@@ -2106,7 +2508,6 @@ const Carousel3dScene: React.FC<{ frames: number; headline: string; items: Carou
 	return (
 		<AbsoluteFill>
 			<Backdrop seed={15} intensity={1.2} />
-			<FloorGrid opacity={0.3} speed={1.4} />
 			<AbsoluteFill
 				style={{
 					alignItems: 'center',
@@ -2188,7 +2589,7 @@ const CarouselCard: React.FC<{
 			}}
 		>
 			<VectorIcon name={item.icon} size={unit * 52} color={THEME.accent} strokeWidth={1.7} glow />
-			<span style={{ fontFamily: DISPLAY_FONT, fontSize: unit * 38, fontWeight: 800, color: THEME.ink, lineHeight: 1.12 }}>
+			<span style={{ fontFamily: DISPLAY_FONT, fontSize: unit * 38, fontWeight: DISPLAY_WEIGHT, color: THEME.ink, lineHeight: 1.12 }}>
 				{item.title}
 			</span>
 			{item.detail ? (
@@ -2347,80 +2748,129 @@ function sceneProps(scene: Scene, frames: number): string {
 type Presentation = 'fade' | 'slide' | 'wipe'
 
 function presentationFor(storyboard: Storyboard, index: number, next: Scene): Presentation {
-	if (storyboard.motion === 'calm') return 'fade'
-	if (next.type === 'landscape' || next.type === 'monument' || next.type === 'quote') return 'fade'
-	if (storyboard.motion === 'punchy') return index % 2 === 0 ? 'slide' : 'wipe'
-	return index % 3 === 1 ? 'slide' : 'fade'
+	const recipe = storyboard.creativeProfile.transition
+	if (recipe === 'dissolve') return 'fade'
+	if (recipe === 'directional') return next.type === 'quote' ? 'fade' : 'slide'
+	if (recipe === 'graphic-wipe') return next.type === 'landscape' ? 'fade' : 'wipe'
+	// 'kinetic' alternates a hard wipe with a directional push, never a dissolve,
+	// so cuts land on the beat instead of melting into one another.
+	if (recipe === 'kinetic') return index % 2 === 0 ? 'wipe' : 'slide'
+	const choices: Presentation[] = storyboard.motion === 'calm' ? ['fade', 'fade', 'slide'] : ['fade', 'slide', 'wipe']
+	return choices[seededIndex(storyboard.creativeSeed, `transition-${index}-${next.type}`, choices.length)]
 }
 
-function presentationCall(presentation: Presentation, index: number): string {
+function presentationCall(presentation: Presentation, index: number, storyboard: Storyboard): string {
 	if (presentation === 'slide') {
-		return `slide({ direction: '${index % 4 === 0 ? 'from-right' : 'from-bottom'}' })`
+		const directions = ['from-right', 'from-bottom', 'from-left', 'from-top'] as const
+		const direction = directions[seededIndex(storyboard.creativeSeed, `slide-direction-${index}`, directions.length)]
+		return `slide({ direction: '${direction}' })`
 	}
 	if (presentation === 'wipe') {
-		return `wipe({ direction: '${index % 4 === 1 ? 'from-left' : 'from-top'}' })`
+		const directions = ['from-left', 'from-top', 'from-right', 'from-bottom'] as const
+		const direction = directions[seededIndex(storyboard.creativeSeed, `wipe-direction-${index}`, directions.length)]
+		return `wipe({ direction: '${direction}' })`
 	}
 	return 'fade()'
 }
 
 type SoundCue = { id: string; asset: string; from: number; durationInFrames: number; volume: number }
 
+function variantSfxAsset(storyboard: Storyboard, family: SfxVariantFamilyId, ordinal: number): string {
+	const sceneNudge = storyboard.creativeProfile.sceneVariants[
+		ordinal % Math.max(1, storyboard.creativeProfile.sceneVariants.length)
+	] ?? 0
+	return sfxVariantPath(family, storyboard.creativeProfile.sfxVariantOffset + ordinal * 7 + sceneNudge)
+}
+
+function legacyVariantSfxAsset(storyboard: Storyboard, id: SfxId, ordinal: number): string {
+	return variantSfxAsset(storyboard, SFX_LEGACY_FAMILY[id], ordinal)
+}
+
 function soundCues(storyboard: Storyboard, layout: StoryboardLayout): SoundCue[] {
 	const cues: SoundCue[] = []
 	const fps = layout.fps
 	const punchy = storyboard.motion === 'punchy'
+	const recipe = storyboard.creativeProfile.sfx
+	const tempo = storyboard.creativeProfile.tempoScale
+	const openId: SfxId =
+		recipe === 'cinematic'
+			? 'impactBoom'
+			: recipe === 'crisp'
+				? 'impactSnap'
+				: recipe === 'organic'
+					? 'impactClean'
+					: recipe === 'digital'
+						? 'glitch'
+						: 'impactDeep'
+	const transitionId: SfxId =
+		recipe === 'organic'
+			? 'riserOrganic'
+			: recipe === 'digital'
+				? 'riserDigital'
+				: recipe === 'crisp'
+					? 'swipe'
+					: punchy
+						? 'whooshFast'
+						: 'whooshDeep'
 
 	cues.push({
 		id: 'open-impact',
-		asset: SFX_KIT[punchy ? 'impactSnap' : 'impactDeep'],
+		asset: legacyVariantSfxAsset(storyboard, openId, cues.length),
 		from: 2,
-		durationInFrames: Math.round(fps * 2),
-		volume: 0.55,
+		durationInFrames: Math.round((fps * 2) / tempo),
+		volume: recipe === 'minimal' ? 0.38 : 0.55,
 	})
 
 	for (const [index, timing] of layout.timings.entries()) {
-		if (index > 0) {
+		if (index > 0 && (recipe !== 'minimal' || index % 2 === 1)) {
 			cues.push({
 				id: `cut-${index}`,
-				asset: SFX_KIT[punchy ? 'whooshFast' : 'whooshDeep'],
+				asset: legacyVariantSfxAsset(storyboard, transitionId, cues.length),
 				from: Math.max(0, timing.from - Math.round(fps * 0.2)),
-				durationInFrames: Math.round(fps * 1.2),
+				durationInFrames: Math.round((fps * 1.2) / tempo),
 				volume: 0.4,
 			})
 		}
 
 		const scene = timing.scene
 		if (scene.type === 'stats' || scene.type === 'chart') {
+			const id: SfxId = recipe === 'crisp' ? 'notification' : recipe === 'organic' ? 'chimeSparkle' : 'powerUp'
 			cues.push({
 				id: `data-${index}`,
-				asset: SFX_KIT.powerUp,
+				asset: legacyVariantSfxAsset(storyboard, id, cues.length),
 				from: timing.from + 8,
 				durationInFrames: Math.round(fps * 1.6),
 				volume: 0.34,
 			})
 		}
 		if (scene.type === 'gallery' || scene.type === 'process' || scene.type === 'timeline') {
+			const id: SfxId = recipe === 'digital' ? 'typewriter' : recipe === 'organic' ? 'clickSoft' : 'popClean'
 			cues.push({
 				id: `list-${index}`,
-				asset: SFX_KIT.popClean,
+				asset:
+					recipe === 'minimal'
+						? variantSfxAsset(storyboard, 'foley-touch', cues.length)
+						: legacyVariantSfxAsset(storyboard, id, cues.length),
 				from: timing.from + 10,
 				durationInFrames: Math.round(fps * 1),
 				volume: 0.3,
 			})
 		}
 		if (scene.type === 'monument' || scene.type === 'landscape') {
+			const id: SfxId = recipe === 'cinematic' ? 'riserOrganic' : recipe === 'digital' ? 'powerUp' : 'revealShimmer'
 			cues.push({
 				id: `reveal-${index}`,
-				asset: SFX_KIT.revealShimmer,
+				asset: legacyVariantSfxAsset(storyboard, id, cues.length),
 				from: timing.from + 6,
 				durationInFrames: Math.round(fps * 2),
 				volume: 0.3,
 			})
 		}
 		if (scene.type === 'cta') {
+			const id: SfxId = recipe === 'minimal' ? 'chimeSparkle' : recipe === 'digital' ? 'powerUp' : 'logoStinger'
 			cues.push({
 				id: `stinger-${index}`,
-				asset: SFX_KIT.logoStinger,
+				asset: legacyVariantSfxAsset(storyboard, id, cues.length),
 				from: timing.from + 4,
 				durationInFrames: Math.round(fps * 2.4),
 				volume: 0.42,
@@ -2431,17 +2881,39 @@ function soundCues(storyboard: Storyboard, layout: StoryboardLayout): SoundCue[]
 	return cues.filter((cue) => cue.from < layout.durationInFrames)
 }
 
+function selectedFontWeight(weight: string, desired: number): number {
+	const values = weight.match(/\d+/g)?.map(Number).filter(Number.isFinite) ?? []
+	if (values.length === 0) return desired
+	if (values.length === 1) return values[0]
+	return Math.round(Math.min(Math.max(desired, Math.min(...values)), Math.max(...values)))
+}
+
 /** Builds the complete TSX file for a storyboard. */
 export function composeVideoSource(storyboard: Storyboard): ComposedVideo {
 	const layout = layoutStoryboard(storyboard)
-	const palette = PALETTES[storyboard.palette]
+	const palette = themeFor(PALETTES[storyboard.palette], storyboard.creativeProfile)
 	const display = FONT_KIT[storyboard.displayFont]
 	const body = FONT_KIT[storyboard.textFont]
 	const icons = usedIcons(storyboard)
 	const types = [...new Set(layout.timings.map((timing) => timing.scene.type))]
-	const compositionId = pascalCase(storyboard.title || storyboard.subject || 'AiVideo') || 'AiVideo'
+	const seedSuffix = creativeSeedSuffix(storyboard.creativeSeed)
+	const compositionBase = pascalCase(storyboard.title || storyboard.subject || 'AiVideo') || 'AiVideo'
+	const compositionId = `${compositionBase}V${seedSuffix}`
 	const cues = soundCues(storyboard, layout)
 	const summary = storyboardSummary(storyboard, layout)
+	const desiredDisplayWeight =
+		storyboard.creativeProfile.typography === 'editorial'
+			? 650
+			: storyboard.creativeProfile.typography === 'friendly'
+				? 700
+				: storyboard.creativeProfile.typography === 'technical'
+					? 720
+					: 820
+	const displayWeight = selectedFontWeight(display.weight, desiredDisplayWeight)
+	const textWeight = selectedFontWeight(body.weight, 450)
+	const bodyWeightValues = body.weight.match(/\d+/g)?.map(Number).filter(Number.isFinite) ?? [textWeight]
+	const textWeightMin = Math.min(...bodyWeightValues)
+	const textWeightMax = Math.max(...bodyWeightValues)
 
 	const presentations = new Set<Presentation>()
 	for (const [index, timing] of layout.timings.entries()) {
@@ -2526,6 +2998,14 @@ export const THEME = {
 	glow: '${palette.glow}',
 } as const
 
+export const GENERATION = {
+	id: ${json(storyboard.creativeSeed)},
+	designFingerprint: ${json(storyboard.designFingerprint)},
+} as const
+
+export const CREATIVE = ${json(storyboard.creativeProfile)} as const
+const CREATIVE_SEED = GENERATION.id
+
 loadFont({
 	family: '${display.family}',
 	url: staticFile('assets/fonts/v1/${display.file}'),
@@ -2539,6 +3019,10 @@ loadFont({
 
 const DISPLAY_FONT = "'${display.family}', ${display.fallback}"
 const TEXT_FONT = "'${body.family}', ${body.fallback}"
+const DISPLAY_WEIGHT = ${displayWeight}
+const TEXT_WEIGHT = ${textWeight}
+const TEXT_WEIGHT_MIN = ${textWeightMin}
+const TEXT_WEIGHT_MAX = ${textWeightMax}
 
 /**
  * How dimensional this film is: 'flat' keeps everything on one plane, 'depth'
@@ -2592,12 +3076,45 @@ const FilmLayer: React.FC = () => {
 	const frame = useCurrentFrame()
 	const drift = (frame % 12) - 6
 	const leakShift = interpolate(frame, [0, VIDEO.durationInFrames], [-8, 8])
+	/**
+	 * How heavily the frame is finished. 'matte' is the flattest of the set - it
+	 * keeps the vignette faint and drops the light leak entirely - while 'print'
+	 * leans on stock texture instead of light.
+	 */
+	const vignetteOpacity =
+		CREATIVE.finish === 'matte'
+			? 0.18
+			: CREATIVE.finish === 'clean'
+				? 0.28
+				: CREATIVE.finish === 'luminous'
+					? 0.38
+					: CREATIVE.finish === 'print'
+						? 0.34
+						: 0.55
+	const grainOpacity =
+		CREATIVE.finish === 'clean'
+			? 0.07
+			: CREATIVE.finish === 'matte'
+				? 0.09
+				: CREATIVE.finish === 'paper'
+					? 0.2
+					: CREATIVE.finish === 'print'
+						? 0.26
+						: 0.14
+	const leakOpacity =
+		CREATIVE.finish === 'matte' || CREATIVE.finish === 'print'
+			? 0
+			: CREATIVE.finish === 'luminous'
+				? 0.3
+				: CREATIVE.finish === 'clean'
+					? 0.1
+					: 0.2
 
 	return (
 		<AbsoluteFill style={{ pointerEvents: 'none' }}>
 			<Img
 				src={VIGNETTE_SRC}
-				style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.55 }}
+				style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: vignetteOpacity }}
 			/>${
 				leakSource
 					? `
@@ -2609,7 +3126,7 @@ const FilmLayer: React.FC = () => {
 					width: '112%',
 					height: '112%',
 					objectFit: 'cover',
-					opacity: 0.22,
+					opacity: leakOpacity,
 					mixBlendMode: 'screen',
 					transform: 'translateX(' + leakShift.toFixed(2) + 'px)',
 				}}
@@ -2626,8 +3143,8 @@ const FilmLayer: React.FC = () => {
 					width: '108%',
 					height: '108%',
 					objectFit: 'cover',
-					opacity: 0.17,
-					mixBlendMode: 'overlay',
+					opacity: grainOpacity,
+					mixBlendMode: CREATIVE.finish === 'paper' || CREATIVE.finish === 'print' ? 'multiply' : 'overlay',
 					transform: 'translate(' + drift + 'px, ' + -drift + 'px)',
 				}}
 			/>`
@@ -2695,18 +3212,24 @@ const Soundtrack: React.FC = () => (
 /* -------------------------------------------------------------------------- */
 
 export const ${compositionId}Video: React.FC = () => (
-	<AbsoluteFill style={{ backgroundColor: THEME.background, fontFamily: TEXT_FONT }}>
+	<AbsoluteFill style={{ backgroundColor: THEME.background, fontFamily: TEXT_FONT, fontWeight: TEXT_WEIGHT, fontSynthesis: 'none' }}>
 		<TransitionSeries>`)
 
 	for (const [index, timing] of layout.timings.entries()) {
 		const component = SCENE_COMPONENT[timing.scene.type]
+		const creativeVariant = storyboard.creativeProfile.sceneVariants[index] ?? 0
+		const visualFamily = storyboard.creativeProfile.visualFamilies[index] ?? 'burst'
+		const visualVariant = storyboard.creativeProfile.visualVariants[index] ?? 0
+		const artworkPath = visualVariantPath(visualFamily, visualVariant)
 		out.push(`			<TransitionSeries.Sequence durationInFrames={${timing.durationInFrames}}>
-				<${component} ${sceneProps(timing.scene, timing.durationInFrames)} />
+				<CreativeSceneShell variant={${creativeVariant}} artworkSrc={staticFile('assets/visual/v1/${artworkPath}')}>
+					<${component} ${sceneProps(timing.scene, timing.durationInFrames)} />
+				</CreativeSceneShell>
 			</TransitionSeries.Sequence>`)
 		if (index < layout.timings.length - 1 && timing.transitionOut > 0) {
 			const presentation = presentationFor(storyboard, index, layout.timings[index + 1].scene)
 			out.push(`			<TransitionSeries.Transition
-				presentation={${presentationCall(presentation, index)}}
+				presentation={${presentationCall(presentation, index, storyboard)}}
 				timing={linearTiming({ durationInFrames: ${timing.transitionOut} })}
 			/>`)
 		}
@@ -2737,7 +3260,7 @@ export default ${compositionId}Video
 
 	return {
 		code: out.join('\n'),
-		fileName: 'ai-generated-video.tsx',
+		fileName: `ai-generated-${seedSuffix}.tsx`,
 		projectName: storyboard.title || storyboard.subject || 'AI generated video',
 		compositionId,
 		layout,

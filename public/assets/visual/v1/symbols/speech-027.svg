@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Speech Stack 027</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FF7AA8"/><stop offset="1" stop-color="#335C9F"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#335C9F"/><stop offset="1" stop-color="#FF7AA8"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF2F7"/><stop offset=".34" stop-color="#FFB5CD"/><stop offset="1" stop-color="#335C9F"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#1B2A4A" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><g><rect x="186.25" y="52" width="191" height="130.97" rx="45.21" fill="url(#paint)" opacity="0.7" stroke="#FFF2F7" stroke-width="4"/><path d="M305.77 178.97L357.77 215.62L341.77 178.97Z" fill="#FF7AA8"/><circle cx="239.73" cy="117.49" r="8" fill="#FFF2F7"/><rect x="262.65" y="108.32" width="48.02" height="14" rx="7" fill="#1B2A4A" opacity=".65"/></g><g><rect x="152.23" y="412" width="216.42" height="135.4" rx="39.63" fill="url(#paint-reverse)" opacity="0.78" stroke="#FFF2F7" stroke-width="4"/><path d="M194.82 543.4L178.82 581.33L230.82 543.4Z" fill="#335C9F"/><circle cx="212.82" cy="479.7" r="8" fill="#FFF2F7"/><rect x="238.8" y="470.22" width="62.99" height="14" rx="7" fill="#1B2A4A" opacity=".65"/></g></g>
+</svg>

@@ -119,6 +119,10 @@
  * subject calls for natural, editorial, minimal, historical, playful, or other
  * aesthetics. Never repeat the demo arrangement when a subject-specific shot
  * tells the story better.
+ * Never use graph paper, blueprint lines, dot grids, Cartesian grids, tiled
+ * line patterns, or receding perspective grids as a background. CSS Grid is
+ * allowed strictly as an invisible layout mechanism, and real chart axes may
+ * remain when the data requires them.
  * Every video also needs intentional sound unless the user explicitly asks for
  * silence. Choose one music bed for the subject and separate the remaining cues
  * into SOUNDS (small UI/story actions) and SFX (transitions, impacts, risers,
@@ -151,6 +155,7 @@
  * - Music, sounds, and SFX are balanced and share exact frames with their visuals.
  * - Type is loaded from FONT_KIT, weights are real, and no font is fetched remotely.
  * - Grain/vignette/leaks stay subtle; textures serve the story, not the demo.
+ * - No background uses a line grid, dot grid, graph-paper or floor-grid motif.
  * - All copy fits, all animations use frames, and 9:16/16:9/1:1 layouts are
  *   redesigned rather than stretched when the user requests those formats.
  * - Complexity is bounded: semantic subjects survive before particles/glow are
@@ -1481,9 +1486,6 @@ const Background: React.FC = () => {
 						<stop offset="35%" stopColor="#04050c" stopOpacity={0} />
 						<stop offset="100%" stopColor="#04050c" stopOpacity={0.74} />
 					</radialGradient>
-					<pattern id="ai-master-grid" width="72" height="72" patternUnits="userSpaceOnUse">
-						<path d="M 72 0 L 0 0 0 72" fill="none" stroke={THEME.line} strokeWidth="1" />
-					</pattern>
 				</defs>
 				<circle
 					cx={160 + Math.cos(phase) * 80}
@@ -1497,7 +1499,13 @@ const Background: React.FC = () => {
 					r="430"
 					fill="url(#ai-master-secondary-glow)"
 				/>
-				<rect width={width} height={height} fill="url(#ai-master-grid)" opacity={0.08} />
+				<path
+					d={`M ${-width * 0.08} ${height * (0.68 + Math.sin(phase) * 0.025)} C ${width * 0.2} ${height * 0.52}, ${width * 0.66} ${height * 0.84}, ${width * 1.08} ${height * 0.62}`}
+					fill="none"
+					stroke={THEME.line}
+					strokeWidth={Math.max(2, width * 0.002)}
+					opacity={0.42}
+				/>
 				<rect width={width} height={height} fill="url(#ai-master-vignette)" />
 			</svg>
 			<ParticleField seed={17} count={20} colorA={THEME.accent} colorB={THEME.accent2} />

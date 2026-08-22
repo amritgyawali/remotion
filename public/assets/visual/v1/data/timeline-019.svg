@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Motion Timeline 019</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#25A66A"/><stop offset="1" stop-color="#B8D95A"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#B8D95A"/><stop offset="1" stop-color="#25A66A"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#F4FFD8"/><stop offset=".34" stop-color="#A8F0B8"/><stop offset="1" stop-color="#B8D95A"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#143526" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><path d="M52 247.81C103 247.81,103 374.91,154 374.91C205 374.91,205 308.43,256 308.43C307 308.43,307 216.35,358 216.35C409 216.35,409 209.17,460 209.17" fill="none" stroke="url(#paint)" stroke-width="13" stroke-linecap="round"/><g><circle cx="52" cy="247.81" r="21.19" fill="#B8D95A" stroke="#F4FFD8" stroke-width="5"/><rect x="18.2" y="285.81" width="68.01" height="18.45" rx="9" fill="#143526" opacity=".72"/></g><g><circle cx="154" cy="374.91" r="18.25" fill="#25A66A" stroke="#F4FFD8" stroke-width="5"/><rect x="117.86" y="298.91" width="76.76" height="26.62" rx="9" fill="#143526" opacity=".72"/></g><g><circle cx="256" cy="308.43" r="21.59" fill="#B8D95A" stroke="#F4FFD8" stroke-width="5"/><rect x="230.53" y="346.43" width="68.52" height="21.55" rx="9" fill="#143526" opacity=".72"/></g><g><circle cx="358" cy="216.35" r="15.55" fill="#25A66A" stroke="#F4FFD8" stroke-width="5"/><rect x="326.47" y="140.35" width="90.68" height="17.55" rx="9" fill="#143526" opacity=".72"/></g><g><circle cx="460" cy="209.17" r="17.35" fill="#B8D95A" stroke="#F4FFD8" stroke-width="5"/><rect x="421.26" y="247.17" width="53.85" height="16.19" rx="9" fill="#143526" opacity=".72"/></g></g>
+</svg>

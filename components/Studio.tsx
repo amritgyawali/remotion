@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { composeVideoSource } from '../lib/ai/compose'
-import { planStoryboard } from '../lib/ai/planner'
+import { planStoryboard, promptRequestsThreeDimensional } from '../lib/ai/planner'
+import type { TemplateId } from '../lib/ai/variation'
 import { compileProject } from '../lib/compiler'
 import { loadSampleProject, projectFromFiles, projectFromZip } from '../lib/project'
 import { useRenderController } from '../lib/use-render-controller'
@@ -155,6 +156,9 @@ export default function Studio() {
 				seconds: number
 				aspect: string
 				title: string
+				generationId: string
+				designFingerprint: string
+				template?: string
 				notice?: string
 			}
 
@@ -169,6 +173,9 @@ export default function Studio() {
 						prompt: request.prompt,
 						model: request.model,
 						history: request.history,
+						creativeSeed: request.creativeSeed,
+						avoidDesignFingerprints: request.avoidDesignFingerprints,
+						avoidTemplates: request.avoidTemplates,
 					}),
 				})
 				const data = (await response.json().catch(() => ({}))) as Partial<Candidate> & {
@@ -188,6 +195,9 @@ export default function Studio() {
 						seconds: data.seconds ?? 0,
 						aspect: data.aspect ?? '',
 						title: data.title ?? '',
+						generationId: data.generationId || request.creativeSeed,
+						designFingerprint: data.designFingerprint || '',
+						template: data.template,
 						notice: data.notice,
 					})
 				} else {
@@ -200,7 +210,19 @@ export default function Studio() {
 				transportError = error instanceof Error ? error.message : String(error)
 			}
 
-			const local = composeVideoSource(planStoryboard(request.prompt))
+			// The browser fallback reads the same whole-chat 3D rule the API uses,
+			// so an offline generation cannot quietly reintroduce WebGL scenes.
+			const allowThreeDimensional = [
+				request.prompt,
+				...request.history.filter((item) => item.role === 'user').map((item) => item.text),
+			].some((text) => promptRequestsThreeDimensional(text))
+			const localStoryboard = planStoryboard(request.prompt, {
+				creativeSeed: request.creativeSeed,
+				avoidDesignFingerprints: request.avoidDesignFingerprints,
+				avoidTemplates: request.avoidTemplates as TemplateId[],
+				allowThreeDimensional,
+			})
+			const local = composeVideoSource(localStoryboard)
 			candidates.push({
 				code: local.code,
 				fileName: local.fileName,
@@ -212,6 +234,9 @@ export default function Studio() {
 				seconds: Number((local.layout.durationInFrames / local.layout.fps).toFixed(1)),
 				aspect: `${local.layout.width}x${local.layout.height}`,
 				title: local.projectName,
+				generationId: localStoryboard.creativeSeed,
+				designFingerprint: localStoryboard.designFingerprint,
+				template: localStoryboard.creativeProfile.template,
 				notice: transportError
 					? `The AI service was unavailable, so the Studio director planned this video in your browser. ${transportError}`
 					: 'The Studio director planned this video in your browser.',
@@ -239,6 +264,9 @@ export default function Studio() {
 						scenes: candidate.scenes,
 						seconds: candidate.seconds || Math.round(first.durationInFrames / first.fps),
 						title: candidate.title || candidate.projectName,
+						generationId: candidate.generationId,
+						designFingerprint: candidate.designFingerprint,
+						template: candidate.template,
 						notice: candidate.notice,
 						renderQueued: request.renderAfterGenerate,
 					}

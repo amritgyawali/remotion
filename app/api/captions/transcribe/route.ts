@@ -71,6 +71,32 @@ function httpEndpoints(model: CloudAsrModel): { endpoint: string; dialect: 'open
 	return list
 }
 
+/**
+ * Vocabulary the recogniser should expect.
+ *
+ * Riva takes phrase hints with a boost, and they are the one lever that moves
+ * the names a model has never seen - a person, a product, a place - out of the
+ * "words written differently from how they were spoken" column. Hints arrive
+ * per request from the studio and, for a deployment that always covers the same
+ * subject, from NVIDIA_ASR_PHRASES on the server.
+ */
+function speechHints(requested: string | null): string[] {
+	const fromEnv = process.env.NVIDIA_ASR_PHRASES?.trim() ?? ''
+	const merged = [requested ?? '', fromEnv]
+		.join('\n')
+		.split(/[\n,;|]+/)
+		.map((phrase) => phrase.trim())
+		.filter((phrase) => phrase.length > 0 && phrase.length <= 120)
+	// Riva caps what it will accept, and a huge list dilutes every hint in it.
+	return [...new Set(merged)].slice(0, 100)
+}
+
+function hintBoost(): number {
+	const value = Number(process.env.NVIDIA_ASR_PHRASE_BOOST?.trim())
+	// NVIDIA recommends 0 - 20; past that, false positives outweigh the recall.
+	return Number.isFinite(value) && value > 0 ? Math.min(20, value) : 6
+}
+
 /** Escape hatch for an HTTP-only deployment - a NIM behind a plain proxy. */
 function grpcDisabled(): boolean {
 	const value = process.env.NVIDIA_ASR_DISABLE_GRPC?.trim()
@@ -166,30 +192,78 @@ function firstNumber(source: UnknownRecord, keys: string[]): number | null {
 	return null
 }
 
-type RawWord = { text: string; start: number; end: number }
+type TimeUnit = 'ms' | 'seconds' | 'unknown'
+
+type RawWord = { text: string; start: number; end: number; unit: TimeUnit }
+
+/**
+ * The unit each key is documented to carry.
+ *
+ * Guessing from magnitude alone is what makes a short chunk come back with
+ * every word crammed into its first second: a Riva reply that happens to hold
+ * small millisecond values looks exactly like an OpenAI reply holding seconds.
+ * The key name is the one piece of evidence that is never ambiguous, so it is
+ * consulted first and the magnitude only settles what the names cannot.
+ */
+const START_KEYS: { key: string; unit: TimeUnit }[] = [
+	{ key: 'start_time', unit: 'ms' },
+	{ key: 'startMs', unit: 'ms' },
+	{ key: 'start_ms', unit: 'ms' },
+	{ key: 'offset', unit: 'ms' },
+	{ key: 'start', unit: 'seconds' },
+	{ key: 'startTime', unit: 'unknown' },
+]
+
+const END_KEYS: { key: string; unit: TimeUnit }[] = [
+	{ key: 'end_time', unit: 'ms' },
+	{ key: 'endMs', unit: 'ms' },
+	{ key: 'end_ms', unit: 'ms' },
+	{ key: 'end', unit: 'seconds' },
+	{ key: 'endTime', unit: 'unknown' },
+]
+
+function firstKeyed(
+	source: UnknownRecord,
+	keys: { key: string; unit: TimeUnit }[],
+): { value: number; unit: TimeUnit } | null {
+	for (const entry of keys) {
+		const value = firstNumber(source, [entry.key])
+		if (value !== null) return { value, unit: entry.unit }
+	}
+	return null
+}
 
 function collectWords(value: unknown, into: RawWord[]): void {
 	if (!Array.isArray(value)) return
 	for (const entry of value) {
 		if (!isRecord(entry)) continue
 		const text = firstString(entry, ['word', 'text', 'value'])
-		const start = firstNumber(entry, ['start', 'start_time', 'startTime', 'startMs', 'start_ms', 'offset'])
-		const end = firstNumber(entry, ['end', 'end_time', 'endTime', 'endMs', 'end_ms'])
-		if (!text || start === null || end === null) continue
-		into.push({ text: text.trim(), start, end })
+		const start = firstKeyed(entry, START_KEYS)
+		const end = firstKeyed(entry, END_KEYS)
+		if (!text || !start || !end) continue
+		const unit: TimeUnit =
+			start.unit !== 'unknown' ? start.unit : end.unit !== 'unknown' ? end.unit : 'unknown'
+		into.push({ text: text.trim(), start: start.value, end: end.value, unit })
 	}
 }
 
 /**
  * Endpoints disagree on units: OpenAI-shaped payloads count seconds, Riva
- * counts milliseconds. The chunk duration settles it - a chunk is at most a
- * couple of minutes, so a value far beyond that cannot be seconds.
+ * counts milliseconds. The key names settle it wherever they are unambiguous;
+ * otherwise the chunk duration does, since a chunk is at most a couple of
+ * minutes and a value far beyond that cannot be seconds.
  */
 function toMilliseconds(words: RawWord[], durationMs: number): CloudWord[] {
-	let largest = 0
-	for (const word of words) largest = Math.max(largest, word.end, word.start)
-	const seconds = largest <= Math.max(1, durationMs / 1000) * 1.5 + 1
-	const scale = seconds ? 1000 : 1
+	const declared = words.find((word) => word.unit !== 'unknown')?.unit
+	let unit: TimeUnit | undefined = declared
+	if (words.some((word) => word.unit !== 'unknown' && word.unit !== declared)) unit = undefined
+
+	if (!unit) {
+		let largest = 0
+		for (const word of words) largest = Math.max(largest, word.end, word.start)
+		unit = largest <= Math.max(1, durationMs / 1000) * 1.5 + 1 ? 'seconds' : 'ms'
+	}
+	const scale = unit === 'seconds' ? 1000 : 1
 
 	return words
 		.map((word) => {
@@ -199,6 +273,23 @@ function toMilliseconds(words: RawWord[], durationMs: number): CloudWord[] {
 		})
 		.filter((word) => word.text.length > 0)
 		.sort((left, right) => left.startMs - right.startMs)
+}
+
+/**
+ * Timings that cannot be true are worse than no timings at all.
+ *
+ * A caller that is told "these are real" pins the captions to them; a caller
+ * that is told "these were estimated" aligns the text to the audio itself,
+ * which is the better answer whenever the recogniser's clock is wrong. All
+ * zeros, everything inside the first instant, or a transcript that claims to
+ * run well past the audio it came from are all that case.
+ */
+function timingsAreUsable(words: CloudWord[], durationMs: number): boolean {
+	if (words.length === 0) return false
+	const last = words[words.length - 1]
+	if (last.endMs <= 0) return false
+	if (words.length > 2 && last.endMs < Math.min(400, durationMs / 4)) return false
+	return last.endMs <= durationMs * 1.6 + 2_000
 }
 
 /** Spreads a plain transcript over the chunk when no timings came back. */
@@ -263,7 +354,11 @@ function normalise(
 		''
 	const joined = (text || words.map((word) => word.text).join(' ')).trim()
 
-	if (words.length > 0) return { text: joined, words, estimated: false }
+	if (words.length > 0 && timingsAreUsable(words, durationMs)) {
+		return { text: joined, words, estimated: false }
+	}
+	// Text with no usable clock is not a failure: the caller aligns it to the
+	// audio itself, which beats any timing a confused recogniser can invent.
 	if (joined.length > 0) return { text: joined, words: spreadWords(joined, durationMs), estimated: true }
 	return null
 }
@@ -278,6 +373,7 @@ function buildForm(args: {
 	fileName: string
 	model: CloudAsrModel
 	language: string
+	hints: string[]
 }): FormData {
 	const form = new FormData()
 	form.append('file', args.audio, args.fileName)
@@ -294,6 +390,10 @@ function buildForm(args: {
 	form.append('language', args.language === 'multi' ? 'multi' : rivaLocale(args.language))
 	form.append('word_time_offsets', 'true')
 	form.append('automatic_punctuation', 'true')
+	if (args.hints.length > 0) {
+		form.append('boosted_lm_words', args.hints.join(','))
+		form.append('boosted_lm_score', String(hintBoost()))
+	}
 	if (process.env.NVIDIA_ASR_MODEL?.trim()) form.append('model', args.model.id)
 	return form
 }
@@ -336,6 +436,7 @@ async function callHttp(args: {
 	language: string
 	key: string
 	durationMs: number
+	hints: string[]
 }): Promise<{ text: string; words: CloudWord[]; estimated: boolean }> {
 	const response = await fetch(args.endpoint, {
 		method: 'POST',
@@ -364,6 +465,7 @@ async function callGrpc(args: {
 	model: CloudAsrModel
 	key: string
 	durationMs: number
+	hints: string[]
 }): Promise<{ text: string; words: CloudWord[]; estimated: boolean }> {
 	const result = await rivaRecognize({
 		pcm: args.pcm,
@@ -373,15 +475,23 @@ async function callGrpc(args: {
 		apiKey: args.key,
 		timeoutMs: REQUEST_TIMEOUT_MS,
 		target: args.target,
+		hints: args.hints,
+		hintBoost: hintBoost(),
 	}).catch((error: unknown) => {
 		const message = error instanceof Error ? error.message : String(error)
 		if (/rejected the credential/i.test(message)) throw new CredentialError(message)
 		throw new Error(message)
 	})
 
-	if (result.words.length > 0) return { text: result.text, words: result.words, estimated: false }
-	if (result.text) {
-		return { text: result.text, words: spreadWords(result.text, args.durationMs), estimated: true }
+	if (timingsAreUsable(result.words, args.durationMs)) {
+		return { text: result.text, words: result.words, estimated: false }
+	}
+	const text = result.text || result.words.map((word) => word.text).join(' ')
+	if (text.trim()) {
+		// Whisper's hosted function answers with a transcript and no clock at all.
+		// Saying so is what lets the studio align the words to the audio instead
+		// of pinning them to timings that were never measured.
+		return { text: text.trim(), words: spreadWords(text, args.durationMs), estimated: true }
 	}
 	// Silence is a legitimate answer, not a failure - the caller merges chunks.
 	return { text: '', words: [], estimated: false }
@@ -449,6 +559,11 @@ export async function POST(request: Request) {
 	const durationValue = Number((form.get('durationMs') as string | null) ?? '')
 	const durationMs = Number.isFinite(durationValue) && durationValue > 0 ? durationValue : 30_000
 	const fileName = (form.get('fileName') as string | null)?.trim() || 'chunk.wav'
+	const hints = speechHints((form.get('hints') as string | null) ?? null)
+	// Echoed back untouched: the studio needs it to map the recogniser's clock,
+	// which starts at the blob, back onto the clip's clock.
+	const contextValue = Number((form.get('contextMs') as string | null) ?? '')
+	const contextMs = Number.isFinite(contextValue) && contextValue > 0 ? Math.round(contextValue) : 0
 
 	const model = modelFor(requestedModel, language)
 	const bytes = new Uint8Array(await audio.arrayBuffer())
@@ -478,6 +593,7 @@ export async function POST(request: Request) {
 								model,
 								key,
 								durationMs,
+								hints,
 							})
 						: await callHttp({
 								endpoint: transport.endpoint,
@@ -488,6 +604,7 @@ export async function POST(request: Request) {
 								language: languageCode,
 								key,
 								durationMs,
+								hints,
 							})
 
 				preferred = { transport, language: languageCode }
@@ -499,6 +616,8 @@ export async function POST(request: Request) {
 						endpoint: label,
 						language: languageCode,
 						estimatedTimings: result.estimated,
+						contextMs,
+						durationMs,
 					},
 					{ headers: { 'cache-control': 'no-store' } },
 				)

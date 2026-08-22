@@ -4,6 +4,8 @@
  * can highlight the word that is being spoken.
  */
 
+import { speakingWeight } from './align'
+import { silencesBetween, type SpeechSegment } from './vad'
 import type { CaptionCue, CaptionLayoutOptions, CaptionToken, ScriptMix } from './types'
 
 /* ----------------------------------------------------------------- script */
@@ -66,14 +68,17 @@ export function splitWords(text: string): string[] {
 		.filter((word) => word.length > 0)
 }
 
-/** Punctuation deserves a longer beat than a short word, hence the weighting. */
+/**
+ * How much of the clock a word deserves.
+ *
+ * Syllables, not characters: "छ" and "school" each take one beat to say but
+ * are one and six characters long, and a Devanagari cluster carries its vowel
+ * as a mark that lengthens the string without lengthening the word. The count
+ * and the punctuation pause both live in the aligner, so a hand-typed script
+ * and a recognised one are timed by exactly the same rule.
+ */
 function weightOf(word: string): number {
-	const letters = word.replace(/[^\p{L}\p{N}]/gu, '')
-	// A Devanagari cluster is one spoken syllable, so its stripped length maps to
-	// speaking time better than its raw code-point count does.
-	const base = Math.max(1, DEVANAGARI.test(letters) ? visualWidth(letters) * 1.6 : letters.length)
-	const pause = /[.!?।॥]$/.test(word) ? 3 : /[,;:]$/.test(word) ? 1.5 : 0
-	return base + pause
+	return speakingWeight(word)
 }
 
 /** Spreads a line of text across a time span, weighted by word length. */
@@ -118,6 +123,36 @@ export function cueFromTokens(tokens: CaptionToken[]): CaptionCue {
 	}
 }
 
+export type GroupOptions = {
+	/**
+	 * Where speech actually is, when the caller measured it. Word timings alone
+	 * understate a pause whenever the recogniser clips the tail of a word, and
+	 * an understated pause is a line break that lands mid-sentence.
+	 */
+	speech?: SpeechSegment[]
+}
+
+/**
+ * The real pause between two words: the wider of the gap their timings leave
+ * and the silence the audio actually holds there.
+ */
+function pauseBetween(
+	previous: WordTiming,
+	next: WordTiming,
+	speech: SpeechSegment[],
+): number {
+	const gap = next.startMs - previous.endMs
+	if (speech.length === 0 || gap <= 0) return gap
+	let longest = 0
+	for (const silence of silencesBetween(speech, previous.startMs, next.endMs)) {
+		// Only a silence that sits between the two words counts; one inside
+		// either word is the recogniser's business, not the line breaker's.
+		if (silence.endMs <= previous.endMs || silence.startMs >= next.startMs) continue
+		longest = Math.max(longest, silence.endMs - silence.startMs)
+	}
+	return Math.max(gap, longest)
+}
+
 /**
  * Cuts a stream of timed words into readable lines. A cue ends when it hits the
  * word budget, the character budget, the duration budget, a long silence or a
@@ -126,8 +161,10 @@ export function cueFromTokens(tokens: CaptionToken[]): CaptionCue {
 export function groupWordsIntoCues(
 	words: WordTiming[],
 	layout: CaptionLayoutOptions,
+	options: GroupOptions = {},
 ): CaptionCue[] {
 	const cues: CaptionCue[] = []
+	const speech = options.speech ?? []
 	let current: CaptionToken[] = []
 	let characters = 0
 
@@ -143,7 +180,7 @@ export function groupWordsIntoCues(
 		if (!text) continue
 
 		const previous = words[index - 1]
-		const gap = previous ? word.startMs - previous.endMs : 0
+		const gap = previous ? pauseBetween(previous, word, speech) : 0
 		const width = visualWidth(text)
 		const wouldOverflow =
 			current.length >= layout.maxWordsPerCue ||
@@ -169,11 +206,15 @@ export function groupWordsIntoCues(
 }
 
 /** Re-cuts existing cues with new layout limits, keeping every word timing. */
-export function regroupCues(cues: CaptionCue[], layout: CaptionLayoutOptions): CaptionCue[] {
+export function regroupCues(
+	cues: CaptionCue[],
+	layout: CaptionLayoutOptions,
+	options: GroupOptions = {},
+): CaptionCue[] {
 	const words: WordTiming[] = cues.flatMap((cue) =>
 		cue.tokens.map((token) => ({ text: token.text, startMs: token.fromMs, endMs: token.toMs })),
 	)
-	return groupWordsIntoCues(words, layout)
+	return groupWordsIntoCues(words, layout, options)
 }
 
 /**

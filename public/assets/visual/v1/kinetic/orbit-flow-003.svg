@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Orbit Flow 003</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#A62D68"/><stop offset="1" stop-color="#F1B85B"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#F1B85B"/><stop offset="1" stop-color="#A62D68"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF8E8"/><stop offset=".34" stop-color="#F7C6DD"/><stop offset="1" stop-color="#F1B85B"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#371B32" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><ellipse cx="256" cy="256" rx="92" ry="26.97" transform="rotate(39.51 256 256)" fill="none" stroke="url(#paint)" stroke-width="10.51" opacity="0.65"/><ellipse cx="256" cy="256" rx="122.38" ry="66.83" transform="rotate(61.53 256 256)" fill="none" stroke="#FFF8E8" stroke-width="10.27" opacity="0.86"/><ellipse cx="256" cy="256" rx="144.55" ry="50.8" transform="rotate(82.19 256 256)" fill="none" stroke="url(#paint)" stroke-width="7.13" opacity="0.84"/><ellipse cx="256" cy="256" rx="192.17" ry="82.31" transform="rotate(104.11 256 256)" fill="none" stroke="#FFF8E8" stroke-width="10.31" opacity="0.61"/><circle cx="256" cy="256" r="41.96" fill="url(#halo)"/><circle cx="403.65" cy="284.31" r="14.21" fill="#F1B85B" stroke="#FFF8E8" stroke-width="4"/><circle cx="99.27" cy="160.63" r="8.78" fill="#A62D68" stroke="#FFF8E8" stroke-width="4"/><circle cx="226.38" cy="175.04" r="11.06" fill="#F1B85B" stroke="#FFF8E8" stroke-width="4"/><circle cx="223.24" cy="166.03" r="15.04" fill="#A62D68" stroke="#FFF8E8" stroke-width="4"/></g>
+</svg>

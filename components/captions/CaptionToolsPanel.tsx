@@ -20,6 +20,7 @@ export type ToolsActions = {
 	onCase: (mode: CaseMode) => void
 	onCleanPunctuation: () => void
 	onSplitSpeakers: () => void
+	onAlignToSpeech: () => void
 	onStretch: (factor: number) => void
 	onHoldGaps: (maxHoldMs: number) => void
 	onSnapToFrames: () => void
@@ -44,6 +45,7 @@ export default function CaptionToolsPanel({
 	style,
 	fps,
 	disabled,
+	aligning,
 	lastAction,
 	actions,
 }: {
@@ -51,6 +53,8 @@ export default function CaptionToolsPanel({
 	style: CaptionStyle
 	fps: number
 	disabled: boolean
+	/** the align pass has to decode the audio first, which is not instant */
+	aligning: boolean
 	/** what the previous tool did, echoed back so a bulk edit is never silent */
 	lastAction: string | null
 	actions: ToolsActions
@@ -250,6 +254,17 @@ export default function CaptionToolsPanel({
 					<IconClock size={12} />
 				</h2>
 				<div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+					<div className="field">
+						<button className="btn btn--sm" disabled={disabled || aligning} onClick={actions.onAlignToSpeech}>
+							{aligning ? 'Listening to the audio...' : 'Align every line to the speech'}
+						</button>
+						<p className="field-hint">
+							Reads the audio, finds where the voice actually is, and moves each word onto
+							it - without changing a single line break. This is the fix for a transcript
+							that reads correctly but runs ahead of or behind the speaker.
+						</p>
+					</div>
+
 					<div className="field">
 						<label className="field-label" htmlFor="tool-stretch">
 							Speed correction
