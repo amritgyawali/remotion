@@ -4,15 +4,17 @@
  * The model is asked for a compact JSON storyboard, never for code. The Studio
  * then composes the TSX itself, so a generation cannot fail on a syntax error,
  * an unsupported import or a truncated file. If every NVIDIA model is slow,
- * rate limited or unusable, the local director plans the same storyboard and
- * the request still returns a complete, renderable video.
+ * rate limited or unusable, the local director uses the request's creative seed
+ * and the request still returns a complete, reproducible video.
  */
 
+import { randomUUID } from 'node:crypto'
 import { AUTO_MODEL_ORDER, isAiModelId, type AiModelId } from '../../../../lib/ai-models'
 import { composeVideoSource } from '../../../../lib/ai/compose'
-import { planStoryboard } from '../../../../lib/ai/planner'
+import { planStoryboard, promptRequestsThreeDimensional } from '../../../../lib/ai/planner'
 import { STORYBOARD_SYSTEM_PROMPT, buildUserMessage, extractJsonObject } from '../../../../lib/ai/prompt'
 import { normalizeStoryboard, type Storyboard } from '../../../../lib/ai/storyboard'
+import { TEMPLATE_IDS, normalizeAvoidFingerprints, type TemplateId } from '../../../../lib/ai/variation'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -46,6 +48,9 @@ type GenerateBody = {
 	prompt?: unknown
 	model?: unknown
 	history?: unknown
+	creativeSeed?: unknown
+	avoidDesignFingerprints?: unknown
+	avoidTemplates?: unknown
 }
 
 type NvidiaResponse = {
@@ -66,6 +71,16 @@ function collectHistory(value: unknown): Array<{ role: 'user' | 'assistant'; tex
 		const text = typeof raw?.text === 'string' ? raw.text.trim().slice(0, MAX_HISTORY_ITEM_LENGTH) : ''
 		return role && text ? [{ role, text }] : []
 	})
+}
+
+/** House styles the caller has already shipped, so none is reused back to back. */
+function collectAvoidTemplates(value: unknown): TemplateId[] {
+	if (!Array.isArray(value)) return []
+	return [
+		...new Set(
+			value.filter((item): item is TemplateId => typeof item === 'string' && TEMPLATE_IDS.includes(item as TemplateId)),
+		),
+	].slice(-6)
 }
 
 function responseText(content: string | Array<{ type?: string; text?: string }> | undefined): string {
@@ -147,13 +162,17 @@ async function readUpstreamError(response: Response): Promise<string> {
 /** Last line of defence: the composer output must satisfy the Studio contract. */
 function auditComposedCode(code: string): string[] {
 	const issues: string[] = []
+	const executable = code.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1')
 	if (code.length < 1_200) issues.push('The composed file is too short.')
 	if (!/<Composition\b/.test(code)) issues.push('The composed file has no <Composition>.')
 	if (!/\bregisterRoot\s*\(/.test(code)) issues.push('The composed file does not call registerRoot().')
 	if (!/\buseCurrentFrame\s*\(/.test(code)) issues.push('The composed file has no frame-driven animation.')
 	if (!/export\s+default\b/.test(code)) issues.push('The composed file has no default export.')
+	if (/\bFloorGrid\b/.test(executable) || /\brepeating-linear-gradient\s*\(/.test(executable) || /ai-master-grid/i.test(executable)) {
+		issues.push('The composed file contains a prohibited background grid.')
+	}
 	for (const call of code.matchAll(/staticFile\s*\(\s*([^\r\n)]*)\)/g)) {
-		if (!/^['"`]assets\/(?:audio|visual|texture|fonts)\/v1\//.test(call[1].trim())) {
+		if (!/^['"`]assets\/(?:3d|audio|visual|texture|fonts)\/v1\//.test(call[1].trim())) {
 			issues.push('The composed file references an asset outside the built-in kit.')
 			break
 		}
@@ -186,6 +205,11 @@ function payloadFor(
 		scenes: composed.layout.timings.map((timing) => timing.scene.type),
 		palette: storyboard.palette,
 		music: storyboard.music,
+		generationId: storyboard.creativeSeed,
+		designFingerprint: storyboard.designFingerprint,
+		template: storyboard.creativeProfile.template,
+		dimension: storyboard.dimension,
+		creativeProfile: storyboard.creativeProfile,
 		attempts,
 		notice,
 	}
@@ -209,7 +233,28 @@ export async function POST(request: Request) {
 
 	const requestedModel: AiModelId = isAiModelId(body.model) ? body.model : 'auto'
 	const history = collectHistory(body.history)
-	const localPlan = planStoryboard(prompt)
+	const suppliedSeed = typeof body.creativeSeed === 'string' ? body.creativeSeed.trim().toLowerCase() : ''
+	const creativeSeed = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(suppliedSeed)
+		? suppliedSeed
+		: randomUUID()
+	const avoidDesignFingerprints = normalizeAvoidFingerprints(body.avoidDesignFingerprints)
+	const avoidTemplates = collectAvoidTemplates(body.avoidTemplates)
+
+	/**
+	 * Three-dimensional treatment is opt-in for the whole chat, not just the
+	 * latest line: asking for "a 3D product turntable" and then saying "now make
+	 * it 20 seconds" should stay 3D.
+	 */
+	const allowThreeDimensional = [prompt, ...history.filter((item) => item.role === 'user').map((item) => item.text)].some(
+		(text) => promptRequestsThreeDimensional(text),
+	)
+
+	const localPlan = planStoryboard(prompt, {
+		creativeSeed,
+		avoidDesignFingerprints,
+		avoidTemplates,
+		allowThreeDimensional,
+	})
 	const attempts: Attempt[] = []
 
 	const apiKey = process.env.NVIDIA_API_KEY?.trim()
@@ -252,7 +297,15 @@ export async function POST(request: Request) {
 					model,
 					messages: [
 						{ role: 'system', content: STORYBOARD_SYSTEM_PROMPT },
-						{ role: 'user', content: buildUserMessage(prompt, history, attempts.at(-1)?.error) },
+						{
+							role: 'user',
+							content: buildUserMessage(prompt, history, attempts.at(-1)?.error, {
+								generationId: creativeSeed,
+								profile: localPlan.creativeProfile,
+								avoidDesignFingerprints,
+								allowThreeDimensional,
+							}),
+						},
 					],
 					stream: true,
 					...requestSettings(model),
@@ -290,7 +343,11 @@ export async function POST(request: Request) {
 			continue
 		}
 
-		const storyboard = normalizeStoryboard(parsed, localPlan)
+		const storyboard = normalizeStoryboard(parsed, localPlan, {
+			avoidDesignFingerprints,
+			avoidTemplates,
+			allowThreeDimensional,
+		})
 		try {
 			const payload = payloadFor(storyboard, model, 'nvidia', attempts)
 			console.info('[api/ai/generate] storyboard accepted', {
@@ -298,6 +355,7 @@ export async function POST(request: Request) {
 				durationMs: Date.now() - startedAt,
 				scenes: payload.scenes.length,
 				seconds: payload.seconds,
+				designFingerprint: payload.designFingerprint,
 			})
 			return Response.json(payload, { headers: { 'cache-control': 'no-store' } })
 		} catch (error) {

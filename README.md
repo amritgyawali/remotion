@@ -48,6 +48,15 @@ How a generation runs:
    built-in scene library and the bundled asset kit, then compiles it in the
    browser and loads the preview.
 
+Every request also receives a fresh creative seed. It selects a different
+background recipe, layout, camera, transition language, typography pair,
+foreground artwork and SFX variants, while a compact design fingerprint keeps
+recent results from repeating in the same browser. The seed and fingerprint are
+embedded in the generated file, so a result remains exactly reproducible when
+you intentionally reuse it. Background grids are prohibited; charts may still
+draw the axes required to explain real data, and CSS Grid remains available for
+ordinary layout.
+
 Because the code is generated locally from a validated plan, a generation cannot
 fail on a syntax error, a hallucinated import, a missing asset or a truncated
 file - the failure modes that make "ask an LLM for a whole file" unreliable.
@@ -58,15 +67,41 @@ plus the dimensional set below.
 Duration, aspect ratio (16:9, 9:16, 1:1, 4:5, 21:9), palette, fonts and music are
 read from the prompt when you state them and inferred when you do not.
 
+### House styles
+
+No two generations are handed the same design. Before a single line of TSX is
+written the Studio draws a **template** - a complete house style that decides
+which backgrounds, layouts, type recipes, accents, finish, camera, rhythm,
+palettes and font categories are even eligible:
+
+`editorial-press` · `swiss-poster` · `kinetic-type` · `broadcast-strip` ·
+`zine-collage` · `minimal-air` · `neon-arcade` · `gallery-frame` · `data-brief` ·
+`story-cards` · `cinema-bars` · `terminal-log` · `pop-sticker` · `luxe-serif` ·
+`split-duo` · `archive-paper`
+
+Inside the chosen style the Studio then picks a background recipe, a page
+layout, a type pairing, a headline treatment (plate, box, underline, margin bar
+or outline), a rule language, a corner language, a casing rule, an accent shape,
+a finish, a camera and a tempo - plus a hue rotation applied to the palette's
+accents. The result is hashed into a **design fingerprint**, and both the
+fingerprint and the house style of your recent videos are sent back with the
+next request, so a design identity is never served twice and the same template
+never runs back to back.
+
+Palette and typography follow the same rule: a brief that names a colour
+("neon", "monochrome", "gold") or a typeface class ("serif", "monospace",
+"handwritten") pins that choice, and everything it leaves unsaid is chosen fresh
+by the house style each time.
+
 ### Dimension
 
-Every storyboard picks one of three looks:
+Three-dimensional treatment is opt-in, per chat:
 
-| Mode | What it renders | Cost |
+| Mode | What it renders | When |
 | --- | --- | --- |
-| `depth` (default) | Perspective stage with a drifting camera, extruded headlines, tilted cards and a receding floor grid. Pure CSS/SVG. | free |
-| `three` | Everything in `depth`, plus real WebGL scenes through `@remotion/three`: lights, shadows, materials and a moving camera. | a GPU frame per scene |
-| `flat` | Graphic layers only. Asked for with "flat design", "2D" or "typographic". | lowest |
+| `flat` (default) | Graphic design only: type, colour, shape, layout and motion. | always, unless you ask otherwise |
+| `depth` | Perspective stage with a drifting camera, extruded headlines, tilted cards and layered atmosphere. Pure CSS/SVG. | you say "depth", "parallax", "layered", "perspective" or ask for a camera move |
+| `three` | Everything in `depth`, plus real WebGL scenes through `@remotion/three`: lights, shadows, materials and a moving camera. | you say "3D", "WebGL", "CGI", "turntable", "rotating globe" or similar |
 
 WebGL scenes: `object3d` (lit turntable of a procedural solid - crystal, sphere,
 torus knot, cube, prism, capsule or ring - with wireframe overlay, orbiting
@@ -76,10 +111,12 @@ cage, atmosphere shell and markers placed at real latitude/longitude),
 wireframe topography and depth fog). `carousel3d` puts cards on a rotating rig
 using CSS 3D and needs no WebGL.
 
-Say "3D", "rendered", "product turntable", "globe" or "terrain" and the director
-switches to `three` on its own. Everything still animates from
-`useCurrentFrame()`, so previews, browser exports and server renders match frame
-for frame.
+All four are unavailable unless you ask for 3D. The request is remembered for
+the whole chat, so a follow-up such as "now make it 20 seconds" keeps the 3D you
+already asked for, and a model answer that reaches for `three` on its own is
+rewritten to the flat scene that shows the same content. Everything still
+animates from `useCurrentFrame()`, so previews, browser exports and server
+renders match frame for frame.
 
 ### Optional: connect NVIDIA for AI-written scripts
 
@@ -102,7 +139,9 @@ route public on a public deployment, so configure Vercel rate limiting and NVIDI
 spend controls to protect the quota.
 
 Run `npm run ai:check` to compose a spread of prompts and verify every generated
-file satisfies the Studio contract.
+file satisfies the Studio contract, seeded replay is deterministic, varied seeds
+produce distinct design fingerprints, and no forbidden background-grid recipe
+can enter generated source.
 
 The previous manual workflow still works: download **AI Master Template**, edit it
 with any coding assistant, and upload the completed `.tsx` file.
@@ -415,18 +454,21 @@ source.
 ### Production asset kit
 
 Open `/assets/index.html` in the running app, or click **Browse** under
-**Production asset kit** in the left panel. 99 assets ship with the app:
+**Production asset kit** in the left panel. The searchable, paginated gallery
+and downloadable archive contain more than 1,800 production assets:
 
 | Pack | Contents | Licence |
 | --- | --- | --- |
-| Visuals | 41 editable SVGs: objects, icons, arrows, neon graphics, geometry, depth art | CC0-1.0 |
+| Visuals | 1,241 editable SVGs: 1,200 deterministic variants in 24 kinetic, organic, cosmic, framing, data and symbol families, plus 41 compatible originals | CC0-1.0 |
 | Textures | 20 PNGs: film grain, paper, halftone, scanlines, vignette, light leaks, glow/bokeh/spark/smoke sprites, 4 matcaps, 3 equirectangular environment maps | CC0-1.0 |
 | Typography | 64 self-hosted families across sans, grotesk, rounded, condensed, display, comic, serif, tech, retro, pixel, mono, script and handwriting, including 13 Devanagari faces (Noto Sans/Serif Devanagari, Anek, Mukta, Hind, Baloo 2, Rozha One, Yatra One, Kalam, Tiro, Martel Sans, Teko, Khand) | OFL-1.1 and Apache-2.0 |
-| Audio | 8 loopable music beds (neon, warm, cinematic, ambient, epic, lofi, corporate, tension) and 20 SFX | CC0-1.0 |
+| Audio | 8 loopable music beds and 560 SFX: 540 compact motion-ready variants in 15 families plus 20 compatible originals | CC0-1.0 |
 
 ```tsx
 staticFile('assets/visual/v1/objects/phone.svg')
+staticFile('assets/visual/v1/kinetic/ribbon-017.svg')
 staticFile('assets/texture/v1/overlays/film-grain.png')
+staticFile('assets/audio/v1/sfx/variants/motion/motion-whoosh/motion-whoosh-v017.wav')
 <Audio src={staticFile('assets/audio/v1/music/ambient-calm-70bpm-loop.wav')} />   // @remotion/media
 loadFont({family: 'Anton', url: staticFile('assets/fonts/v1/anton/Anton-Regular.ttf')})  // @remotion/fonts
 ```
@@ -440,16 +482,16 @@ Regenerate and validate the library with:
 
 ```bash
 npm run assets           # visuals, audio, textures, fonts, then the combined catalog + ZIP
-npm run assets:verify    # offline: hashes and audio levels for all three generated packs
+npm run assets:verify    # offline: counts, hashes, duplicates, stale files and audio levels
 ```
 
 Everything except the fonts is synthesised from seeded math by the scripts in
 `scripts/`, so there is no third-party artwork, sample or recording in this
 repository. The font families come from the official
-[google/fonts](https://github.com/google/fonts) repository under the SIL Open
-Font License, which permits redistribution as long as each family keeps its
-`OFL.txt` - `npm run assets:fonts` downloads both and records SHA-256 hashes in
-`public/assets/fonts/fonts.lock.json`.
+[google/fonts](https://github.com/google/fonts) repository under their bundled
+OFL-1.1 or Apache-2.0 terms. Each family keeps its licence file;
+`npm run assets:fonts` downloads the raw face and licence together and records
+SHA-256 hashes in `public/assets/fonts/fonts.lock.json`.
 
 ### Samples
 
@@ -509,8 +551,8 @@ lib/
     style-presets.ts    the six caption looks and the studio font kit
 samples/                the uploadable examples
 scripts/
-  generate-audio-assets.mjs   deterministic original WAV library + verifier
-  generate-visual-assets.mjs  deterministic original SVG library
+  generate-audio-assets.mjs   560-SFX deterministic WAV library + verifier
+  generate-visual-assets.mjs  1,241-file deterministic SVG library + verifier
   generate-texture-assets.mjs deterministic PNG grain/sprite/matcap/env library
   fetch-fonts.mjs             self-hosted OFL font kit + hash lock + verifier
   build-asset-library.mjs     combined catalog, gallery and ZIP

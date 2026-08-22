@@ -7,7 +7,7 @@
  * kit so the prompt can never drift from what the composer supports.
  */
 
-import { FONT_IDS, GRAIN_IDS, ICON_IDS, MUSIC_IDS, PALETTE_IDS, PALETTES } from './kit'
+import { FONT_IDS, FONT_KIT, GRAIN_IDS, ICON_IDS, MUSIC_IDS, PALETTE_IDS, PALETTES } from './kit'
 import {
 	ASPECT_IDS,
 	DIMENSION_IDS,
@@ -17,8 +17,13 @@ import {
 	TERRAIN_IDS,
 	TIME_OF_DAY_IDS,
 } from './storyboard'
+import type { CreativeProfile } from './variation'
 
 const PALETTE_LINES = PALETTE_IDS.map((id) => `${id} (${PALETTES[id].use})`).join(', ')
+const FONT_LINES = FONT_IDS.map((id) => {
+	const font = FONT_KIT[id]
+	return `${id} (${font.category}; ${font.use}${font.devanagari ? '; Devanagari' : ''}; weight ${font.weight})`
+}).join(', ')
 
 export const STORYBOARD_SYSTEM_PROMPT = `You are the creative director of Remotion Video Studio.
 
@@ -31,6 +36,9 @@ QUALITY BAR
 - Choose scene types that literally show the subject: timelines for chronology, map for geography, landscape for place and scenery, monument for architecture, chart/stats for numbers, process for how something works.
 - Only state facts you are confident about. Never invent statistics, dates, quotes or names. If you are unsure, leave out the stats, chart, timeline markers or quote scene instead of guessing.
 - Match palette, fonts, music, grain and motion to the subject and to any style the user asked for.
+- Give each new generation a fresh composition and visual rhythm. Do not imitate a previous video's arrangement merely because its subject or scene types are similar.
+- Every video must be a different design from the last. The Studio assigns a house style, and you choose the palette, the type pairing, the scene order and the copy rhythm to suit it. Reach for a palette and a font pairing you would not have chosen for the previous brief, and vary the number of scenes and the order they appear in.
+- NO BACKGROUND GRIDS: never request or imply graph paper, blueprint grids, Cartesian grids, dot grids, tiled line grids or receding perspective floor grids as scenery. CSS Grid used only for layout and necessary axes inside an actual data chart are allowed.
 - Respect explicit duration, aspect ratio and exact wording from the user. Otherwise pick a duration between 12 and 30 seconds.
 
 SCHEMA
@@ -53,9 +61,10 @@ SCHEMA
 }
 
 DIMENSION
-- "depth" is the default: a perspective stage with extruded headlines, tilted cards and a receding floor grid.
-- "three" adds real WebGL geometry with lights and shadows. Choose it when the subject is an object, a product, a planet or a landscape a camera should move through, and then use the object3d, globe3d and terrain3d scenes.
-- "flat" only when the brief asks for flat, purely typographic or 2D design.
+- "flat" is the default. Graphic design carries the film: type, colour, shape, layout and motion.
+- "depth" adds a perspective stage with layered atmosphere and tilted cards. Use it only when the user asks for depth, parallax, layers or a camera move.
+- "three" adds real WebGL geometry with lights and shadows, and unlocks the object3d, globe3d, terrain3d and carousel3d scenes. Use it ONLY when the user explicitly asks for 3D in this chat (words like "3D", "WebGL", "CGI", "turntable", "rotating globe"). A subject that merely happens to be an object, a planet or a landscape is NOT a request for 3D.
+- Never pick "three", and never use a 3D scene type, on your own initiative. If the user did not ask for 3D, those four scene types are unavailable to you.
 
 SCENE TYPES
 {"type":"title","kicker":string,"headline":string,"subline":string,"icon":<icon id>}
@@ -77,7 +86,7 @@ SCENE TYPES
 
 ENUMS
 palette: ${PALETTE_LINES}
-font: ${FONT_IDS.join(', ')}
+font: ${FONT_LINES}
 music: ${MUSIC_IDS.join(', ')}
 grain: ${GRAIN_IDS.join(', ')}
 icon: ${ICON_IDS.join(', ')}
@@ -92,6 +101,13 @@ export function buildUserMessage(
 	prompt: string,
 	history: Array<{ role: 'user' | 'assistant'; text: string }>,
 	previousFailure?: string,
+	creativeContext?: {
+		generationId: string
+		profile: CreativeProfile
+		avoidDesignFingerprints: readonly string[]
+		/** False unless the user asked for 3D in this chat. */
+		allowThreeDimensional: boolean
+	},
 ): string {
 	const context = history.length
 		? history.map((item) => `${item.role.toUpperCase()}: ${item.text}`).join('\n')
@@ -100,6 +116,18 @@ export function buildUserMessage(
 	const retry = previousFailure
 		? `\n\nRELIABILITY NOTE\nA previous attempt failed with: ${previousFailure.slice(0, 300)}\nReturn a shorter, strictly valid JSON object.`
 		: ''
+	const direction = creativeContext
+		? `\n\nSTUDIO CREATIVE DIRECTION
+Generation: ${creativeContext.generationId}
+House style for this video: "${creativeContext.profile.template}". Write copy, pick scene types and choose a palette and type pairing that belong to that house style, and make them different from the last video you planned.
+Full assigned visual grammar, applied deterministically by the Studio after your response: ${JSON.stringify(creativeContext.profile)}.
+${
+	creativeContext.allowThreeDimensional
+		? 'The user asked for 3D in this chat, so "three" and the 3D scene types are available.'
+		: 'The user did NOT ask for 3D. Set "dimension" to "flat" or "depth" and do not use object3d, globe3d, terrain3d or carousel3d; the Studio rewrites them to their 2D equivalents.'
+}
+Avoid echoing recent design identities: ${creativeContext.avoidDesignFingerprints.slice(-12).join(', ') || 'none'}. Do not return or alter the generation id.`
+		: ''
 
 	return `CURRENT REQUEST
 ${prompt}
@@ -107,7 +135,7 @@ ${prompt}
 EARLIER CHAT CONTEXT
 ${context}
 
-Plan the finished video and return the storyboard JSON object only.${retry}`
+Plan the finished video and return the storyboard JSON object only.${direction}${retry}`
 }
 
 /** Pulls the first balanced JSON object out of a model answer. */

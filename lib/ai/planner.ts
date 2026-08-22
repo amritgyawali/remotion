@@ -13,7 +13,13 @@
  * built from the user's own words.
  */
 
-import type { GrainId, IconId, LeakId, MusicId, PaletteId } from './kit'
+import {
+	type GrainId,
+	type IconId,
+	type LeakId,
+	type MusicId,
+	type PaletteId,
+} from './kit'
 import {
 	MAX_SECONDS,
 	MIN_SECONDS,
@@ -32,6 +38,13 @@ import {
 	type TimelineEvent,
 	type Storyboard,
 } from './storyboard'
+import {
+	normalizeAvoidFingerprints,
+	normalizeCreativeSeed,
+	promptFallbackSeed,
+	resolveArtDirection,
+	type TemplateId,
+} from './variation'
 
 const STOP_WORDS = new Set([
 	'a', 'an', 'and', 'the', 'for', 'with', 'about', 'into', 'onto', 'from', 'that', 'this', 'these',
@@ -87,32 +100,54 @@ const TOPIC_KEYWORDS: Array<[Topic, string[]]> = [
 	['event', ['event', 'conference', 'summit', 'festival', 'wedding', 'concert', 'meetup', 'webinar', 'anniversary', 'invitation', 'countdown']],
 ]
 
-const PALETTE_KEYWORDS: Array<[PaletteId, string[]]> = [
-	['neon', ['neon', 'cyberpunk', 'gaming', 'nightlife', 'rave', 'arcade', 'synthwave']],
-	['heritage', ['history', 'historical', 'heritage', 'ancient', 'archive', 'museum', 'dynasty', 'empire', 'temple', 'monument', 'documentary']],
-	['ember', ['desert', 'sunset', 'warm', 'fire', 'sahara', 'dune', 'autumn', 'golden hour', 'volcano']],
-	['forest', ['forest', 'nature', 'green', 'sustainab', 'eco', 'jungle', 'organic', 'wildlife', 'garden']],
-	['royal', ['luxury', 'premium', 'elegant', 'royal', 'gold', 'boutique', 'couture', 'exclusive']],
-	['paper', ['paper', 'editorial', 'print', 'craft', 'newspaper', 'magazine', 'letterpress', 'archive paper']],
-	['azure', ['corporate', 'business', 'finance', 'bank', 'insurance', 'enterprise', 'b2b', 'consulting']],
-	['slate', ['developer', 'engineering', 'technical', 'code', 'terminal', 'devops', 'infrastructure', 'dark technical']],
-	['sunrise', ['friendly', 'playful', 'kids', 'bright', 'cheerful', 'lifestyle', 'community', 'pastel']],
-	['arctic', ['clean', 'minimal light', 'medical', 'clinic', 'white', 'ice', 'winter', 'snow']],
-	['mono', ['monochrome', 'black and white', 'bold minimal', 'brutalist', 'fashion', 'high contrast']],
-	['midnight', ['cinematic', 'space', 'ai', 'futuristic', 'dark', 'night', 'tech']],
+/**
+ * Words that name a colour world outright. Only these pin the palette, because
+ * a pinned palette is the one decision the house style cannot vary.
+ */
+const PALETTE_COLOR_KEYWORDS: Array<[PaletteId, string[]]> = [
+	['neon', ['neon', 'cyberpunk', 'synthwave']],
+	['mono', ['monochrome', 'black and white', 'high contrast', 'greyscale', 'grayscale']],
+	['paper', ['paper', 'letterpress', 'newsprint', 'newspaper', 'off-white stock']],
+	['arctic', ['white', 'ice', 'snow', 'icy']],
+	['forest', ['green', 'emerald']],
+	['royal', ['gold', 'golden', 'royal purple']],
+	['sunrise', ['pastel', 'peach', 'coral']],
+	['ember', ['orange', 'amber', 'crimson', 'scarlet']],
+	['azure', ['blue', 'teal', 'cyan']],
+	['midnight', ['midnight', 'inky', 'deep space']],
 ]
 
-const TOPIC_PALETTE: Record<Topic, PaletteId> = {
-	history: 'heritage',
-	travel: 'ember',
-	product: 'midnight',
-	tech: 'slate',
-	data: 'azure',
-	education: 'sunrise',
-	food: 'ember',
-	fitness: 'forest',
-	event: 'royal',
-	brand: 'midnight',
+/**
+ * Words that suggest a mood rather than a colour. They bias the shortlist the
+ * house style draws from instead of overruling it, so "cinematic" no longer
+ * forces every film into the same dark blue.
+ */
+const PALETTE_MOOD_KEYWORDS: Array<[PaletteId, string[]]> = [
+	['neon', ['gaming', 'nightlife', 'rave', 'arcade']],
+	['heritage', ['history', 'historical', 'heritage', 'ancient', 'archive', 'museum', 'dynasty', 'empire', 'temple', 'monument', 'documentary']],
+	['ember', ['desert', 'sunset', 'warm', 'fire', 'sahara', 'dune', 'autumn', 'golden hour', 'volcano']],
+	['forest', ['forest', 'nature', 'sustainab', 'eco', 'jungle', 'organic', 'wildlife', 'garden']],
+	['royal', ['luxury', 'premium', 'elegant', 'boutique', 'couture', 'exclusive']],
+	['paper', ['editorial', 'print', 'craft', 'magazine']],
+	['azure', ['corporate', 'business', 'finance', 'bank', 'insurance', 'enterprise', 'b2b', 'consulting']],
+	['slate', ['developer', 'engineering', 'technical', 'code', 'terminal', 'devops', 'infrastructure']],
+	['sunrise', ['friendly', 'playful', 'kids', 'bright', 'cheerful', 'lifestyle', 'community']],
+	['arctic', ['clean', 'minimal light', 'medical', 'clinic', 'winter']],
+	['mono', ['bold minimal', 'brutalist', 'fashion']],
+	['midnight', ['cinematic', 'space', 'futuristic', 'dark', 'night']],
+]
+
+const TOPIC_PALETTES: Record<Topic, readonly PaletteId[]> = {
+	history: ['heritage', 'paper', 'royal'],
+	travel: ['ember', 'forest', 'sunrise'],
+	product: ['midnight', 'mono', 'arctic', 'royal'],
+	tech: ['slate', 'midnight', 'neon', 'arctic'],
+	data: ['azure', 'slate', 'arctic'],
+	education: ['sunrise', 'paper', 'forest', 'arctic'],
+	food: ['ember', 'sunrise', 'paper', 'forest'],
+	fitness: ['forest', 'neon', 'slate', 'sunrise'],
+	event: ['royal', 'neon', 'ember', 'mono'],
+	brand: ['midnight', 'mono', 'royal', 'paper', 'azure'],
 }
 
 const TOPIC_MUSIC: Record<Topic, MusicId> = {
@@ -194,11 +229,21 @@ function detectTopic(prompt: string): Topic {
 	return best
 }
 
-function detectPalette(prompt: string, topic: Topic): PaletteId {
-	for (const [palette, keywords] of PALETTE_KEYWORDS) {
+/**
+ * Only an explicit colour cue pins the palette. With no cue the template picks,
+ * which is what lets the same brief come back in a different colour world.
+ */
+function lockedPalette(prompt: string): PaletteId | null {
+	for (const [palette, keywords] of PALETTE_COLOR_KEYWORDS) {
 		if (has(prompt, keywords)) return palette
 	}
-	return TOPIC_PALETTE[topic]
+	return null
+}
+
+/** Mood cues first, then the topic's own leanings, as a soft shortlist. */
+function preferredPalettes(prompt: string, topic: Topic): PaletteId[] {
+	const moods = PALETTE_MOOD_KEYWORDS.filter(([, keywords]) => has(prompt, keywords)).map(([palette]) => palette)
+	return [...new Set([...moods, ...TOPIC_PALETTES[topic]])]
 }
 
 function detectTerrain(prompt: string): TerrainId {
@@ -230,25 +275,51 @@ function detectTimeOfDay(prompt: string): TimeOfDayId {
 }
 
 /**
- * Real WebGL is worth its cost when the brief asks for an object, a planet or a
- * landscape you can move a camera through. Everything else still gets the
- * cheaper CSS-3D staging rather than a flat layout.
+ * Words that are an actual request for three-dimensional treatment. Ambient
+ * nouns such as "render", "glass" or "earth" are deliberately absent: they used
+ * to drag ordinary briefs into WebGL and made every film look the same.
  */
-function detectDimension(prompt: string): DimensionId {
-	if (has(prompt, ['flat design', '2d', 'two dimensional', 'text only', 'typographic only', 'no 3d'])) {
-		return 'flat'
-	}
-	if (
-		has(prompt, [
-			'3d', 'three dimensional', 'cgi', 'render', 'rendered', 'octane', 'blender', 'ray trace',
-			'raytrace', 'glass', 'metallic', 'chrome', 'crystal', 'globe', 'planet', 'earth', 'orbit',
-			'terrain', 'topograph', 'wireframe', 'hologram', 'holographic', 'isometric', 'volumetric',
-			'product shot', 'turntable', 'mesh', 'geometry', 'sculpt',
-		])
-	) {
-		return 'three'
-	}
-	return 'depth'
+const THREE_D_REQUEST_WORDS = [
+	'3d', '3-d', 'three dimensional', 'three-dimensional', 'webgl', 'cgi', 'cinema 4d', 'c4d',
+	'blender render', 'octane', 'ray trace', 'raytrace', 'ray-trace', 'turntable', 'product turntable',
+	'3d model', '3d models', '3d scene', '3d animation', '3d text', '3d globe', '3d map', '3d chart',
+	'rotating globe', 'spinning globe', 'volumetric', 'extruded 3d', 'mesh render', 'polygonal',
+]
+
+/** Words that ask for the flat, purely graphic treatment outright. */
+const FLAT_REQUEST_WORDS = [
+	'flat design', 'flat 2d', '2d', 'two dimensional', 'two-dimensional', 'text only', 'text-only',
+	'typographic only', 'purely typographic', 'no 3d', 'no depth', 'no perspective', 'vector only',
+]
+
+/** Words that ask for layered depth without asking for real geometry. */
+const DEPTH_REQUEST_WORDS = [
+	'parallax', 'depth', 'layered', 'perspective', 'dimensional', 'cinematic camera', 'dolly',
+	'camera move', 'push in', 'tilt shift', 'diorama',
+]
+
+/**
+ * True only when the brief actually asks for three-dimensional treatment.
+ * Exported so the API route can hold the model to the same rule it gives the
+ * local planner.
+ */
+export function promptRequestsThreeDimensional(rawPrompt: string): boolean {
+	const prompt = rawPrompt.toLowerCase()
+	if (has(prompt, FLAT_REQUEST_WORDS)) return false
+	return has(prompt, THREE_D_REQUEST_WORDS)
+}
+
+/**
+ * WebGL is opt-in. Unless the brief asks for 3D in so many words the film is
+ * built from flat graphic design, which is what keeps consecutive generations
+ * from converging on the same lit-object look. A perspective stage is still
+ * available when the brief asks for depth, parallax or a camera move.
+ */
+function detectDimension(rawPrompt: string, prompt: string, allowThreeDimensional: boolean): DimensionId {
+	if (allowThreeDimensional && !has(prompt, FLAT_REQUEST_WORDS)) return 'three'
+	if (has(prompt, FLAT_REQUEST_WORDS)) return 'flat'
+	if (has(prompt, DEPTH_REQUEST_WORDS)) return 'depth'
+	return 'flat'
 }
 
 function detectSolid(prompt: string): SolidId {
@@ -281,26 +352,48 @@ function detectLeak(prompt: string, palette: PaletteId): LeakId {
 	return palette === 'ember' || palette === 'heritage' ? 'warm' : palette === 'midnight' || palette === 'azure' ? 'cool' : 'none'
 }
 
-function detectFonts(prompt: string, topic: Topic): { displayFont: Storyboard['displayFont']; textFont: Storyboard['textFont'] } {
-	if (has(prompt, ['serif', 'elegant', 'editorial', 'luxury', 'heritage', 'history', 'fashion', 'wedding'])) {
-		return { displayFont: 'playfairDisplay', textFont: 'inter' }
+type TypeRequest = {
+	requireDevanagari: boolean
+	/** Empty means "no explicit request", so the template decides. */
+	displayCategories: string[]
+	bodyCategories: string[]
+}
+
+/**
+ * Reads a typographic request out of the brief without pinning one family.
+ *
+ * Only the script requirement is absolute. Everything else narrows the pool the
+ * house style draws from, so "elegant serif typography" is honoured while the
+ * exact pairing still changes between generations.
+ */
+function detectTypeRequest(rawPrompt: string, prompt: string): TypeRequest {
+	// Script coverage is a prerequisite, not an aesthetic afterthought. Check the
+	// actual Unicode range before any style keyword can select a Latin-only
+	// family.
+	const requireDevanagari =
+		/[\u0900-\u097f]/u.test(rawPrompt) || has(prompt, ['devanagari', 'nepali', 'hindi', 'nepal', 'kathmandu'])
+	if (requireDevanagari) {
+		return { requireDevanagari, displayCategories: ['devanagari'], bodyCategories: ['devanagari'] }
 	}
-	if (has(prompt, ['technical', 'code', 'developer', 'terminal', 'engineering', 'data', 'api'])) {
-		return { displayFont: 'spaceGrotesk', textFont: 'jetBrainsMono' }
+	if (has(prompt, ['serif', 'elegant typography', 'editorial typography', 'classical type'])) {
+		return { requireDevanagari, displayCategories: ['serif'], bodyCategories: ['serif', 'sans', 'grotesk'] }
 	}
-	if (has(prompt, ['news', 'sport', 'documentary', 'report'])) {
-		return { displayFont: 'oswald', textFont: 'inter' }
+	if (has(prompt, ['monospace', 'mono type', 'terminal type', 'typewriter'])) {
+		return { requireDevanagari, displayCategories: ['mono', 'tech'], bodyCategories: ['mono'] }
 	}
-	if (has(prompt, ['friendly', 'kids', 'education', 'health', 'community'])) {
-		return { displayFont: 'nunito', textFont: 'inter' }
+	if (has(prompt, ['handwritten', 'handwriting', 'script type', 'signature type', 'brush type'])) {
+		return { requireDevanagari, displayCategories: ['handwriting', 'script'], bodyCategories: ['sans', 'serif'] }
 	}
-	if (has(prompt, ['devanagari', 'nepali', 'hindi', 'nepal', 'kathmandu'])) {
-		return { displayFont: 'anekDevanagari', textFont: 'notoSansDevanagari' }
+	if (has(prompt, ['pixel', '8-bit', '8 bit', 'retro game', 'arcade type'])) {
+		return { requireDevanagari, displayCategories: ['pixel', 'retro'], bodyCategories: ['mono', 'sans'] }
 	}
-	if (topic === 'history') return { displayFont: 'playfairDisplay', textFont: 'inter' }
-	if (topic === 'tech' || topic === 'data') return { displayFont: 'spaceGrotesk', textFont: 'inter' }
-	if (topic === 'product') return { displayFont: 'anton', textFont: 'inter' }
-	return { displayFont: 'bebasNeue', textFont: 'inter' }
+	if (has(prompt, ['condensed', 'narrow type', 'poster type'])) {
+		return { requireDevanagari, displayCategories: ['condensed', 'display'], bodyCategories: ['grotesk', 'sans'] }
+	}
+	if (has(prompt, ['rounded type', 'friendly typography', 'playful typography'])) {
+		return { requireDevanagari, displayCategories: ['rounded', 'comic'], bodyCategories: ['rounded', 'sans'] }
+	}
+	return { requireDevanagari, displayCategories: [], bodyCategories: [] }
 }
 
 function titleCase(value: string): string {
@@ -462,18 +555,33 @@ function chartBars(stats: StatItem[]): ChartBar[] {
 	return stats.map((stat) => ({ label: stat.label, value: Math.abs(stat.value) }))
 }
 
+export type StoryboardPlanOptions = {
+	creativeSeed?: string
+	avoidDesignFingerprints?: readonly string[]
+	/** House styles used by the caller's recent videos, never reused back to back. */
+	avoidTemplates?: readonly TemplateId[]
+	/**
+	 * Overrides the 3D gate. The API route decides this across the whole chat,
+	 * so a follow-up turn ("now make it 20 seconds") keeps an earlier 3D
+	 * request. Left unset, only the prompt itself is read.
+	 */
+	allowThreeDimensional?: boolean
+}
+
 /** Builds a complete, renderable storyboard from the raw chat prompt. */
-export function planStoryboard(rawPrompt: string): Storyboard {
+export function planStoryboard(rawPrompt: string, options: StoryboardPlanOptions = {}): Storyboard {
 	const raw = rawPrompt.replace(/\s+/g, ' ').trim()
 	const prompt = raw.toLowerCase()
+	const creativeSeed = normalizeCreativeSeed(options.creativeSeed, promptFallbackSeed(raw))
+	const avoidDesignFingerprints = normalizeAvoidFingerprints(options.avoidDesignFingerprints)
 
 	const topic = detectTopic(prompt)
-	const palette = detectPalette(prompt, topic)
 	const aspect = parseAspect(prompt)
 	const seconds = parseSeconds(prompt)
 	const motion = detectMotion(prompt)
-	const dimension = detectDimension(prompt)
-	const { displayFont, textFont } = detectFonts(prompt, topic)
+	const allowThreeDimensional = options.allowThreeDimensional ?? promptRequestsThreeDimensional(raw)
+	const dimension = detectDimension(raw, prompt, allowThreeDimensional)
+	const typeRequest = detectTypeRequest(raw, prompt)
 	const subject = subjectOf(raw)
 	const quoted = extractQuoted(raw)
 	const fragments = briefFragments(raw).filter((fragment) => fragment.toLowerCase() !== subject.toLowerCase())
@@ -603,8 +711,10 @@ export function planStoryboard(rawPrompt: string): Storyboard {
 
 	const galleryItems = galleryFrom(fragments.slice(wantsProcess ? 4 : 0), topic)
 	if (galleryItems.length >= 2 && scenes.length < 6) {
+		// The rotating 3D rig is a WebGL scene, so it stays behind the same
+		// explicit-request gate as every other three-dimensional scene type.
 		scenes.push(
-			dimension !== 'flat' && galleryItems.length >= 3
+			solid && galleryItems.length >= 3
 				? { type: 'carousel3d', seconds: 0, headline: subject, items: galleryItems }
 				: { type: 'gallery', seconds: 0, headline: subject, items: galleryItems },
 		)
@@ -633,6 +743,23 @@ export function planStoryboard(rawPrompt: string): Storyboard {
 		icon: 'arrow',
 	})
 
+	// House style, palette and the type pairing are resolved together so the
+	// three always belong to one another, and so a design identity the caller
+	// has already seen is never handed back.
+	const art = resolveArtDirection({
+		seed: creativeSeed,
+		sceneTypes: scenes.map((scene) => scene.type),
+		motion,
+		dimension,
+		lockedPalette: lockedPalette(prompt),
+		preferredPalettes: preferredPalettes(prompt, topic),
+		displayCategories: typeRequest.displayCategories,
+		bodyCategories: typeRequest.bodyCategories,
+		requireDevanagari: typeRequest.requireDevanagari,
+		avoidFingerprints: avoidDesignFingerprints,
+		avoidTemplates: options.avoidTemplates,
+	})
+
 	return {
 		title: subject,
 		concept: raw.slice(0, 240),
@@ -640,14 +767,17 @@ export function planStoryboard(rawPrompt: string): Storyboard {
 		aspect,
 		fps: 30,
 		seconds,
-		palette,
-		displayFont,
-		textFont,
+		palette: art.palette,
+		displayFont: art.displayFont,
+		textFont: art.textFont,
 		music: TOPIC_MUSIC[topic],
-		grain: detectGrain(prompt, palette),
-		leak: detectLeak(prompt, palette),
+		grain: detectGrain(prompt, art.palette),
+		leak: detectLeak(prompt, art.palette),
 		motion,
 		dimension,
 		scenes,
+		creativeSeed,
+		creativeProfile: art.profile,
+		designFingerprint: art.fingerprint,
 	}
 }
