@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Organic Blob 050</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#F4F1E8"/><stop offset="1" stop-color="#9EA3AE"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#9EA3AE"/><stop offset="1" stop-color="#F4F1E8"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFFFFF"/><stop offset=".34" stop-color="#D6D9E1"/><stop offset="1" stop-color="#9EA3AE"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#17191F" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><path d="M415.94 220.27Q444.35 263.84 429.03 315.81Q413.71 367.79 364.62 385.41Q315.52 403.03 273.89 401.9Q232.27 400.77 193.78 388.09Q155.28 375.41 112.19 346.47Q69.09 317.53 101.18 273.26Q133.27 228.99 142.75 188.87Q152.23 148.74 190.01 122.25Q227.79 95.75 274.1 104.85Q320.41 113.95 353.97 145.33Q387.52 176.71 415.94 220.27Z" fill="url(#paint)" opacity="0.26" stroke="#17191F" stroke-width="7"/><path d="M405.5 249.91Q430.05 280.79 401.63 309.44Q373.2 338.08 354.24 362.54Q335.28 387 304.62 410.99Q273.96 434.98 242.36 412.62Q210.76 390.26 197.8 361.25Q184.83 332.25 153.82 306.52Q122.81 280.79 149.51 252.58Q176.22 224.36 187.56 187.58Q198.91 150.8 236.44 143.22Q273.96 135.63 304.67 155.01Q335.39 174.4 358.17 196.71Q380.95 219.02 405.5 249.91Z" fill="url(#paint-reverse)" opacity="0.42" stroke="#FFFFFF" stroke-width="3"/></g>
+</svg>

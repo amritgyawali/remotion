@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Planet System 018</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#A7FF4F"/><stop offset="1" stop-color="#42D9FF"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#42D9FF"/><stop offset="1" stop-color="#A7FF4F"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#F4FFF0"/><stop offset=".34" stop-color="#C8FF8A"/><stop offset="1" stop-color="#42D9FF"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#102B35" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><ellipse cx="280.31" cy="264.1" rx="185.99" ry="44.09" transform="rotate(0.95 280.31 264.1)" fill="none" stroke="url(#paint)" stroke-width="4.63" opacity="0.51"/><ellipse cx="280.31" cy="264.1" rx="213.55" ry="53.73" transform="rotate(7.95 280.31 264.1)" fill="none" stroke="#F4FFF0" stroke-width="6.91" opacity="0.66"/><circle cx="280.31" cy="264.1" r="137.77" fill="url(#halo)" stroke="#102B35" stroke-width="7"/><path d="M181.11 239.3Q280.31 312.32 383.64 255.83" fill="none" stroke="#F4FFF0" stroke-width="8" opacity=".72"/><circle cx="37.88" cy="328.26" r="13.76" fill="#42D9FF" stroke="#F4FFF0" stroke-width="3"/><circle cx="24.14" cy="272.8" r="9.12" fill="#A7FF4F" stroke="#F4FFF0" stroke-width="3"/><circle cx="121.96" cy="32.84" r="14.33" fill="#42D9FF" stroke="#F4FFF0" stroke-width="3"/></g>
+</svg>

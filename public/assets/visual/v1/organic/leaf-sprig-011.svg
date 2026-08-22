@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Leaf Sprig 011</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#A62D68"/><stop offset="1" stop-color="#F1B85B"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#F1B85B"/><stop offset="1" stop-color="#A62D68"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF8E8"/><stop offset=".34" stop-color="#F7C6DD"/><stop offset="1" stop-color="#F1B85B"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#371B32" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><path d="M232.78 462C168.4 350,343.6 186,281.8 48" fill="none" stroke="#371B32" stroke-width="12" stroke-linecap="round"/><path d="M228.36 398q-68.68 -46.89 -83.79 -98.47q65.25 -7.5 83.79 98.47Z" fill="url(#paint-reverse)" stroke="#FFF8E8" stroke-width="3"/><path d="M303.92 358.75q74.15 -43.34 90.47 -91.01q-70.45 -6.93 -90.47 91.01Z" fill="url(#paint)" stroke="#FFF8E8" stroke-width="3"/><path d="M230.78 326.28q-81.03 -47.29 -98.86 -99.3q76.98 -7.57 98.86 99.3Z" fill="url(#paint)" stroke="#FFF8E8" stroke-width="3"/><path d="M299.14 305.01q67.64 -32.47 82.52 -68.2q-64.26 -5.2 -82.52 68.2Z" fill="url(#paint-reverse)" stroke="#FFF8E8" stroke-width="3"/><path d="M239.5 274.07q-66.52 -49.85 -81.15 -104.69q63.19 -7.98 81.15 104.69Z" fill="url(#paint)" stroke="#FFF8E8" stroke-width="3"/><path d="M311.68 236.69q50.18 -48.75 61.22 -102.37q-47.67 -7.8 -61.22 102.37Z" fill="url(#paint)" stroke="#FFF8E8" stroke-width="3"/><path d="M265.84 141.43q-74.17 -44.95 -90.48 -94.4q70.46 -7.19 90.48 94.4Z" fill="url(#paint-reverse)" stroke="#FFF8E8" stroke-width="3"/></g>
+</svg>

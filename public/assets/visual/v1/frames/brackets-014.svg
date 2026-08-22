@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Editorial Brackets 014</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#C45BFF"/><stop offset="1" stop-color="#FF5DA2"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#FF5DA2"/><stop offset="1" stop-color="#C45BFF"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF1FB"/><stop offset=".34" stop-color="#E7A3FF"/><stop offset="1" stop-color="#FF5DA2"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#261039" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#soft-shadow)"><path d="M86.23 157.38V86.23H157.38" stroke="#C45BFF" stroke-width="18.39"/><path d="M354.62 86.23H425.77V157.38" stroke="#FF5DA2" stroke-width="22.39"/><path d="M86.23 354.62V425.77H157.38" stroke="#C45BFF" stroke-width="18.39"/><path d="M354.62 425.77H425.77V354.62" stroke="#FF5DA2" stroke-width="22.39"/><rect x="114.69" y="114.69" width="282.62" height="282.62" rx="46.58" stroke="#FFF1FB" stroke-width="4" stroke-dasharray="16.64 24.28" opacity=".64"/></g>
+</svg>

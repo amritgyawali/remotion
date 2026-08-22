@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Organic Blob 043</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#F04E35"/><stop offset="1" stop-color="#2B77D1"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#2B77D1"/><stop offset="1" stop-color="#F04E35"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF2ED"/><stop offset=".34" stop-color="#FF9A83"/><stop offset="1" stop-color="#2B77D1"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#242846" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><path d="M401.03 184.09Q414.98 232.76 402 282.06Q389.02 331.35 349.69 363.87Q310.35 396.39 263.8 378.5Q217.24 360.62 183.75 345.94Q150.27 331.26 100.64 309.12Q51.01 286.97 73.85 239.47Q96.69 191.97 122.84 162.38Q148.99 132.79 179.19 91.57Q209.39 50.35 259.15 61.31Q308.92 72.26 348 103.84Q387.08 135.42 401.03 184.09Z" fill="url(#paint)" opacity="0.26" stroke="#242846" stroke-width="7"/><path d="M401.54 240.06Q428.25 263.97 421.07 296.57Q413.9 329.17 375.78 335.56Q337.67 341.95 321.65 361.72Q305.64 381.49 279.14 393.23Q252.64 404.97 223.66 397.5Q194.68 390.02 189.94 356.88Q185.21 323.73 161.74 307.58Q138.26 291.43 153.01 267.11Q167.76 242.78 165.61 215.59Q163.46 188.41 178.45 162.09Q193.44 135.77 224.02 138.7Q254.6 141.64 285.61 127.16Q316.62 112.68 342.3 132.51Q367.97 152.34 371.4 184.25Q374.84 216.16 401.54 240.06Z" fill="url(#paint-reverse)" opacity="0.42" stroke="#FFF2ED" stroke-width="3"/><path d="M332.24 210.72Q351.21 233.48 346.34 265.31Q341.47 297.14 308.79 302.19Q276.11 307.24 252.74 315.8Q229.36 324.36 198.82 321.7Q168.29 319.04 149.62 292.63Q130.95 266.22 132.81 234.03Q134.67 201.84 152.18 175.69Q169.68 149.54 200.34 151.75Q230.99 153.95 254.5 154.76Q278 155.58 295.63 171.77Q313.26 187.96 332.24 210.72Z" fill="url(#paint)" opacity="0.58" stroke="#FFF2ED" stroke-width="3"/></g>
+</svg>

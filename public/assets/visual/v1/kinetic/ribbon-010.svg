@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Flow Ribbon 010</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#D8FF2E"/><stop offset="1" stop-color="#8A45FF"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#8A45FF"/><stop offset="1" stop-color="#D8FF2E"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FAFFE8"/><stop offset=".34" stop-color="#E8FF7E"/><stop offset="1" stop-color="#8A45FF"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#24133D" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><path d="M38 105C229.59 15,250.41 146,474 56" fill="none" stroke="url(#paint)" stroke-width="16.17" stroke-linecap="round" opacity="1"/><path d="M38 158.42C42.46 68.42,437.54 188.79,474 98.79" fill="none" stroke="url(#paint-reverse)" stroke-width="27.36" stroke-linecap="round" opacity="0.92"/><path d="M38 234.05C187.2 144.05,292.8 328.41,474 238.41" fill="none" stroke="url(#paint)" stroke-width="17.76" stroke-linecap="round" opacity="0.84"/><path d="M38 253.99C-14.74 163.99,494.74 418.21,474 328.21" fill="none" stroke="url(#paint-reverse)" stroke-width="13.69" stroke-linecap="round" opacity="0.76"/><path d="M38 319.69C192.66 229.69,287.34 485.97,474 395.97" fill="none" stroke="url(#paint)" stroke-width="14.3" stroke-linecap="round" opacity="0.68"/><path d="M38 420.6C58.93 330.6,421.07 491.25,474 401.25" fill="none" stroke="url(#paint-reverse)" stroke-width="27.83" stroke-linecap="round" opacity="0.6"/><circle cx="337.81" cy="325.41" r="27.22" fill="#FAFFE8"/></g>
+</svg>

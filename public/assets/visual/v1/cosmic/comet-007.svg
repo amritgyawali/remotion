@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Motion Comet 007</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#E8C77A"/><stop offset="1" stop-color="#5267C9"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#5267C9"/><stop offset="1" stop-color="#E8C77A"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF9E9"/><stop offset=".34" stop-color="#FFE7A5"/><stop offset="1" stop-color="#5267C9"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#262944" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-glow)"><path d="M68.07 310.6C202.45 377.98,301.33 334.34,394.43 338.84" fill="none" stroke="#FFF9E9" stroke-width="10.13" stroke-linecap="round" opacity="0.75"/><path d="M68.07 288.19C221.87 299.27,302.67 335.3,394.43 338.84" fill="none" stroke="url(#paint)" stroke-width="6.72" stroke-linecap="round" opacity="0.75"/><path d="M68.07 294.82C143.65 364.14,238.23 303.75,394.43 338.84" fill="none" stroke="#FFF9E9" stroke-width="12.4" stroke-linecap="round" opacity="0.92"/><path d="M68.07 309.4C151.29 321.21,272.11 322.07,394.43 338.84" fill="none" stroke="url(#paint)" stroke-width="12.12" stroke-linecap="round" opacity="0.52"/><circle cx="394.43" cy="338.84" r="50.37" fill="url(#halo)"/><circle cx="386.43" cy="328.84" r="14.02" fill="#FFF9E9" opacity=".8"/></g>
+</svg>

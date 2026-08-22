@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Dynamic Badge 016</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#3366FF"/><stop offset="1" stop-color="#E7A93C"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#E7A93C"/><stop offset="1" stop-color="#3366FF"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF8DF"/><stop offset=".34" stop-color="#79A3FF"/><stop offset="1" stop-color="#E7A93C"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#111D4A" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><polygon points="440.05,256 386.26,294.25 424.28,364.15 352.95,367.89 347.3,455.91 276.5,398.56 227.46,454.53 196.09,387.19 129.88,401.55 144.41,327.71 77.03,308.55 124.22,256 66.74,200.43 148.31,186.79 133.13,114.2 197.88,128.74 225.1,41.08 278.44,99.94 333.95,85.31 362.4,133.2 425.07,147.34 407.03,211.65" fill="url(#paint)" opacity=".76" stroke="#111D4A" stroke-width="7" stroke-linejoin="round"/><circle cx="256" cy="256" r="120.72" fill="#FFF8DF" opacity=".22" stroke="#FFF8DF" stroke-width="5"/><polygon points="347.25,257.28 331.17,318.29 272.97,346.44 205.76,337.93 172.62,288.16 167.37,224.93 219.76,193.02 275.85,157.89 315.83,210.69" fill="url(#paint-reverse)" stroke="#FFF8DF" stroke-width="5"/></g>
+</svg>

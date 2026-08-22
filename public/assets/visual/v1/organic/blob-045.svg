@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Organic Blob 045</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#2ED6C5"/><stop offset="1" stop-color="#8B3D8F"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#8B3D8F"/><stop offset="1" stop-color="#2ED6C5"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#F2FFFC"/><stop offset=".34" stop-color="#85F4E8"/><stop offset="1" stop-color="#8B3D8F"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#21324A" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><path d="M431.46 206.18Q471.68 254.58 421.71 294.8Q371.73 335.02 335.3 360Q298.86 384.99 253.63 378.22Q208.4 371.44 162.68 341.93Q116.95 312.42 105.43 250.38Q93.9 188.35 147.23 156.24Q200.55 124.13 253.28 103.87Q306.02 83.61 348.63 120.69Q391.23 157.78 431.46 206.18Z" fill="url(#paint)" opacity="0.26" stroke="#21324A" stroke-width="7"/><path d="M386.26 205.41Q388.75 241.53 394.23 282.77Q399.7 324.02 358.27 332.6Q316.85 341.17 284.15 360.55Q251.45 379.92 214.93 364.36Q178.4 348.8 163.84 313.09Q149.27 277.38 159.76 244.62Q170.25 211.85 177.97 177.26Q185.68 142.67 220.66 137.45Q255.63 132.23 296.43 114.76Q337.22 97.3 360.5 133.29Q383.78 169.28 386.26 205.41Z" fill="url(#paint-reverse)" opacity="0.42" stroke="#F2FFFC" stroke-width="3"/><path d="M356.72 226.43Q362.74 265.74 343.22 293.72Q323.7 321.7 299.17 343.74Q274.64 365.78 242.06 356.9Q209.49 348.03 182.81 325.24Q156.13 302.45 150.79 263.79Q145.45 225.14 177.92 205.07Q210.39 185 242.88 173.26Q275.38 161.52 313.03 174.32Q350.69 187.12 356.72 226.43Z" fill="url(#paint)" opacity="0.58" stroke="#F2FFFC" stroke-width="3"/></g>
+</svg>

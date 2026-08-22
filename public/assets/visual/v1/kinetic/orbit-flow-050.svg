@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Orbit Flow 050</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#3366FF"/><stop offset="1" stop-color="#E7A93C"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#E7A93C"/><stop offset="1" stop-color="#3366FF"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF8DF"/><stop offset=".34" stop-color="#79A3FF"/><stop offset="1" stop-color="#E7A93C"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#111D4A" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><ellipse cx="256" cy="256" rx="92" ry="25.95" transform="rotate(39.05 256 256)" fill="none" stroke="url(#paint)" stroke-width="10.87" opacity="0.87"/><ellipse cx="256" cy="256" rx="116.15" ry="48.03" transform="rotate(53.72 256 256)" fill="none" stroke="#FFF8DF" stroke-width="10.34" opacity="0.7"/><ellipse cx="256" cy="256" rx="140.07" ry="84.13" transform="rotate(65.8 256 256)" fill="none" stroke="url(#paint)" stroke-width="6.02" opacity="0.76"/><circle cx="256" cy="256" r="61.12" fill="url(#halo)"/><circle cx="277.01" cy="109.7" r="9.26" fill="#E7A93C" stroke="#FFF8DF" stroke-width="4"/><circle cx="389.9" cy="375.91" r="16.06" fill="#3366FF" stroke="#FFF8DF" stroke-width="4"/><circle cx="183.15" cy="329.3" r="18.58" fill="#E7A93C" stroke="#FFF8DF" stroke-width="4"/><circle cx="387.56" cy="317.5" r="12.5" fill="#3366FF" stroke="#FFF8DF" stroke-width="4"/><circle cx="341.46" cy="279.9" r="17.41" fill="#E7A93C" stroke="#FFF8DF" stroke-width="4"/></g>
+</svg>

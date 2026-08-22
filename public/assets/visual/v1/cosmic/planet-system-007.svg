@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Planet System 007</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#2ED6C5"/><stop offset="1" stop-color="#8B3D8F"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#8B3D8F"/><stop offset="1" stop-color="#2ED6C5"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#F2FFFC"/><stop offset=".34" stop-color="#85F4E8"/><stop offset="1" stop-color="#8B3D8F"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#21324A" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><ellipse cx="240.96" cy="265.73" rx="112.08" ry="26.57" transform="rotate(26.73 240.96 265.73)" fill="none" stroke="url(#paint)" stroke-width="6.48" opacity="0.66"/><ellipse cx="240.96" cy="265.73" rx="128.69" ry="32.38" transform="rotate(33.73 240.96 265.73)" fill="none" stroke="#F2FFFC" stroke-width="8.65" opacity="0.57"/><ellipse cx="240.96" cy="265.73" rx="145.29" ry="38.19" transform="rotate(40.73 240.96 265.73)" fill="none" stroke="url(#paint)" stroke-width="7.55" opacity="0.87"/><ellipse cx="240.96" cy="265.73" rx="161.9" ry="44" transform="rotate(47.73 240.96 265.73)" fill="none" stroke="#F2FFFC" stroke-width="8.18" opacity="0.61"/><ellipse cx="240.96" cy="265.73" rx="178.5" ry="49.81" transform="rotate(54.73 240.96 265.73)" fill="none" stroke="url(#paint)" stroke-width="6.44" opacity="0.89"/><circle cx="240.96" cy="265.73" r="83.02" fill="url(#halo)" stroke="#21324A" stroke-width="7"/><path d="M181.18 250.79Q240.96 294.79 303.23 260.75" fill="none" stroke="#F2FFFC" stroke-width="8" opacity=".72"/><circle cx="160.69" cy="144.98" r="10.99" fill="#8B3D8F" stroke="#F2FFFC" stroke-width="3"/><circle cx="399.1" cy="223.88" r="10.62" fill="#2ED6C5" stroke="#F2FFFC" stroke-width="3"/></g>
+</svg>

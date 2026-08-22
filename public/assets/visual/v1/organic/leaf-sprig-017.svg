@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Leaf Sprig 017</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#F04E35"/><stop offset="1" stop-color="#2B77D1"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#2B77D1"/><stop offset="1" stop-color="#F04E35"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF2ED"/><stop offset=".34" stop-color="#FF9A83"/><stop offset="1" stop-color="#2B77D1"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#242846" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><path d="M282 462C277.79 350,234.21 186,227.11 48" fill="none" stroke="#242846" stroke-width="12" stroke-linecap="round"/><path d="M221.42 398q-66.46 -44.78 -81.08 -94.04q63.14 -7.16 81.08 94.04Z" fill="url(#paint-reverse)" stroke="#FFF2ED" stroke-width="3"/><path d="M272.32 357.12q86.39 -27.18 105.4 -57.07q-82.07 -4.35 -105.4 57.07Z" fill="url(#paint)" stroke="#FFF2ED" stroke-width="3"/><path d="M197.45 317.67q-68.87 -29.6 -84.02 -62.16q65.43 -4.74 84.02 62.16Z" fill="url(#paint)" stroke="#FFF2ED" stroke-width="3"/><path d="M265.3 300.17q50.6 -25.1 61.73 -52.7q-48.07 -4.02 -61.73 52.7Z" fill="url(#paint-reverse)" stroke="#FFF2ED" stroke-width="3"/><path d="M200.96 270.04q-74.33 -41.6 -90.68 -87.36q70.61 -6.66 90.68 87.36Z" fill="url(#paint)" stroke="#FFF2ED" stroke-width="3"/><path d="M249.84 200.81q90.15 -41.91 109.98 -88.02q-85.64 -6.71 -109.98 88.02Z" fill="url(#paint)" stroke="#FFF2ED" stroke-width="3"/></g>
+</svg>

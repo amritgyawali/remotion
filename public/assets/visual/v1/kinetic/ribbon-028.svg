@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Flow Ribbon 028</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#42F5D7"/><stop offset="1" stop-color="#756BFF"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#756BFF"/><stop offset="1" stop-color="#42F5D7"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#F7FDFF"/><stop offset=".34" stop-color="#53E8FF"/><stop offset="1" stop-color="#756BFF"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#0A1530" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><path d="M38 105C249.77 15,230.23 222.15,474 132.15" fill="none" stroke="url(#paint)" stroke-width="26" stroke-linecap="round" opacity="1"/><path d="M38 167.03C58.61 77.03,421.39 197.9,474 107.9" fill="none" stroke="url(#paint-reverse)" stroke-width="11.88" stroke-linecap="round" opacity="0.92"/><path d="M38 240.14C269.64 150.14,210.36 390.91,474 300.91" fill="none" stroke="url(#paint)" stroke-width="10.42" stroke-linecap="round" opacity="0.84"/><path d="M38 270.68C76.78 180.68,403.22 290.95,474 200.95" fill="none" stroke="url(#paint-reverse)" stroke-width="24.21" stroke-linecap="round" opacity="0.76"/><path d="M38 382.52C265.15 292.52,214.85 514.49,474 424.49" fill="none" stroke="url(#paint)" stroke-width="15.13" stroke-linecap="round" opacity="0.68"/><path d="M38 377.85C31.57 287.85,448.43 406.8,474 316.8" fill="none" stroke="url(#paint-reverse)" stroke-width="14.95" stroke-linecap="round" opacity="0.6"/><circle cx="322.15" cy="304.01" r="26.61" fill="#F7FDFF"/></g>
+</svg>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Organic Blob 032</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FFB000"/><stop offset="1" stop-color="#FF4D6D"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#FF4D6D"/><stop offset="1" stop-color="#FFB000"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF4C7"/><stop offset=".34" stop-color="#FFD166"/><stop offset="1" stop-color="#FF4D6D"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#40142B" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><path d="M392.11 221.95Q377.46 259.12 397.39 298.64Q417.33 338.16 385.42 361.78Q353.51 385.4 319.45 392.42Q285.4 399.44 253.51 415.79Q221.62 432.15 184.7 425.32Q147.78 418.5 133.31 382.75Q118.84 347 89.95 322.06Q61.06 297.11 77.59 262.63Q94.12 228.15 93.02 189.91Q91.91 151.67 120.99 127.69Q150.07 103.7 185.7 93.57Q221.34 83.44 255.1 95.81Q288.85 108.18 324.4 116.93Q359.95 125.68 383.36 155.23Q406.76 184.78 392.11 221.95Z" fill="url(#paint)" opacity="0.26" stroke="#40142B" stroke-width="7"/><path d="M350.22 246.23Q355.79 268.41 359.51 294.74Q363.24 321.06 357.49 354Q351.73 386.95 314.22 376.5Q276.71 366.04 253.03 391.59Q229.35 417.14 198.02 410.57Q166.7 404.01 162.09 367.99Q157.49 331.97 146.14 311.9Q134.79 291.83 129.16 267.21Q123.53 242.59 120.51 209.19Q117.49 175.78 152.94 173.08Q188.39 170.38 208.53 141.84Q228.68 113.3 255.37 133.81Q282.05 154.33 304.04 166.36Q326.03 178.39 335.33 201.21Q344.64 224.04 350.22 246.23Z" fill="url(#paint-reverse)" opacity="0.42" stroke="#FFF4C7" stroke-width="3"/></g>
+</svg>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Satellite 031</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FF8A34"/><stop offset="1" stop-color="#4BB6FF"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#4BB6FF"/><stop offset="1" stop-color="#FF8A34"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF7E8"/><stop offset=".34" stop-color="#FFBE73"/><stop offset="1" stop-color="#4BB6FF"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#183354" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g transform="rotate(16.12 256 256)" filter="url(#soft-shadow)"><rect x="197.39" y="162" width="117.22" height="188" rx="24" fill="url(#halo)" stroke="#183354" stroke-width="7"/><rect x="71.11" y="196" width="112.29" height="120" rx="12" fill="url(#paint)" stroke="#FFF7E8" stroke-width="5"/><rect x="328.61" y="196" width="112.29" height="120" rx="12" fill="url(#paint-reverse)" stroke="#FFF7E8" stroke-width="5"/><circle cx="256" cy="254" r="30" fill="#183354" opacity=".82"/><path d="M256 210L223.67 90.62" stroke="#FFF7E8" stroke-width="5" stroke-linecap="round"/><circle cx="223.67" cy="90.62" r="8" fill="#FF8A34"/><path d="M256 210L279.99 68.58" stroke="#FFF7E8" stroke-width="5" stroke-linecap="round"/><circle cx="279.99" cy="68.58" r="8" fill="#FF8A34"/><path d="M256 210L351.57 270.67" stroke="#FFF7E8" stroke-width="5" stroke-linecap="round"/><circle cx="351.57" cy="270.67" r="8" fill="#FF8A34"/><path d="M256 210L416.85 203.31" stroke="#FFF7E8" stroke-width="5" stroke-linecap="round"/><circle cx="416.85" cy="203.31" r="8" fill="#FF8A34"/><path d="M256 210L370.75 256.93" stroke="#FFF7E8" stroke-width="5" stroke-linecap="round"/><circle cx="370.75" cy="256.93" r="8" fill="#FF8A34"/></g>
+</svg>

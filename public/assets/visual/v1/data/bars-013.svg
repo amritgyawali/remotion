@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Data Bars 013</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#42F5D7"/><stop offset="1" stop-color="#756BFF"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#756BFF"/><stop offset="1" stop-color="#42F5D7"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#F7FDFF"/><stop offset=".34" stop-color="#53E8FF"/><stop offset="1" stop-color="#756BFF"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#0A1530" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><rect x="51" y="206.16" width="60.61" height="223.84" rx="10.53" fill="url(#paint)" opacity="0.79"/><rect x="120.88" y="128.81" width="60.61" height="301.19" rx="20" fill="url(#paint-reverse)" opacity="0.91"/><rect x="190.76" y="359.65" width="60.61" height="70.35" rx="18.37" fill="url(#paint)" opacity="0.81"/><rect x="260.64" y="303" width="60.61" height="127" rx="9.24" fill="url(#paint-reverse)" opacity="0.58"/><rect x="330.51" y="363.79" width="60.61" height="66.21" rx="19.78" fill="url(#paint)" opacity="0.75"/><rect x="400.39" y="210.14" width="60.61" height="219.86" rx="19.69" fill="url(#paint-reverse)" opacity="0.68"/><polyline points="81.3,177.84 151.18,106.02 221.06,320.72 290.94,266.81 360.82,333.07 430.7,185.3" fill="none" stroke="#F7FDFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="81.3" cy="177.84" r="8" fill="#0A1530" stroke="#F7FDFF" stroke-width="4"/><circle cx="151.18" cy="106.02" r="8" fill="#0A1530" stroke="#F7FDFF" stroke-width="4"/><circle cx="221.06" cy="320.72" r="8" fill="#0A1530" stroke="#F7FDFF" stroke-width="4"/><circle cx="290.94" cy="266.81" r="8" fill="#0A1530" stroke="#F7FDFF" stroke-width="4"/><circle cx="360.82" cy="333.07" r="8" fill="#0A1530" stroke="#F7FDFF" stroke-width="4"/><circle cx="430.7" cy="185.3" r="8" fill="#0A1530" stroke="#F7FDFF" stroke-width="4"/></g>
+</svg>

@@ -14,7 +14,7 @@
  */
 
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rmdir, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -27,6 +27,10 @@ const SAMPLE_RATE = 48_000
 const CHANNELS = 2
 const BITS_PER_SAMPLE = 16
 const REFERENCE_FPS = 30
+const VARIANT_REFERENCE_FPS = 120
+const VARIANTS_PER_FAMILY = 36
+const MIN_PROCEDURAL_SFX_VARIANTS = 540
+const MAX_SFX_BYTES = 45 * 1024 * 1024
 const TAU = Math.PI * 2
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
@@ -654,6 +658,246 @@ function renderSfx(id, durationSeconds) {
 	return master(track, { targetRmsDb: null, peakDb: -1.5, fadeMilliseconds: 2 })
 }
 
+const PROCEDURAL_FAMILIES = [
+	{
+		id: 'ui-click', title: 'UI Click', category: 'ui', durationFrames: [10, 16], volume: 0.34,
+		motions: ['micro-pulse', 'press', 'release'], timbres: ['glass', 'soft', 'crisp', 'wood'],
+		pitch: [620, 1_850], ratio: [0.18, 0.58], brightness: [3_200, 12_500], density: [1, 2], intervals: [2, 3, 5, 7],
+		tags: ['click', 'button', 'interface', 'micro-interaction'],
+	},
+	{
+		id: 'ui-pop', title: 'UI Pop', category: 'ui', durationFrames: [16, 26], volume: 0.36,
+		motions: ['pop-in', 'pop-out', 'bounce'], timbres: ['bubble', 'rubber', 'clean', 'hollow'],
+		pitch: [135, 390], ratio: [1.8, 4.6], brightness: [2_200, 9_500], density: [1, 3], intervals: [3, 5, 7, 12],
+		tags: ['pop', 'badge', 'icon', 'interface'],
+	},
+	{
+		id: 'ui-notification', title: 'UI Notification', category: 'ui', durationFrames: [34, 50], volume: 0.32,
+		motions: ['notify-up', 'notify-down', 'confirm'], timbres: ['bell', 'digital', 'warm', 'crystal'],
+		pitch: [560, 1_050], ratio: [1.12, 1.8], brightness: [5_000, 15_500], density: [2, 4], intervals: [3, 4, 5, 7, 9, 12],
+		tags: ['notification', 'success', 'alert', 'interface'],
+	},
+	{
+		id: 'ui-key', title: 'UI Key', category: 'ui', durationFrames: [7, 12], volume: 0.28,
+		motions: ['tap', 'type', 'tick'], timbres: ['mechanical', 'soft', 'plastic', 'metal'],
+		pitch: [230, 920], ratio: [0.28, 0.72], brightness: [3_600, 16_000], density: [1, 3], intervals: [1, 2, 3, 5],
+		tags: ['keyboard', 'type', 'tick', 'interface'],
+	},
+	{
+		id: 'motion-whoosh', title: 'Motion Whoosh', category: 'motion', durationFrames: [28, 48], volume: 0.38,
+		motions: ['left-to-right', 'right-to-left', 'center-out', 'arc'], timbres: ['airy', 'silk', 'deep', 'futuristic'],
+		pitch: [64, 230], ratio: [2.2, 9.5], brightness: [4_200, 18_000], density: [2, 5], intervals: [5, 7, 12, 19],
+		tags: ['whoosh', 'motion', 'speed', 'transition'],
+	},
+	{
+		id: 'motion-swipe', title: 'Motion Swipe', category: 'motion', durationFrames: [20, 34], volume: 0.32,
+		motions: ['left-to-right', 'right-to-left', 'upward', 'downward'], timbres: ['paper', 'air', 'digital', 'soft'],
+		pitch: [180, 720], ratio: [1.7, 5.2], brightness: [3_800, 15_500], density: [1, 4], intervals: [3, 5, 7, 12],
+		tags: ['swipe', 'slide', 'card', 'motion'],
+	},
+	{
+		id: 'transition-glitch', title: 'Transition Glitch', category: 'transitions', durationFrames: [24, 42], volume: 0.35,
+		motions: ['stutter', 'fragment', 'scan', 'hard-cut'], timbres: ['bitcrushed', 'static', 'electric', 'metallic'],
+		pitch: [170, 1_250], ratio: [0.18, 3.4], brightness: [5_500, 19_000], density: [4, 10], intervals: [1, 6, 11, 13],
+		tags: ['glitch', 'digital', 'cut', 'transition'],
+	},
+	{
+		id: 'transition-riser', title: 'Transition Riser', category: 'transitions', durationFrames: [55, 100], volume: 0.34,
+		motions: ['build', 'lift', 'spiral', 'accelerate'], timbres: ['digital', 'organic', 'airy', 'tonal'],
+		pitch: [55, 220], ratio: [7, 26], brightness: [6_500, 19_000], density: [2, 6], intervals: [7, 12, 19, 24],
+		tags: ['riser', 'build', 'reveal', 'transition'],
+	},
+	{
+		id: 'transition-drop', title: 'Transition Drop', category: 'transitions', durationFrames: [48, 84], volume: 0.38,
+		motions: ['drop', 'plunge', 'decelerate', 'collapse'], timbres: ['sub', 'cinematic', 'round', 'dark'],
+		pitch: [250, 820], ratio: [0.035, 0.2], brightness: [1_200, 6_500], density: [1, 4], intervals: [-24, -19, -12, -7],
+		tags: ['drop', 'sub', 'bass', 'transition'],
+	},
+	{
+		id: 'impact-hit', title: 'Impact Hit', category: 'impacts', durationFrames: [16, 30], volume: 0.42,
+		motions: ['strike', 'snap', 'punch', 'stamp'], timbres: ['clean', 'hard', 'dry', 'bright'],
+		pitch: [42, 96], ratio: [0.32, 0.82], brightness: [3_000, 16_500], density: [1, 4], intervals: [-12, -7, 5, 12],
+		tags: ['impact', 'hit', 'reveal', 'accent'],
+	},
+	{
+		id: 'impact-boom', title: 'Impact Boom', category: 'impacts', durationFrames: [48, 92], volume: 0.42,
+		motions: ['expansion', 'shockwave', 'trailer-hit', 'decay'], timbres: ['deep', 'sub', 'cinematic', 'rumble'],
+		pitch: [26, 58], ratio: [0.42, 0.82], brightness: [850, 5_200], density: [1, 4], intervals: [-24, -12, -7, 5],
+		tags: ['boom', 'impact', 'trailer', 'payoff'],
+	},
+	{
+		id: 'accent-chime', title: 'Accent Chime', category: 'accents', durationFrames: [32, 55], volume: 0.31,
+		motions: ['spark', 'resolve', 'twinkle', 'confirm'], timbres: ['bell', 'crystal', 'glass', 'warm'],
+		pitch: [540, 1_080], ratio: [1.1, 2.1], brightness: [7_000, 18_000], density: [2, 5], intervals: [3, 4, 5, 7, 9, 12],
+		tags: ['chime', 'success', 'sparkle', 'accent'],
+	},
+	{
+		id: 'accent-shimmer', title: 'Accent Shimmer', category: 'accents', durationFrames: [46, 84], volume: 0.31,
+		motions: ['shimmer', 'scatter', 'cascade', 'reveal'], timbres: ['premium', 'crystal', 'magic', 'airy'],
+		pitch: [680, 1_420], ratio: [1.3, 2.7], brightness: [9_000, 19_500], density: [4, 8], intervals: [2, 4, 5, 7, 11, 12],
+		tags: ['shimmer', 'sparkle', 'reveal', 'accent'],
+	},
+	{
+		id: 'accent-power', title: 'Accent Power', category: 'accents', durationFrames: [35, 64], volume: 0.33,
+		motions: ['power-up', 'charge', 'level-up', 'unlock'], timbres: ['arcade', 'electric', 'heroic', 'digital'],
+		pitch: [130, 360], ratio: [4.5, 12], brightness: [5_500, 17_000], density: [3, 6], intervals: [3, 5, 7, 12],
+		tags: ['power-up', 'upgrade', 'game', 'accent'],
+	},
+	{
+		id: 'foley-touch', title: 'Foley Touch', category: 'foley', durationFrames: [10, 22], volume: 0.3,
+		motions: ['touch', 'place', 'brush', 'flick'], timbres: ['paper', 'cloth', 'wood', 'plastic'],
+		pitch: [150, 680], ratio: [0.26, 0.85], brightness: [2_000, 14_500], density: [1, 4], intervals: [2, 3, 5, 7],
+		tags: ['foley', 'touch', 'object', 'texture'],
+	},
+]
+
+const panForMotion = (motion, width) => {
+	if (motion === 'left-to-right' || motion === 'upward' || motion === 'lift') return [-width, width]
+	if (motion === 'right-to-left' || motion === 'downward' || motion === 'plunge') return [width, -width]
+	if (motion === 'center-out' || motion === 'expansion' || motion === 'shockwave') return [-width * 0.2, width]
+	if (motion === 'arc' || motion === 'spiral' || motion === 'scatter' || motion === 'cascade') return [width, -width * 0.7]
+	return [-width * 0.25, width * 0.25]
+}
+
+const randomBetween = (random, [minimum, maximum]) => lerp(minimum, maximum, random())
+const frequencyToMidi = (frequency) => 69 + 12 * Math.log2(frequency / 440)
+
+function createProceduralVariant(family, familyIndex, variantIndex) {
+	const variant = `v${String(variantIndex).padStart(3, '0')}`
+	const id = `${family.id}-${variant}`
+	const random = seededRandom(`${id}-parameters-v1`)
+	const [minimumFrames, maximumFrames] = family.durationFrames
+	const durationSpan = maximumFrames - minimumFrames + 1
+	const durationFramesAt120Fps = minimumFrames + ((variantIndex * 17 + familyIndex * 11) % durationSpan)
+	const durationSeconds = durationFramesAt120Fps / VARIANT_REFERENCE_FPS
+	const motion = family.motions[(variantIndex - 1) % family.motions.length]
+	const timbre = family.timbres[(Math.floor((variantIndex - 1) / family.motions.length) + variantIndex) % family.timbres.length]
+	const stereoWidth = round(0.18 + random() * 0.7, 4)
+	const [panFrom, panTo] = panForMotion(motion, stereoWidth)
+	const parameters = {
+		baseFrequencyHz: round(randomBetween(random, family.pitch), 3),
+		frequencyRatio: round(randomBetween(random, family.ratio), 5),
+		brightnessHz: round(randomBetween(random, family.brightness), 2),
+		bandwidth: round(0.22 + random() * 0.62, 5),
+		harmonicMix: round(0.035 + random() * 0.32, 5),
+		noiseMix: round(0.18 + random() * 0.75, 5),
+		density: Math.round(randomBetween(random, family.density)),
+		intervalSemitones: family.intervals[Math.floor(random() * family.intervals.length)],
+		panFrom: round(panFrom, 5),
+		panTo: round(panTo, 5),
+		attackShape: round(0.55 + random() * 1.1, 5),
+		delaySeconds: round(0.018 + random() * Math.min(0.13, durationSeconds * 0.22), 6),
+	}
+
+	return {
+		id,
+		title: `${family.title} ${variant.toUpperCase()}`,
+		kind: 'sfx',
+		category: family.category,
+		family: family.id,
+		variant,
+		motion,
+		timbre,
+		file: `sfx/variants/${family.category}/${family.id}/${id}.wav`,
+		durationSeconds,
+		durationFramesAt120Fps,
+		bpm: null,
+		loopable: false,
+		recommendedVolume: family.volume,
+		tags: [...new Set([...family.tags, motion, timbre, family.id])],
+		parameters,
+		render: () => renderProceduralSfx({ id, family: family.id, durationSeconds, motion, timbre, parameters }),
+	}
+}
+
+function renderProceduralSfx({ id, family, durationSeconds, timbre, parameters: p }) {
+	const track = createTrack(durationSeconds)
+	const activeDuration = durationSeconds * 0.94
+	const endFrequency = Math.max(22, Math.min(19_500, p.baseFrequencyHz * p.frequencyRatio))
+	const toneAmplitude = 0.34 + (1 - p.noiseMix) * 0.42
+	const noiseAmplitude = 0.36 + p.noiseMix * 0.66
+
+	if (family === 'ui-click') {
+		addToneSweep(track, { duration: activeDuration, startFrequency: p.baseFrequencyHz, endFrequency, amplitude: toneAmplitude, panFrom: p.panFrom, panTo: p.panTo, curve: 'decay', harmonic: p.harmonicMix })
+		if (p.density > 1) addToneSweep(track, { start: durationSeconds * 0.17, duration: durationSeconds * 0.56, startFrequency: p.baseFrequencyHz * 1.45, endFrequency: endFrequency * 1.18, amplitude: 0.2, panFrom: -p.panTo, panTo: p.panFrom, curve: 'decay', harmonic: 0.04 })
+	} else if (family === 'ui-pop') {
+		addToneSweep(track, { duration: activeDuration, startFrequency: p.baseFrequencyHz, endFrequency, amplitude: 0.72, panFrom: p.panFrom, panTo: p.panTo, curve: 'bell', harmonic: p.harmonicMix })
+		addFilteredNoise(track, { seed: id, duration: durationSeconds * 0.58, amplitude: 0.18 * p.noiseMix, lowCutFrom: p.brightnessHz * 0.18, lowCutTo: p.brightnessHz * 0.4, highCutFrom: p.brightnessHz, highCutTo: p.brightnessHz * 0.72, panFrom: p.panFrom, panTo: p.panTo, shape: 'decay' })
+	} else if (family === 'ui-notification') {
+		const baseMidi = frequencyToMidi(p.baseFrequencyHz)
+		for (let note = 0; note < p.density; note++) {
+			const progress = note / Math.max(1, p.density - 1)
+			addNote(track, { start: durationSeconds * (0.035 + progress * 0.42), duration: durationSeconds * (0.62 - progress * 0.1), midi: baseMidi + (note ? p.intervalSemitones + (note - 1) * 2 : 0), amplitude: 0.48 / (1 + note * 0.14), pan: lerp(p.panFrom, p.panTo, progress), instrument: timbre === 'digital' ? 'pulse' : 'bell', attack: 0.004 + p.attackShape * 0.002, release: durationSeconds * 0.28 })
+		}
+		applyDelay(track, [{ seconds: p.delaySeconds, gain: 0.08 + p.harmonicMix * 0.2, crossfeed: true }])
+	} else if (family === 'ui-key') {
+		addFilteredNoise(track, { seed: id, duration: durationSeconds * 0.72, amplitude: noiseAmplitude, lowCutFrom: p.brightnessHz * p.bandwidth, lowCutTo: p.brightnessHz * 0.2, highCutFrom: p.brightnessHz, highCutTo: p.brightnessHz * 0.58, panFrom: p.panFrom, panTo: p.panTo, shape: 'decay' })
+		addToneSweep(track, { duration: durationSeconds * 0.66, startFrequency: p.baseFrequencyHz, endFrequency, amplitude: toneAmplitude * 0.52, panFrom: p.panFrom, panTo: p.panTo, curve: 'decay', harmonic: p.harmonicMix })
+	} else if (family === 'motion-whoosh' || family === 'motion-swipe') {
+		const isWhoosh = family === 'motion-whoosh'
+		addFilteredNoise(track, { seed: id, duration: activeDuration, amplitude: noiseAmplitude, lowCutFrom: p.baseFrequencyHz, lowCutTo: Math.min(p.brightnessHz * 0.46, endFrequency * 2.4), highCutFrom: Math.max(1_000, p.brightnessHz * (isWhoosh ? 0.32 : 0.44)), highCutTo: p.brightnessHz, panFrom: p.panFrom, panTo: p.panTo, shape: 'bell' })
+		addToneSweep(track, { duration: activeDuration * 0.96, startFrequency: p.baseFrequencyHz, endFrequency, amplitude: toneAmplitude * (isWhoosh ? 0.56 : 0.34), panFrom: p.panFrom, panTo: p.panTo, curve: 'bell', harmonic: p.harmonicMix })
+		if (p.density >= 4) applyDelay(track, [{ seconds: p.delaySeconds, gain: 0.08, crossfeed: true }])
+	} else if (family === 'transition-glitch') {
+		const burstGap = durationSeconds * 0.72 / p.density
+		for (let burst = 0; burst < p.density; burst++) {
+			const alternating = burst % 2 ? -1 : 1
+			addFilteredNoise(track, { seed: `${id}-${burst}`, start: durationSeconds * 0.025 + burst * burstGap, duration: Math.min(durationSeconds * 0.18, burstGap * (0.48 + (burst % 3) * 0.13)), amplitude: 0.48 + (burst % 4) * 0.09, lowCutFrom: p.baseFrequencyHz * (1 + burst * 0.32), lowCutTo: p.baseFrequencyHz * p.bandwidth, highCutFrom: Math.min(19_500, p.brightnessHz * (0.55 + burst * 0.045)), highCutTo: p.brightnessHz, panFrom: alternating * p.panFrom, panTo: alternating * p.panTo, shape: 'decay' })
+		}
+		addToneSweep(track, { start: durationSeconds * 0.42, duration: durationSeconds * 0.38, startFrequency: p.baseFrequencyHz, endFrequency, amplitude: 0.27, panFrom: p.panTo, panTo: p.panFrom, curve: 'decay', harmonic: p.harmonicMix })
+	} else if (family === 'transition-riser') {
+		addFilteredNoise(track, { seed: id, duration: activeDuration, amplitude: noiseAmplitude, lowCutFrom: p.baseFrequencyHz, lowCutTo: Math.min(p.brightnessHz * 0.62, endFrequency), highCutFrom: p.brightnessHz * 0.18, highCutTo: p.brightnessHz, panFrom: p.panFrom, panTo: p.panTo, shape: 'rise' })
+		addToneSweep(track, { duration: activeDuration, startFrequency: p.baseFrequencyHz, endFrequency, amplitude: toneAmplitude, panFrom: -p.panFrom, panTo: -p.panTo, curve: 'rise', harmonic: p.harmonicMix })
+	} else if (family === 'transition-drop') {
+		addToneSweep(track, { duration: activeDuration, startFrequency: p.baseFrequencyHz, endFrequency, amplitude: 0.9, panFrom: p.panFrom, panTo: p.panTo, curve: 'decay', harmonic: p.harmonicMix * 0.5 })
+		addFilteredNoise(track, { seed: id, duration: durationSeconds * 0.66, amplitude: noiseAmplitude * 0.38, lowCutFrom: p.baseFrequencyHz * 0.42, lowCutTo: 35, highCutFrom: p.brightnessHz, highCutTo: Math.max(240, p.brightnessHz * p.bandwidth * 0.24), panFrom: p.panFrom, panTo: p.panTo, shape: 'decay' })
+	} else if (family === 'impact-hit') {
+		addKick(track, durationSeconds * 0.025, 0.88 + p.harmonicMix, durationSeconds * 0.92, p.baseFrequencyHz)
+		addFilteredNoise(track, { seed: id, duration: durationSeconds * (0.55 + p.bandwidth * 0.32), amplitude: noiseAmplitude * 0.62, lowCutFrom: p.brightnessHz * 0.18, lowCutTo: p.brightnessHz * 0.08, highCutFrom: p.brightnessHz, highCutTo: p.brightnessHz * 0.36, panFrom: p.panFrom, panTo: p.panTo, shape: 'decay' })
+	} else if (family === 'impact-boom') {
+		addKick(track, durationSeconds * 0.012, 1.02, Math.min(durationSeconds * 0.8, 0.72), p.baseFrequencyHz)
+		addToneSweep(track, { start: durationSeconds * 0.015, duration: activeDuration, startFrequency: p.baseFrequencyHz * 1.7, endFrequency: Math.max(24, endFrequency), amplitude: 0.6, panFrom: p.panFrom, panTo: p.panTo, curve: 'decay', harmonic: p.harmonicMix * 0.35 })
+		addFilteredNoise(track, { seed: id, duration: durationSeconds * 0.76, amplitude: noiseAmplitude * 0.35, lowCutFrom: p.baseFrequencyHz * 2.5, lowCutTo: 50, highCutFrom: p.brightnessHz, highCutTo: Math.max(360, p.brightnessHz * 0.18), panFrom: p.panFrom, panTo: p.panTo, shape: 'decay' })
+		if (p.density >= 3) applyDelay(track, [{ seconds: p.delaySeconds * 1.8, gain: 0.1, crossfeed: true }])
+	} else if (family === 'accent-chime') {
+		const baseMidi = frequencyToMidi(p.baseFrequencyHz)
+		for (let note = 0; note < p.density; note++) {
+			const progress = note / Math.max(1, p.density - 1)
+			addNote(track, { start: durationSeconds * (0.02 + progress * 0.42), duration: durationSeconds * (0.66 - progress * 0.12), midi: baseMidi + (note % 2 ? p.intervalSemitones : note * 2), amplitude: 0.4 / (1 + note * 0.13), pan: lerp(p.panFrom, p.panTo, progress), instrument: timbre === 'warm' ? 'pluck' : 'bell', attack: 0.004, release: durationSeconds * 0.25 })
+		}
+		applyDelay(track, [{ seconds: p.delaySeconds, gain: 0.1 + p.harmonicMix * 0.15, crossfeed: true }])
+	} else if (family === 'accent-shimmer') {
+		const baseMidi = frequencyToMidi(p.baseFrequencyHz)
+		for (let note = 0; note < p.density; note++) {
+			const progress = note / Math.max(1, p.density - 1)
+			const octave = note >= Math.ceil(p.density / 2) ? 12 : 0
+			addNote(track, { start: durationSeconds * (0.015 + progress * 0.56), duration: durationSeconds * (0.48 - progress * 0.12), midi: baseMidi + octave + (note * p.intervalSemitones) % 12, amplitude: 0.3 / (1 + note * 0.09), pan: note % 2 ? p.panTo : p.panFrom, instrument: 'bell', attack: 0.003, release: durationSeconds * 0.22 })
+		}
+		addFilteredNoise(track, { seed: id, duration: activeDuration, amplitude: 0.14 + p.noiseMix * 0.12, lowCutFrom: p.brightnessHz * 0.28, lowCutTo: p.brightnessHz * 0.55, highCutFrom: p.brightnessHz * 0.72, highCutTo: p.brightnessHz, panFrom: p.panFrom, panTo: p.panTo, shape: 'bell' })
+	} else if (family === 'accent-power') {
+		addToneSweep(track, { duration: activeDuration * 0.86, startFrequency: p.baseFrequencyHz, endFrequency, amplitude: 0.58, panFrom: p.panFrom, panTo: p.panTo, curve: 'rise', harmonic: p.harmonicMix })
+		const baseMidi = frequencyToMidi(p.baseFrequencyHz * 1.8)
+		for (let note = 0; note < p.density; note++) {
+			const progress = note / Math.max(1, p.density - 1)
+			addNote(track, { start: durationSeconds * (0.16 + progress * 0.52), duration: durationSeconds * 0.3, midi: baseMidi + note * p.intervalSemitones, amplitude: 0.23, pan: lerp(p.panFrom, p.panTo, progress), instrument: timbre === 'heroic' ? 'bell' : 'pulse', attack: 0.004, release: durationSeconds * 0.1 })
+		}
+	} else if (family === 'foley-touch') {
+		for (let pulse = 0; pulse < p.density; pulse++) {
+			const progress = pulse / Math.max(1, p.density)
+			addFilteredNoise(track, { seed: `${id}-${pulse}`, start: durationSeconds * progress * 0.46, duration: durationSeconds * (0.42 - progress * 0.08), amplitude: noiseAmplitude * (0.66 - progress * 0.16), lowCutFrom: p.brightnessHz * p.bandwidth, lowCutTo: p.brightnessHz * 0.16, highCutFrom: p.brightnessHz, highCutTo: p.brightnessHz * (0.42 + p.bandwidth * 0.2), panFrom: lerp(p.panFrom, p.panTo, progress), panTo: lerp(p.panFrom, p.panTo, Math.min(1, progress + 0.25)), shape: 'decay' })
+		}
+		addToneSweep(track, { duration: durationSeconds * 0.55, startFrequency: p.baseFrequencyHz, endFrequency, amplitude: toneAmplitude * 0.34, panFrom: p.panFrom, panTo: p.panTo, curve: 'decay', harmonic: p.harmonicMix })
+	} else {
+		throw new Error(`Unknown procedural SFX family: ${family}`)
+	}
+
+	return master(track, { targetRmsDb: null, peakDb: -1.5, fadeMilliseconds: 1.5 })
+}
+
+const PROCEDURAL_SFX = PROCEDURAL_FAMILIES.flatMap((family, familyIndex) =>
+	Array.from({ length: VARIANTS_PER_FAMILY }, (_, index) => createProceduralVariant(family, familyIndex, index + 1)),
+)
+
 const MUSIC = [
 	{
 		id: 'neon-pulse',
@@ -793,7 +1037,30 @@ const MUSIC = [
 	},
 ]
 
-const SFX = [
+const LEGACY_SFX_METADATA = {
+	'ui-click-soft': { family: 'ui-click', motion: 'press', timbre: 'soft' },
+	'ui-pop-clean': { family: 'ui-pop', motion: 'pop-in', timbre: 'clean' },
+	'ui-notification-bright': { family: 'ui-notification', motion: 'confirm', timbre: 'crystal' },
+	'whoosh-fast': { family: 'motion-whoosh', motion: 'left-to-right', timbre: 'airy' },
+	'whoosh-deep': { family: 'motion-whoosh', motion: 'right-to-left', timbre: 'deep' },
+	'riser-digital': { family: 'transition-riser', motion: 'build', timbre: 'digital' },
+	'impact-clean': { family: 'impact-hit', motion: 'strike', timbre: 'clean' },
+	'impact-deep': { family: 'impact-boom', motion: 'shockwave', timbre: 'deep' },
+	'reveal-shimmer': { family: 'accent-shimmer', motion: 'reveal', timbre: 'premium' },
+	'logo-stinger': { family: 'accent-chime', motion: 'resolve', timbre: 'bell' },
+	'ui-typewriter': { family: 'ui-key', motion: 'type', timbre: 'mechanical' },
+	'ui-tick': { family: 'ui-key', motion: 'tick', timbre: 'metal' },
+	'ui-swipe': { family: 'motion-swipe', motion: 'left-to-right', timbre: 'soft' },
+	'transition-glitch': { family: 'transition-glitch', motion: 'hard-cut', timbre: 'static' },
+	'transition-sub-drop': { family: 'transition-drop', motion: 'drop', timbre: 'sub' },
+	'transition-riser-organic': { family: 'transition-riser', motion: 'lift', timbre: 'organic' },
+	'impact-snap': { family: 'impact-hit', motion: 'snap', timbre: 'dry' },
+	'impact-boom-tail': { family: 'impact-boom', motion: 'trailer-hit', timbre: 'cinematic' },
+	'accent-chime-sparkle': { family: 'accent-chime', motion: 'twinkle', timbre: 'crystal' },
+	'accent-power-up': { family: 'accent-power', motion: 'power-up', timbre: 'arcade' },
+}
+
+const LEGACY_SFX = [
 	{ id: 'ui-click-soft', title: 'Soft UI Click', category: 'ui', file: 'sfx/ui/click-soft.wav', durationSeconds: 0.1, recommendedVolume: 0.36, tags: ['click', 'button', 'minimal'] },
 	{ id: 'ui-pop-clean', title: 'Clean UI Pop', category: 'ui', file: 'sfx/ui/pop-clean.wav', durationSeconds: 0.2, recommendedVolume: 0.38, tags: ['pop', 'badge', 'icon'] },
 	{ id: 'ui-notification-bright', title: 'Bright Notification', category: 'ui', file: 'sfx/ui/notification-bright.wav', durationSeconds: 0.5, recommendedVolume: 0.34, tags: ['notification', 'success', 'positive'] },
@@ -814,9 +1081,278 @@ const SFX = [
 	{ id: 'impact-boom-tail', title: 'Boom With Tail', category: 'impacts', file: 'sfx/impacts/impact-boom-tail.wav', durationSeconds: 2, recommendedVolume: 0.44, tags: ['boom', 'trailer', 'title', 'payoff'] },
 	{ id: 'accent-chime-sparkle', title: 'Chime Sparkle', category: 'accents', file: 'sfx/accents/chime-sparkle.wav', durationSeconds: 1, recommendedVolume: 0.32, tags: ['chime', 'magic', 'sparkle', 'success'] },
 	{ id: 'accent-power-up', title: 'Power Up', category: 'accents', file: 'sfx/accents/power-up.wav', durationSeconds: 0.8, recommendedVolume: 0.34, tags: ['power', 'upgrade', 'level-up', 'game'] },
-].map((asset) => ({ ...asset, kind: 'sfx', loopable: false, bpm: null, render: () => renderSfx(asset.id, asset.durationSeconds) }))
+].map((asset) => ({
+	...asset,
+	...LEGACY_SFX_METADATA[asset.id],
+	variant: 'legacy',
+	kind: 'sfx',
+	loopable: false,
+	bpm: null,
+	render: () => renderSfx(asset.id, asset.durationSeconds),
+}))
+
+const SFX = [...LEGACY_SFX, ...PROCEDURAL_SFX]
+
+const FAMILY_SUMMARIES = PROCEDURAL_FAMILIES.map((family) => ({
+	id: family.id,
+	category: family.category,
+	pathPattern: `v1/sfx/variants/${family.category}/${family.id}/${family.id}-v{NNN}.wav`,
+	staticFilePathPattern: `assets/audio/v1/sfx/variants/${family.category}/${family.id}/${family.id}-v{NNN}.wav`,
+	variantCount: VARIANTS_PER_FAMILY,
+	motion: family.motions,
+	timbre: family.timbres,
+	recommendedVolume: family.volume,
+}))
+
+const LEGACY_VARIANT_MAP = Object.fromEntries(LEGACY_SFX.map((asset) => {
+	const family = FAMILY_SUMMARIES.find((entry) => entry.id === asset.family)
+	return [asset.id, {
+		legacyFile: `v1/${asset.file}`,
+		legacyStaticFilePath: `assets/audio/v1/${asset.file}`,
+		family: asset.family,
+		category: family.category,
+		variantCount: family.variantCount,
+		variantIdPattern: `${asset.family}-v{NNN}`,
+		pathPattern: family.pathPattern,
+		staticFilePathPattern: family.staticFilePathPattern,
+	}]
+}))
 
 const ASSETS = [...MUSIC, ...SFX]
+
+const PRESERVED_MUSIC_FILES = {
+	'neon-pulse': 'music/neon-pulse-120bpm-loop.wav',
+	'warm-inspiration': 'music/warm-inspiration-96bpm-loop.wav',
+	'cinematic-orbit': 'music/cinematic-orbit-80bpm-loop.wav',
+	'ambient-calm': 'music/ambient-calm-70bpm-loop.wav',
+	'epic-cinematic': 'music/epic-cinematic-88bpm-loop.wav',
+	'lofi-chill': 'music/lofi-chill-84bpm-loop.wav',
+	'corporate-clean': 'music/corporate-clean-112bpm-loop.wav',
+	'tension-drone': 'music/tension-drone-72bpm-loop.wav',
+}
+
+const PRESERVED_LEGACY_SFX_FILES = {
+	'ui-click-soft': 'sfx/ui/click-soft.wav',
+	'ui-pop-clean': 'sfx/ui/pop-clean.wav',
+	'ui-notification-bright': 'sfx/ui/notification-bright.wav',
+	'whoosh-fast': 'sfx/transitions/whoosh-fast.wav',
+	'whoosh-deep': 'sfx/transitions/whoosh-deep.wav',
+	'riser-digital': 'sfx/transitions/riser-digital.wav',
+	'impact-clean': 'sfx/impacts/impact-clean.wav',
+	'impact-deep': 'sfx/impacts/impact-deep.wav',
+	'reveal-shimmer': 'sfx/accents/reveal-shimmer.wav',
+	'logo-stinger': 'sfx/accents/logo-stinger.wav',
+	'ui-typewriter': 'sfx/ui/typewriter.wav',
+	'ui-tick': 'sfx/ui/tick.wav',
+	'ui-swipe': 'sfx/ui/swipe.wav',
+	'transition-glitch': 'sfx/transitions/glitch.wav',
+	'transition-sub-drop': 'sfx/transitions/sub-drop.wav',
+	'transition-riser-organic': 'sfx/transitions/riser-organic.wav',
+	'impact-snap': 'sfx/impacts/impact-snap.wav',
+	'impact-boom-tail': 'sfx/impacts/impact-boom-tail.wav',
+	'accent-chime-sparkle': 'sfx/accents/chime-sparkle.wav',
+	'accent-power-up': 'sfx/accents/power-up.wav',
+}
+
+function validateDefinitions() {
+	if (MUSIC.length !== 8) throw new Error(`Expected 8 preserved music assets, found ${MUSIC.length}`)
+	if (LEGACY_SFX.length !== 20) throw new Error(`Expected 20 preserved legacy SFX, found ${LEGACY_SFX.length}`)
+	if (PROCEDURAL_SFX.length < MIN_PROCEDURAL_SFX_VARIANTS) {
+		throw new Error(`Expected at least ${MIN_PROCEDURAL_SFX_VARIANTS} procedural SFX variants, found ${PROCEDURAL_SFX.length}`)
+	}
+	if (SFX.length < 560) throw new Error(`Expected at least 560 total SFX, found ${SFX.length}`)
+	if (PROCEDURAL_SFX.length !== PROCEDURAL_FAMILIES.length * VARIANTS_PER_FAMILY) {
+		throw new Error('Procedural family/variant cardinality is inconsistent')
+	}
+
+	for (const [id, file] of Object.entries(PRESERVED_MUSIC_FILES)) {
+		if (MUSIC.find((asset) => asset.id === id)?.file !== file) throw new Error(`${id}: preserved music path changed`)
+	}
+	for (const [id, file] of Object.entries(PRESERVED_LEGACY_SFX_FILES)) {
+		if (LEGACY_SFX.find((asset) => asset.id === id)?.file !== file) throw new Error(`${id}: preserved legacy SFX path changed`)
+	}
+
+	const requiredCategories = new Set(['ui', 'motion', 'transitions', 'impacts', 'accents', 'foley'])
+	for (const category of requiredCategories) {
+		if (!PROCEDURAL_FAMILIES.some((family) => family.category === category)) {
+			throw new Error(`Missing required procedural SFX category: ${category}`)
+		}
+	}
+
+	const ids = new Set()
+	const files = new Set()
+	for (const asset of ASSETS) {
+		if (!asset.id || ids.has(asset.id)) throw new Error(`Duplicate or empty asset id: ${asset.id}`)
+		if (!asset.file || files.has(asset.file)) throw new Error(`Duplicate or empty asset path: ${asset.file}`)
+		if (path.posix.isAbsolute(asset.file) || asset.file.includes('\\') || asset.file.split('/').includes('..') || !asset.file.endsWith('.wav')) {
+			throw new Error(`${asset.id}: unsafe or unsupported WAV path ${asset.file}`)
+		}
+		const exactSampleCount = asset.durationSeconds * SAMPLE_RATE
+		if (asset.kind === 'sfx' && Math.abs(exactSampleCount - Math.round(exactSampleCount)) > 1e-6) {
+			throw new Error(`${asset.id}: duration does not resolve to an exact 48 kHz sample count`)
+		}
+		ids.add(asset.id)
+		files.add(asset.file)
+		if (asset.kind === 'sfx') {
+			for (const field of ['family', 'variant', 'motion', 'timbre']) {
+				if (typeof asset[field] !== 'string' || !asset[field]) throw new Error(`${asset.id}: missing SFX metadata field ${field}`)
+			}
+			if (!Array.isArray(asset.tags) || asset.tags.length < 3) throw new Error(`${asset.id}: missing searchable SFX tags`)
+		}
+	}
+
+	for (const family of PROCEDURAL_FAMILIES) {
+		const variants = PROCEDURAL_SFX.filter((asset) => asset.family === family.id)
+		if (variants.length !== VARIANTS_PER_FAMILY) throw new Error(`${family.id}: expected ${VARIANTS_PER_FAMILY} variants`)
+		for (let index = 1; index <= VARIANTS_PER_FAMILY; index++) {
+			const variant = `v${String(index).padStart(3, '0')}`
+			const id = `${family.id}-${variant}`
+			const expectedFile = `sfx/variants/${family.category}/${family.id}/${id}.wav`
+			const asset = variants[index - 1]
+			if (asset.id !== id || asset.variant !== variant || asset.file !== expectedFile) {
+				throw new Error(`${family.id}: non-deterministic variant ordering or path at ${variant}`)
+			}
+		}
+	}
+
+	if (Object.keys(LEGACY_VARIANT_MAP).length !== LEGACY_SFX.length) throw new Error('Legacy variant map is incomplete')
+}
+
+function contentFingerprint(track) {
+	const hash = createHash('sha256')
+	const framesPerChunk = 1_024
+	const chunk = Buffer.allocUnsafe(framesPerChunk * CHANNELS * 4)
+	let chunkFrames = 0
+
+	for (let index = 0; index < track.left.length; index++) {
+		const offset = chunkFrames * CHANNELS * 4
+		chunk.writeInt32LE(Math.round(clamp(track.left[index], -1, 1) * 8_388_607), offset)
+		chunk.writeInt32LE(Math.round(clamp(track.right[index], -1, 1) * 8_388_607), offset + 4)
+		chunkFrames++
+		if (chunkFrames === framesPerChunk) {
+			hash.update(chunk)
+			chunkFrames = 0
+		}
+	}
+	if (chunkFrames) hash.update(chunk.subarray(0, chunkFrames * CHANNELS * 4))
+	return hash.digest('hex')
+}
+
+function perceptualFingerprint(track) {
+	const binCount = 32
+	const descriptor = [`signal-v1`, track.left.length, SAMPLE_RATE, CHANNELS]
+	let previousMono = 0
+	let previousSign = 0
+
+	for (let bin = 0; bin < binCount; bin++) {
+		const start = Math.floor((bin * track.left.length) / binCount)
+		const end = Math.max(start + 1, Math.floor(((bin + 1) * track.left.length) / binCount))
+		let monoSquares = 0
+		let sideSquares = 0
+		let derivativeSquares = 0
+		let absoluteMono = 0
+		let peak = 0
+		let zeroCrossings = 0
+
+		for (let index = start; index < end; index++) {
+			const mono = (track.left[index] + track.right[index]) * 0.5
+			const side = (track.left[index] - track.right[index]) * 0.5
+			const derivative = mono - previousMono
+			const sign = mono >= 0 ? 1 : -1
+			if (previousSign && sign !== previousSign) zeroCrossings++
+			monoSquares += mono * mono
+			sideSquares += side * side
+			derivativeSquares += derivative * derivative
+			absoluteMono += Math.abs(mono)
+			peak = Math.max(peak, Math.abs(mono), Math.abs(side))
+			previousMono = mono
+			previousSign = sign
+		}
+		const length = end - start
+		descriptor.push(
+			Math.round(Math.sqrt(monoSquares / length) * 1_000_000),
+			Math.round(Math.sqrt(sideSquares / length) * 1_000_000),
+			Math.round(Math.sqrt(derivativeSquares / length) * 1_000_000),
+			Math.round((absoluteMono / length) * 1_000_000),
+			Math.round(peak * 1_000_000),
+			zeroCrossings,
+		)
+	}
+
+	return createHash('sha256').update(descriptor.join(',')).digest('hex')
+}
+
+function getTrackFingerprints(track) {
+	return {
+		contentFingerprintSha256: contentFingerprint(track),
+		perceptualFingerprintSha256: perceptualFingerprint(track),
+	}
+}
+
+function assertUniqueFingerprints(fingerprintOwners, asset, fingerprints) {
+	for (const field of ['contentFingerprintSha256', 'perceptualFingerprintSha256']) {
+		const fingerprint = fingerprints[field]
+		const existing = fingerprintOwners[field].get(fingerprint)
+		if (existing) throw new Error(`${asset.id}: ${field} duplicates ${existing}`)
+		fingerprintOwners[field].set(fingerprint, asset.id)
+	}
+}
+
+async function listWavFiles(directory, relativeDirectory = '') {
+	let entries
+	try {
+		entries = await readdir(directory, { withFileTypes: true })
+	} catch (error) {
+		if (error.code === 'ENOENT') return []
+		throw error
+	}
+	const files = []
+	for (const entry of entries) {
+		const relative = relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name
+		const absolute = path.join(directory, entry.name)
+		if (entry.isDirectory()) files.push(...await listWavFiles(absolute, relative))
+		else if (entry.isFile() && entry.name.toLowerCase().endsWith('.wav')) files.push(relative)
+	}
+	return files.sort()
+}
+
+async function pruneEmptyDirectories(directory, keepRoot = true) {
+	let entries
+	try {
+		entries = await readdir(directory, { withFileTypes: true })
+	} catch (error) {
+		if (error.code === 'ENOENT') return
+		throw error
+	}
+	for (const entry of entries) {
+		if (entry.isDirectory()) await pruneEmptyDirectories(path.join(directory, entry.name), false)
+	}
+	if (!keepRoot) {
+		try {
+			await rmdir(directory)
+		} catch (error) {
+			if (error.code !== 'ENOTEMPTY' && error.code !== 'ENOENT') throw error
+		}
+	}
+}
+
+async function removeStaleGeneratedWavs() {
+	const expected = new Set(ASSETS.map((asset) => asset.file))
+	const existing = await listWavFiles(versionRoot)
+	const stale = existing.filter((file) => !expected.has(file))
+	for (const file of stale) await unlink(path.join(versionRoot, ...file.split('/')))
+	await pruneEmptyDirectories(versionRoot)
+	return stale
+}
+
+async function assertNoStaleGeneratedWavs() {
+	const expected = new Set(ASSETS.map((asset) => asset.file))
+	const existing = await listWavFiles(versionRoot)
+	const stale = existing.filter((file) => !expected.has(file))
+	const missing = [...expected].filter((file) => !existing.includes(file))
+	if (stale.length) throw new Error(`Found ${stale.length} stale generated WAV files, including ${stale[0]}`)
+	if (missing.length) throw new Error(`Missing ${missing.length} generated WAV files, including ${missing[0]}`)
+}
 
 function encodeWav(track, seed) {
 	const sampleCount = track.left.length
@@ -907,19 +1443,30 @@ function verifyAsset(asset, buffer, expectedHash = null) {
 }
 
 async function generate() {
+	validateDefinitions()
+	const startedAt = Date.now()
 	const catalogAssets = []
 	let totalBytes = 0
+	let sfxBytes = 0
+	const fingerprintOwners = {
+		contentFingerprintSha256: new Map(),
+		perceptualFingerprintSha256: new Map(),
+	}
 
-	for (const asset of ASSETS) {
+	for (let assetIndex = 0; assetIndex < ASSETS.length; assetIndex++) {
+		const asset = ASSETS[assetIndex]
 		const track = asset.render()
+		const fingerprints = getTrackFingerprints(track)
+		assertUniqueFingerprints(fingerprintOwners, asset, fingerprints)
 		const buffer = encodeWav(track, asset.id)
 		const metrics = verifyAsset(asset, buffer)
 		const outputPath = path.join(versionRoot, asset.file)
 		await mkdir(path.dirname(outputPath), { recursive: true })
 		await writeFile(outputPath, buffer)
 		totalBytes += buffer.length
+		if (asset.kind === 'sfx') sfxBytes += buffer.length
 
-		catalogAssets.push({
+		const catalogAsset = {
 			id: asset.id,
 			title: asset.title,
 			kind: asset.kind,
@@ -928,26 +1475,49 @@ async function generate() {
 			staticFilePath: `assets/audio/v1/${asset.file}`,
 			durationSeconds: asset.durationSeconds,
 			durationFramesAt30Fps: Math.round(asset.durationSeconds * REFERENCE_FPS),
+			durationFramesAt120Fps: Math.round(asset.durationSeconds * VARIANT_REFERENCE_FPS),
 			loopable: asset.loopable,
 			bpm: asset.bpm,
 			recommendedVolume: asset.recommendedVolume,
 			tags: asset.tags,
+			...(asset.kind === 'sfx' ? {
+				family: asset.family,
+				variant: asset.variant,
+				motion: asset.motion,
+				timbre: asset.timbre,
+				origin: asset.variant === 'legacy' ? 'legacy-procedural' : 'procedural-variant',
+				synthesisParameters: asset.parameters ?? null,
+			} : { origin: 'procedural-music' }),
 			peakDbfs: round(metrics.peakDbfs, 2),
 			rmsDbfs: round(metrics.rmsDbfs, 2),
 			dcOffset: round(metrics.dcOffset, 7),
+			fingerprintStage: 'mastered-float-pre-dither',
+			...fingerprints,
 			sha256: metrics.sha256,
 			sizeBytes: buffer.length,
-		})
-		console.log(`audio  -> public/assets/audio/v1/${asset.file} (${asset.durationSeconds.toFixed(1)}s)`)
+		}
+		catalogAssets.push(catalogAsset)
+
+		if ((assetIndex + 1) % 50 === 0 || assetIndex === 0 || assetIndex === ASSETS.length - 1) {
+			console.log(`audio  -> ${String(assetIndex + 1).padStart(3)}/${ASSETS.length}  public/assets/audio/v1/${asset.file}`)
+		}
 	}
+	if (sfxBytes > MAX_SFX_BYTES) {
+		throw new Error(`Expanded SFX use ${(sfxBytes / 1024 / 1024).toFixed(2)} MiB, exceeding the ${MAX_SFX_BYTES / 1024 / 1024} MiB budget`)
+	}
+	const stale = await removeStaleGeneratedWavs()
 
 	const catalog = {
-		schemaVersion: 1,
-		packVersion: '1.0.0',
+		schemaVersion: 2,
+		packVersion: '2.0.0',
 		generatedBy: 'scripts/generate-audio-assets.mjs',
 		license: 'CC0-1.0',
 		attributionRequired: false,
 		sourceMaterial: 'Original procedural synthesis only; no third-party samples or recordings.',
+		variantSelection: {
+			indexFormula: '(fnv1a32(`${creativeSeed}:${legacyId}`) % variantCount) + 1',
+			placeholder: '{NNN} is the zero-padded 1-based variant index',
+		},
 		format: {
 			container: 'WAV',
 			encoding: 'PCM signed 16-bit little-endian',
@@ -956,27 +1526,95 @@ async function generate() {
 			bitsPerSample: BITS_PER_SAMPLE,
 		},
 		assetCount: catalogAssets.length,
+		counts: {
+			music: MUSIC.length,
+			sfx: SFX.length,
+			legacySfx: LEGACY_SFX.length,
+			proceduralSfxVariants: PROCEDURAL_SFX.length,
+			byCategory: Object.fromEntries([...new Set(SFX.map((asset) => asset.category))].sort().map((category) => [category, SFX.filter((asset) => asset.category === category).length])),
+		},
 		totalBytes,
+		sfxBytes,
+		families: FAMILY_SUMMARIES,
+		legacyVariantMap: LEGACY_VARIANT_MAP,
+		fingerprints: {
+			content: 'SHA-256 of mastered stereo float samples quantized to signed 24-bit before PCM dither',
+			perceptual: 'SHA-256 of a 32-window signal descriptor (mono/side/derivative energy, absolute level, peak, zero crossings) before PCM dither',
+		},
 		assets: catalogAssets,
 	}
 	await mkdir(audioRoot, { recursive: true })
 	await writeFile(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`, 'utf8')
-	console.log(`catalog -> public/assets/audio/catalog.json (${catalogAssets.length} assets, ${(totalBytes / 1_000_000).toFixed(2)} MB)`)
+	const elapsedSeconds = (Date.now() - startedAt) / 1_000
+	console.log(`catalog -> public/assets/audio/catalog.json (${catalogAssets.length} assets, ${SFX.length} SFX, ${(sfxBytes / 1024 / 1024).toFixed(2)} MiB SFX)`)
+	console.log(`generated ${PROCEDURAL_SFX.length} variants in ${elapsedSeconds.toFixed(2)}s; removed ${stale.length} stale WAV file${stale.length === 1 ? '' : 's'}`)
 }
 
 async function verifyOnly() {
+	validateDefinitions()
+	const startedAt = Date.now()
 	const catalog = JSON.parse(await readFile(catalogPath, 'utf8'))
+	if (catalog.schemaVersion !== 2 || catalog.packVersion !== '2.0.0') throw new Error('Catalog schema/pack version does not match the generator')
 	if (catalog.assetCount !== ASSETS.length) throw new Error('Catalog asset count does not match the generator')
-	for (const asset of ASSETS) {
+	if (!Array.isArray(catalog.assets) || catalog.assets.length !== ASSETS.length) throw new Error('Catalog assets array has the wrong length')
+	if (JSON.stringify(catalog.families) !== JSON.stringify(FAMILY_SUMMARIES)) throw new Error('Catalog family summaries do not match the generator')
+	if (JSON.stringify(catalog.legacyVariantMap) !== JSON.stringify(LEGACY_VARIANT_MAP)) throw new Error('Catalog legacy variant map does not match the generator')
+	if (catalog.counts?.music !== MUSIC.length || catalog.counts?.sfx !== SFX.length || catalog.counts?.legacySfx !== LEGACY_SFX.length || catalog.counts?.proceduralSfxVariants !== PROCEDURAL_SFX.length) {
+		throw new Error('Catalog count summary does not match the generator')
+	}
+
+	const catalogIds = new Set()
+	const catalogFiles = new Set()
+	for (const entry of catalog.assets) {
+		if (catalogIds.has(entry.id)) throw new Error(`Catalog contains duplicate id ${entry.id}`)
+		if (catalogFiles.has(entry.file)) throw new Error(`Catalog contains duplicate path ${entry.file}`)
+		catalogIds.add(entry.id)
+		catalogFiles.add(entry.file)
+	}
+
+	const fingerprintOwners = {
+		contentFingerprintSha256: new Map(),
+		perceptualFingerprintSha256: new Map(),
+	}
+	let totalBytes = 0
+	let sfxBytes = 0
+	for (let assetIndex = 0; assetIndex < ASSETS.length; assetIndex++) {
+		const asset = ASSETS[assetIndex]
 		const catalogAsset = catalog.assets.find((entry) => entry.id === asset.id)
 		if (!catalogAsset) throw new Error(`${asset.id}: missing from catalog`)
+		if (catalogAsset.file !== `v1/${asset.file}` || catalogAsset.staticFilePath !== `assets/audio/v1/${asset.file}`) throw new Error(`${asset.id}: catalog path mismatch`)
+		if (catalogAsset.durationSeconds !== asset.durationSeconds || catalogAsset.loopable !== asset.loopable || catalogAsset.bpm !== asset.bpm) throw new Error(`${asset.id}: catalog timing metadata mismatch`)
+		if (asset.kind === 'sfx') {
+			for (const field of ['family', 'variant', 'motion', 'timbre']) {
+				if (catalogAsset[field] !== asset[field]) throw new Error(`${asset.id}: catalog ${field} mismatch`)
+			}
+			if (JSON.stringify(catalogAsset.tags) !== JSON.stringify(asset.tags)) throw new Error(`${asset.id}: catalog tags mismatch`)
+			if (JSON.stringify(catalogAsset.synthesisParameters) !== JSON.stringify(asset.parameters ?? null)) throw new Error(`${asset.id}: synthesis parameter mismatch`)
+		}
+
+		const track = asset.render()
+		const fingerprints = getTrackFingerprints(track)
+		assertUniqueFingerprints(fingerprintOwners, asset, fingerprints)
+		for (const field of ['contentFingerprintSha256', 'perceptualFingerprintSha256']) {
+			if (catalogAsset[field] !== fingerprints[field]) throw new Error(`${asset.id}: ${field} does not match pre-dither signal`)
+		}
+
+		const expectedBuffer = encodeWav(track, asset.id)
+		const expectedHash = createHash('sha256').update(expectedBuffer).digest('hex')
+		if (catalogAsset.sha256 !== expectedHash) throw new Error(`${asset.id}: catalog checksum is not reproducible from synthesis`)
 		const buffer = await readFile(path.join(audioRoot, catalogAsset.file))
 		const metrics = verifyAsset(asset, buffer, catalogAsset.sha256)
-		console.log(
-			`verified ${asset.id.padEnd(24)} ${metrics.durationSeconds.toFixed(3)}s  peak ${metrics.peakDbfs.toFixed(2)} dBFS  RMS ${metrics.rmsDbfs.toFixed(2)} dBFS`,
-		)
+		if (buffer.length !== catalogAsset.sizeBytes || !buffer.equals(expectedBuffer)) throw new Error(`${asset.id}: WAV bytes differ from deterministic generator output`)
+		totalBytes += buffer.length
+		if (asset.kind === 'sfx') sfxBytes += buffer.length
+		if ((assetIndex + 1) % 50 === 0 || assetIndex === 0 || assetIndex === ASSETS.length - 1) {
+			console.log(`verified ${String(assetIndex + 1).padStart(3)}/${ASSETS.length}  ${asset.id.padEnd(30)} ${metrics.durationSeconds.toFixed(3)}s`)
+		}
 	}
-	console.log(`verified ${ASSETS.length} deterministic PCM WAV assets`)
+	if (totalBytes !== catalog.totalBytes || sfxBytes !== catalog.sfxBytes) throw new Error('Catalog byte totals do not match the WAV files')
+	if (sfxBytes > MAX_SFX_BYTES) throw new Error(`SFX byte budget exceeded: ${(sfxBytes / 1024 / 1024).toFixed(2)} MiB`)
+	await assertNoStaleGeneratedWavs()
+	console.log(`verified ${ASSETS.length} deterministic PCM WAV assets (${SFX.length} SFX, ${(sfxBytes / 1024 / 1024).toFixed(2)} MiB SFX) in ${((Date.now() - startedAt) / 1_000).toFixed(2)}s`)
 }
 
 const verifyOnlyMode = process.argv.includes('--verify-only')

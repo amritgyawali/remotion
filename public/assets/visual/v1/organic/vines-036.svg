@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Flowing Vines 036</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#00A6FB"/><stop offset="1" stop-color="#00D4A8"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#00D4A8"/><stop offset="1" stop-color="#00A6FB"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#E8FBFF"/><stop offset=".34" stop-color="#7AE7FF"/><stop offset="1" stop-color="#00D4A8"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#052A45" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><path d="M84 476C-1.39 390,169.39 250,37.04 42" fill="none" stroke="#E8FBFF" stroke-width="10.99" stroke-linecap="round"/><path d="M198.67 476C313.83 390,83.5 250,262.01 42" fill="none" stroke="url(#paint)" stroke-width="10.21" stroke-linecap="round"/><path d="M313.33 476C227.42 390,399.24 250,266.08 42" fill="none" stroke="#E8FBFF" stroke-width="8.37" stroke-linecap="round"/><path d="M428 476C537.81 390,318.19 250,488.39 42" fill="none" stroke="url(#paint)" stroke-width="10.17" stroke-linecap="round"/><circle cx="194.86" cy="251.06" r="11.78" fill="#00D4A8" stroke="#E8FBFF" stroke-width="3"/><circle cx="429.22" cy="128.72" r="9.76" fill="#00A6FB" stroke="#E8FBFF" stroke-width="3"/><circle cx="186.58" cy="226.78" r="10.25" fill="#00D4A8" stroke="#E8FBFF" stroke-width="3"/><circle cx="123.25" cy="102.12" r="12.35" fill="#00A6FB" stroke="#E8FBFF" stroke-width="3"/><circle cx="239.36" cy="339.94" r="11.6" fill="#00D4A8" stroke="#E8FBFF" stroke-width="3"/><circle cx="337.28" cy="299.81" r="8.72" fill="#00A6FB" stroke="#E8FBFF" stroke-width="3"/><circle cx="154.44" cy="335.63" r="8.7" fill="#00D4A8" stroke="#E8FBFF" stroke-width="3"/><circle cx="147.29" cy="440.79" r="9.32" fill="#00A6FB" stroke="#E8FBFF" stroke-width="3"/><circle cx="278.93" cy="249.67" r="10.55" fill="#00D4A8" stroke="#E8FBFF" stroke-width="3"/></g>
+</svg>

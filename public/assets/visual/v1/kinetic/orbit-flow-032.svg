@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Orbit Flow 032</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#56E8FF"/><stop offset="1" stop-color="#FF82DB"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#FF82DB"/><stop offset="1" stop-color="#56E8FF"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFFFFF"/><stop offset=".34" stop-color="#A6F3FF"/><stop offset="1" stop-color="#FF82DB"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#171A3B" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><ellipse cx="256" cy="256" rx="92" ry="55.16" transform="rotate(-29.75 256 256)" fill="none" stroke="url(#paint)" stroke-width="8.52" opacity="0.73"/><ellipse cx="256" cy="256" rx="121.12" ry="37.78" transform="rotate(-5.94 256 256)" fill="none" stroke="#FFFFFF" stroke-width="7.18" opacity="0.57"/><ellipse cx="256" cy="256" rx="142.73" ry="75.56" transform="rotate(12.42 256 256)" fill="none" stroke="url(#paint)" stroke-width="5.52" opacity="0.9"/><ellipse cx="256" cy="256" rx="177.5" ry="65.1" transform="rotate(37.26 256 256)" fill="none" stroke="#FFFFFF" stroke-width="10.44" opacity="0.74"/><ellipse cx="256" cy="256" rx="234.4" ry="110.47" transform="rotate(50.51 256 256)" fill="none" stroke="url(#paint)" stroke-width="12.69" opacity="0.63"/><ellipse cx="256" cy="256" rx="259.85" ry="157.83" transform="rotate(84.77 256 256)" fill="none" stroke="#FFFFFF" stroke-width="12.75" opacity="0.64"/><ellipse cx="256" cy="256" rx="277.17" ry="159.91" transform="rotate(88.99 256 256)" fill="none" stroke="url(#paint)" stroke-width="11.47" opacity="0.78"/><circle cx="256" cy="256" r="59.09" fill="url(#halo)"/><circle cx="104.27" cy="154.03" r="13.37" fill="#FF82DB" stroke="#FFFFFF" stroke-width="4"/><circle cx="93.27" cy="193.82" r="11.44" fill="#56E8FF" stroke="#FFFFFF" stroke-width="4"/><circle cx="224.37" cy="72.84" r="13.72" fill="#FF82DB" stroke="#FFFFFF" stroke-width="4"/><circle cx="149.99" cy="202.53" r="16.89" fill="#56E8FF" stroke="#FFFFFF" stroke-width="4"/></g>
+</svg>

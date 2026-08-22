@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Planet System 034</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FFB000"/><stop offset="1" stop-color="#FF4D6D"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#FF4D6D"/><stop offset="1" stop-color="#FFB000"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF4C7"/><stop offset=".34" stop-color="#FFD166"/><stop offset="1" stop-color="#FF4D6D"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#40142B" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><ellipse cx="238.33" cy="286.24" rx="134.62" ry="31.91" transform="rotate(-31.89 238.33 286.24)" fill="none" stroke="url(#paint)" stroke-width="6.51" opacity="0.71"/><ellipse cx="238.33" cy="286.24" rx="154.57" ry="38.89" transform="rotate(-24.89 238.33 286.24)" fill="none" stroke="#FFF4C7" stroke-width="8.13" opacity="0.77"/><ellipse cx="238.33" cy="286.24" rx="174.51" ry="45.87" transform="rotate(-17.89 238.33 286.24)" fill="none" stroke="url(#paint)" stroke-width="8.8" opacity="0.52"/><ellipse cx="238.33" cy="286.24" rx="194.45" ry="52.85" transform="rotate(-10.89 238.33 286.24)" fill="none" stroke="#FFF4C7" stroke-width="4.1" opacity="0.73"/><ellipse cx="238.33" cy="286.24" rx="214.4" ry="59.83" transform="rotate(-3.89 238.33 286.24)" fill="none" stroke="url(#paint)" stroke-width="6.41" opacity="0.63"/><circle cx="238.33" cy="286.24" r="99.72" fill="url(#halo)" stroke="#40142B" stroke-width="7"/><path d="M166.53 268.29Q238.33 321.15 313.12 280.26" fill="none" stroke="#FFF4C7" stroke-width="8" opacity=".72"/><circle cx="319.79" cy="130.28" r="15.79" fill="#FF4D6D" stroke="#FFF4C7" stroke-width="3"/><circle cx="434.28" cy="330.25" r="10.16" fill="#FFB000" stroke="#FFF4C7" stroke-width="3"/><circle cx="94.83" cy="195.23" r="8.79" fill="#FF4D6D" stroke="#FFF4C7" stroke-width="3"/><circle cx="228.62" cy="465.8" r="12.43" fill="#FFB000" stroke="#FFF4C7" stroke-width="3"/><circle cx="41.6" cy="236.11" r="18.4" fill="#FF4D6D" stroke="#FFF4C7" stroke-width="3"/></g>
+</svg>

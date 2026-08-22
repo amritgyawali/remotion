@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Pointer Flow 027</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#25A66A"/><stop offset="1" stop-color="#B8D95A"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#B8D95A"/><stop offset="1" stop-color="#25A66A"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#F4FFD8"/><stop offset=".34" stop-color="#A8F0B8"/><stop offset="1" stop-color="#B8D95A"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#143526" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><g><path d="M135.34 172.93Q256 107.65 382.37 181.47" fill="none" stroke="#F4FFD8" stroke-width="13.8" stroke-linecap="round"/><path d="M342.11 188.07L382.37 181.47L371.43 151.58" fill="none" stroke="#25A66A" stroke-width="15.45" stroke-linecap="round" stroke-linejoin="round"/></g><g><path d="M66.89 425.95Q256 376 388.96 420.36" fill="none" stroke="url(#paint)" stroke-width="16.98" stroke-linecap="round"/><path d="M347.46 436.41L388.96 420.36L368.69 387.85" fill="none" stroke="#B8D95A" stroke-width="11.53" stroke-linecap="round" stroke-linejoin="round"/></g><g><path d="M91.4 317.67Q256 267.87 385.09 67.9" fill="none" stroke="#F4FFD8" stroke-width="9.55" stroke-linecap="round"/><path d="M389.99 109.23L385.09 67.9L349.51 79.16" fill="none" stroke="#25A66A" stroke-width="14.16" stroke-linecap="round" stroke-linejoin="round"/></g><g><path d="M221.6 261.19Q256 252.69 424.33 250.52" fill="none" stroke="url(#paint)" stroke-width="9.49" stroke-linecap="round"/><path d="M400.17 271.04L424.33 250.52L390.65 223.38" fill="none" stroke="#B8D95A" stroke-width="17.8" stroke-linecap="round" stroke-linejoin="round"/></g><g><path d="M114.05 322.78Q256 336.54 335 253.29" fill="none" stroke="#F4FFD8" stroke-width="11.37" stroke-linecap="round"/><path d="M333.23 279.26L335 253.29L309.78 256.34" fill="none" stroke="#25A66A" stroke-width="14.64" stroke-linecap="round" stroke-linejoin="round"/></g></g>
+</svg>

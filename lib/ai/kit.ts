@@ -1,3 +1,5 @@
+import fontCatalog from '../../public/assets/fonts/catalog.json'
+
 /**
  * Shared catalogue of the production asset kit that ships in /public/assets.
  *
@@ -6,116 +8,69 @@
  * one place means a storyboard can never reference a file that is not deployed.
  */
 
-export type FontId =
-	| 'inter'
-	| 'archivo'
-	| 'anton'
-	| 'bebasNeue'
-	| 'oswald'
-	| 'playfairDisplay'
-	| 'spaceGrotesk'
-	| 'jetBrainsMono'
-	| 'nunito'
-	| 'caveat'
-	| 'anekDevanagari'
-	| 'notoSansDevanagari'
+export type FontId = string
 
 export type FontEntry = {
+	id: FontId
+	slug: string
 	family: string
 	file: string
 	weight: string
 	fallback: string
 	use: string
+	category: string
+	mood: string
+	devanagari: boolean
 }
 
-export const FONT_KIT: Record<FontId, FontEntry> = {
-	inter: {
-		family: 'Inter',
-		file: 'inter/Inter[opsz,wght].ttf',
-		weight: '100 900',
-		fallback: 'Arial, Helvetica, sans-serif',
-		use: 'neutral UI and body copy',
-	},
-	archivo: {
-		family: 'Archivo',
-		file: 'archivo/Archivo[wdth,wght].ttf',
-		weight: '100 900',
-		fallback: 'Arial, Helvetica, sans-serif',
-		use: 'editorial headlines',
-	},
-	anton: {
-		family: 'Anton',
-		file: 'anton/Anton-Regular.ttf',
-		weight: '400',
-		fallback: 'Impact, Haettenschweiler, sans-serif',
-		use: 'loud poster headlines and social hooks',
-	},
-	bebasNeue: {
-		family: 'Bebas Neue',
-		file: 'bebas-neue/BebasNeue-Regular.ttf',
-		weight: '400',
-		fallback: 'Impact, sans-serif',
-		use: 'condensed title cards and lower thirds',
-	},
-	oswald: {
-		family: 'Oswald',
-		file: 'oswald/Oswald[wght].ttf',
-		weight: '200 700',
-		fallback: 'Arial Narrow, Arial, sans-serif',
-		use: 'news, sport and documentary overlays',
-	},
-	playfairDisplay: {
-		family: 'Playfair Display',
-		file: 'playfair-display/PlayfairDisplay[wght].ttf',
-		weight: '400 900',
-		fallback: 'Georgia, Times New Roman, serif',
-		use: 'luxury, fashion, heritage and editorial serif',
-	},
-	spaceGrotesk: {
-		family: 'Space Grotesk',
-		file: 'space-grotesk/SpaceGrotesk[wght].ttf',
-		weight: '300 700',
-		fallback: 'Arial, Helvetica, sans-serif',
-		use: 'technical, AI and product launches',
-	},
-	jetBrainsMono: {
-		family: 'JetBrains Mono',
-		file: 'jetbrains-mono/JetBrainsMono[wght].ttf',
-		weight: '100 800',
-		fallback: 'ui-monospace, Consolas, monospace',
-		use: 'code, labels, data and timestamps',
-	},
-	nunito: {
-		family: 'Nunito',
-		file: 'nunito/Nunito[wght].ttf',
-		weight: '200 1000',
-		fallback: 'Arial, Helvetica, sans-serif',
-		use: 'friendly education, kids and health',
-	},
-	caveat: {
-		family: 'Caveat',
-		file: 'caveat/Caveat[wght].ttf',
-		weight: '400 700',
-		fallback: 'Segoe Script, cursive',
-		use: 'handwritten annotation',
-	},
-	anekDevanagari: {
-		family: 'Anek Devanagari',
-		file: 'anek-devanagari/AnekDevanagari[wdth,wght].ttf',
-		weight: '100 800',
-		fallback: 'Arial, sans-serif',
-		use: 'Devanagari display type',
-	},
-	notoSansDevanagari: {
-		family: 'Noto Sans Devanagari',
-		file: 'noto-sans-devanagari/NotoSansDevanagari[wdth,wght].ttf',
-		weight: '100 900',
-		fallback: 'Arial, sans-serif',
-		use: 'Devanagari body copy',
-	},
+type CatalogFont = (typeof fontCatalog.families)[number]
+
+/** Keep the readable camelCase ids used by the storyboard while deriving every
+ * path and capability from the downloaded, hash-locked font catalog. */
+const fontId = (slug: string): FontId => slug.replace(/-([a-z0-9])/g, (_, letter: string) => letter.toUpperCase())
+
+const fontFallback = (font: CatalogFont): string => {
+	if (font.category === 'serif') return 'Georgia, Times New Roman, serif'
+	if (font.category === 'mono' || font.category === 'pixel') return 'ui-monospace, Consolas, monospace'
+	if (font.category === 'handwriting' || font.category === 'script') return 'Segoe Script, cursive'
+	if (font.category === 'condensed') return 'Arial Narrow, Arial, sans-serif'
+	return 'Arial, Helvetica, sans-serif'
 }
+
+export const FONT_KIT: Record<FontId, FontEntry> = Object.fromEntries(
+	fontCatalog.families.map((font) => {
+		const id = fontId(font.slug)
+		return [
+			id,
+			{
+				id,
+				slug: font.slug,
+				family: font.family,
+				file: font.staticFilePath.replace(/^assets\/fonts\/v1\//, ''),
+				weight: font.weight,
+				fallback: fontFallback(font),
+				use: font.useFor,
+				category: font.category,
+				mood: font.mood,
+				devanagari: font.devanagari,
+			} satisfies FontEntry,
+		]
+	}),
+)
 
 export const FONT_IDS = Object.keys(FONT_KIT) as FontId[]
+
+/** Useful to the local director when it needs a fresh but compatible pairing. */
+export const FONT_IDS_BY_CATEGORY = Object.fromEntries(
+	[...new Set(Object.values(FONT_KIT).map((font) => font.category))].map((category) => [
+		category,
+		FONT_IDS.filter((id) => FONT_KIT[id].category === category),
+	]),
+) as Record<string, FontId[]>
+
+if (FONT_IDS.length < 64) {
+	throw new Error(`The AI typography kit expected at least 64 local families, found ${FONT_IDS.length}.`)
+}
 
 export type MusicId =
 	| 'ambientCalm'
@@ -183,6 +138,102 @@ export const SFX_KIT: Record<SfxId, string> = {
 	tick: 'sfx/ui/tick.wav',
 	typewriter: 'sfx/ui/typewriter.wav',
 	notification: 'sfx/ui/notification-bright.wav',
+}
+
+/** Compact indexes for the large raw packs. Importing the 1,800-entry public
+ * catalog into the browser composer would add needless weight; these family
+ * contracts mirror the generator catalogs and make every variant addressable. */
+export const SFX_VARIANT_KIT = {
+	'ui-click': { category: 'ui', variants: 36, volume: 0.34 },
+	'ui-pop': { category: 'ui', variants: 36, volume: 0.36 },
+	'ui-notification': { category: 'ui', variants: 36, volume: 0.32 },
+	'ui-key': { category: 'ui', variants: 36, volume: 0.28 },
+	'motion-whoosh': { category: 'motion', variants: 36, volume: 0.38 },
+	'motion-swipe': { category: 'motion', variants: 36, volume: 0.32 },
+	'transition-glitch': { category: 'transitions', variants: 36, volume: 0.35 },
+	'transition-riser': { category: 'transitions', variants: 36, volume: 0.34 },
+	'transition-drop': { category: 'transitions', variants: 36, volume: 0.38 },
+	'impact-hit': { category: 'impacts', variants: 36, volume: 0.42 },
+	'impact-boom': { category: 'impacts', variants: 36, volume: 0.42 },
+	'accent-chime': { category: 'accents', variants: 36, volume: 0.31 },
+	'accent-shimmer': { category: 'accents', variants: 36, volume: 0.31 },
+	'accent-power': { category: 'accents', variants: 36, volume: 0.33 },
+	'foley-touch': { category: 'foley', variants: 36, volume: 0.3 },
+} as const
+
+export type SfxVariantFamilyId = keyof typeof SFX_VARIANT_KIT
+
+export const SFX_LEGACY_FAMILY: Record<SfxId, SfxVariantFamilyId> = {
+	whooshFast: 'motion-whoosh',
+	whooshDeep: 'motion-whoosh',
+	riserDigital: 'transition-riser',
+	riserOrganic: 'transition-riser',
+	subDrop: 'transition-drop',
+	glitch: 'transition-glitch',
+	impactClean: 'impact-hit',
+	impactDeep: 'impact-boom',
+	impactSnap: 'impact-hit',
+	impactBoom: 'impact-boom',
+	chimeSparkle: 'accent-chime',
+	logoStinger: 'accent-chime',
+	powerUp: 'accent-power',
+	revealShimmer: 'accent-shimmer',
+	clickSoft: 'ui-click',
+	popClean: 'ui-pop',
+	swipe: 'motion-swipe',
+	tick: 'ui-key',
+	typewriter: 'ui-key',
+	notification: 'ui-notification',
+}
+
+function wrapVariantIndex(value: number, count: number): number {
+	if (!Number.isFinite(value)) return 0
+	return ((Math.trunc(value) % count) + count) % count
+}
+
+/** `variantIndex` is zero-based and wraps, so any stable hash is accepted. */
+export function sfxVariantPath(family: SfxVariantFamilyId, variantIndex: number): string {
+	const entry = SFX_VARIANT_KIT[family]
+	const variant = wrapVariantIndex(variantIndex, entry.variants) + 1
+	const suffix = String(variant).padStart(3, '0')
+	return `sfx/variants/${entry.category}/${family}/${family}-v${suffix}.wav`
+}
+
+export const VISUAL_FAMILY_KIT = {
+	burst: { category: 'kinetic', roles: ['foreground', 'transition', 'accent'] },
+	ribbon: { category: 'kinetic', roles: ['foreground', 'transition', 'accent'] },
+	'orbit-flow': { category: 'kinetic', roles: ['foreground', 'transition', 'accent'] },
+	'wave-bands': { category: 'kinetic', roles: ['foreground', 'transition', 'accent'] },
+	blob: { category: 'organic', roles: ['foreground', 'overlay', 'accent'] },
+	petals: { category: 'organic', roles: ['foreground', 'accent'] },
+	'leaf-sprig': { category: 'organic', roles: ['foreground', 'scene', 'accent'] },
+	vines: { category: 'organic', roles: ['foreground', 'scene', 'accent'] },
+	comet: { category: 'cosmic', roles: ['foreground', 'transition', 'scene'] },
+	constellation: { category: 'cosmic', roles: ['foreground', 'diagram', 'scene'] },
+	'planet-system': { category: 'cosmic', roles: ['foreground', 'scene'] },
+	satellite: { category: 'cosmic', roles: ['foreground', 'scene'] },
+	brackets: { category: 'frames', roles: ['foreground', 'frame', 'callout'] },
+	capsule: { category: 'frames', roles: ['foreground', 'frame', 'callout'] },
+	'focus-rings': { category: 'frames', roles: ['foreground', 'frame', 'callout'] },
+	ticket: { category: 'frames', roles: ['foreground', 'frame', 'callout'] },
+	bars: { category: 'data', roles: ['foreground', 'diagram', 'data'] },
+	'radial-data': { category: 'data', roles: ['foreground', 'diagram', 'data'] },
+	timeline: { category: 'data', roles: ['foreground', 'diagram', 'data'] },
+	network: { category: 'data', roles: ['foreground', 'diagram', 'data'] },
+	badge: { category: 'symbols', roles: ['foreground', 'callout', 'accent'] },
+	speech: { category: 'symbols', roles: ['foreground', 'callout', 'accent'] },
+	'pointer-flow': { category: 'symbols', roles: ['foreground', 'callout', 'transition'] },
+	confetti: { category: 'symbols', roles: ['foreground', 'overlay', 'accent'] },
+} as const
+
+export type VisualFamilyId = keyof typeof VISUAL_FAMILY_KIT
+export const VISUAL_FAMILY_IDS = Object.keys(VISUAL_FAMILY_KIT) as VisualFamilyId[]
+
+/** `variantIndex` is zero-based and wraps across the 50 raw SVG variants. */
+export function visualVariantPath(family: VisualFamilyId, variantIndex: number): string {
+	const variant = wrapVariantIndex(variantIndex, 50) + 1
+	const suffix = String(variant).padStart(3, '0')
+	return `${VISUAL_FAMILY_KIT[family].category}/${family}-${suffix}.svg`
 }
 
 export type GrainId = 'film' | 'fine' | 'paper' | 'halftone' | 'scanlines' | 'soft' | 'none'

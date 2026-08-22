@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Wave Bands 043</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#F4F1E8"/><stop offset="1" stop-color="#9EA3AE"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#9EA3AE"/><stop offset="1" stop-color="#F4F1E8"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFFFFF"/><stop offset=".34" stop-color="#D6D9E1"/><stop offset="1" stop-color="#9EA3AE"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#17191F" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><polyline points="24,54.66 53,43.96 82,45.56 111,59.12 140,81.65 169,108.21 198,132.97 227,150.49 256,156.92 285,150.86 314,133.62 343,109.01 372,82.42 401,59.68 430,45.8 459,43.82 488,54.18" fill="none" stroke="url(#paint)" stroke-width="9.22" stroke-linecap="round" stroke-linejoin="round" opacity="0.67"/><polyline points="24,256.08 53,252.02 82,239.47 111,220.66 140,198.91 169,178.06 198,161.78 227,152.97 256,153.17 285,162.35 314,178.89 343,199.87 372,221.57 401,240.17 430,252.38 459,256.04 488,250.51" fill="none" stroke="url(#paint-reverse)" stroke-width="14.93" stroke-linecap="round" stroke-linejoin="round" opacity="0.64"/><polyline points="24,278.03 53,275.28 82,275.79 111,279.51 140,286.06 169,294.79 198,304.83 227,315.19 256,324.84 285,332.81 314,338.31 343,340.8 372,340.02 401,336.06 430,329.31 459,320.44 488,310.33" fill="none" stroke="url(#paint)" stroke-width="13.49" stroke-linecap="round" stroke-linejoin="round" opacity="0.87"/><polyline points="24,424.72 53,434.94 82,439.93 111,438.57 140,431.15 169,419.38 198,405.93 227,393.86 256,385.92 285,383.92 314,388.31 343,398.09 372,411.05 401,424.21 430,434.6 459,439.85 488,438.75" fill="none" stroke="url(#paint-reverse)" stroke-width="13.93" stroke-linecap="round" stroke-linejoin="round" opacity="0.93"/></g>
+</svg>

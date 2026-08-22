@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Flow Ribbon 026</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FF6B63"/><stop offset="1" stop-color="#52E0B5"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#52E0B5"/><stop offset="1" stop-color="#FF6B63"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF8F0"/><stop offset=".34" stop-color="#FFC0A8"/><stop offset="1" stop-color="#52E0B5"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#43202A" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><path d="M38 105C241.13 15,238.87 270.31,474 180.31" fill="none" stroke="url(#paint)" stroke-width="27.45" stroke-linecap="round" opacity="1"/><path d="M38 163C-10.52 73,490.52 294.68,474 204.68" fill="none" stroke="url(#paint-reverse)" stroke-width="27.16" stroke-linecap="round" opacity="0.92"/><path d="M38 218.34C194.61 128.34,285.39 384.15,474 294.15" fill="none" stroke="url(#paint)" stroke-width="24.98" stroke-linecap="round" opacity="0.84"/><path d="M38 256.4C5.55 166.4,474.45 315.07,474 225.07" fill="none" stroke="url(#paint-reverse)" stroke-width="15.52" stroke-linecap="round" opacity="0.76"/><path d="M38 300.78C249.82 210.78,230.18 319.61,474 229.61" fill="none" stroke="url(#paint)" stroke-width="17.25" stroke-linecap="round" opacity="0.68"/><path d="M38 431.83C11.22 341.83,468.78 546,474 456" fill="none" stroke="url(#paint-reverse)" stroke-width="13.35" stroke-linecap="round" opacity="0.6"/><circle cx="298.68" cy="214.25" r="23.38" fill="#FFF8F0"/></g>
+</svg>

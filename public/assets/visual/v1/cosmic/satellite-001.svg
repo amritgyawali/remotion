@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Satellite 001</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FFB000"/><stop offset="1" stop-color="#FF4D6D"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#FF4D6D"/><stop offset="1" stop-color="#FFB000"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF4C7"/><stop offset=".34" stop-color="#FFD166"/><stop offset="1" stop-color="#FF4D6D"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#40142B" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g transform="rotate(-20.3 256 256)" filter="url(#soft-shadow)"><rect x="210.71" y="162" width="90.58" height="188" rx="24" fill="url(#halo)" stroke="#40142B" stroke-width="7"/><rect x="76.1" y="196" width="120.61" height="120" rx="12" fill="url(#paint)" stroke="#FFF4C7" stroke-width="5"/><rect x="315.29" y="196" width="120.61" height="120" rx="12" fill="url(#paint-reverse)" stroke="#FFF4C7" stroke-width="5"/><circle cx="256" cy="254" r="30" fill="#40142B" opacity=".82"/><path d="M256 210L248.98 46.06" stroke="#FFF4C7" stroke-width="5" stroke-linecap="round"/><circle cx="248.98" cy="46.06" r="8" fill="#FFB000"/><path d="M256 210L327.77 84.15" stroke="#FFF4C7" stroke-width="5" stroke-linecap="round"/><circle cx="327.77" cy="84.15" r="8" fill="#FFB000"/></g>
+</svg>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Pulse Burst 016</title>
+  <defs>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#3366FF"/><stop offset="1" stop-color="#E7A93C"/></linearGradient>
+    <linearGradient id="paint-reverse" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#E7A93C"/><stop offset="1" stop-color="#3366FF"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#FFF8DF"/><stop offset=".34" stop-color="#79A3FF"/><stop offset="1" stop-color="#E7A93C"/></radialGradient>
+    <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#111D4A" flood-opacity=".24"/></filter>
+    <filter id="soft-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#soft-shadow)"><path d="M334.01 260.28L471.29 267.82" stroke="#FFF8DF" stroke-width="17.59" stroke-linecap="round" opacity="0.95"/><path d="M313.34 289.82L422.45 354.17" stroke="url(#paint)" stroke-width="16.65" stroke-linecap="round" opacity="0.93"/><path d="M278.72 312.39L321.73 419.11" stroke="url(#paint)" stroke-width="7.87" stroke-linecap="round" opacity="0.88"/><path d="M245.91 325.32L231.71 422.92" stroke="#FFF8DF" stroke-width="8.4" stroke-linecap="round" opacity="0.68"/><path d="M206.98 311.67L119.18 411.37" stroke="url(#paint)" stroke-width="8.79" stroke-linecap="round" opacity="0.94"/><path d="M186.2 277.74L110.71 301.26" stroke="url(#paint)" stroke-width="9.77" stroke-linecap="round" opacity="0.83"/><path d="M188.83 238.96L90.45 214.01" stroke="#FFF8DF" stroke-width="12.86" stroke-linecap="round" opacity="0.99"/><path d="M211.82 204.58L136.4 116.78" stroke="url(#paint)" stroke-width="17.07" stroke-linecap="round" opacity="0.97"/><path d="M247.3 182.89L233.55 67.44" stroke="url(#paint)" stroke-width="14.8" stroke-linecap="round" opacity="0.95"/><path d="M286.84 186.47L322.64 105.77" stroke="#FFF8DF" stroke-width="7.67" stroke-linecap="round" opacity="0.85"/><path d="M314.61 220.44L425.47 153.17" stroke="url(#paint)" stroke-width="10.91" stroke-linecap="round" opacity="0.84"/><polygon points="314.44,256 296.31,306.55 245.27,303.01 192.97,286.35 212.66,235.13 244.82,207 295.63,206.31" fill="url(#halo)" stroke="#111D4A" stroke-width="6"/></g>
+</svg>
