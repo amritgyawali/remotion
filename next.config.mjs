@@ -8,6 +8,10 @@ const nextConfig = {
 	 * Vercel Functions orchestrate an isolated Vercel Sandbox instead.
 	 */
 	serverExternalPackages: [
+		// gRPC talks to NVIDIA's hosted speech functions from the route handler;
+		// it resolves its own transport lazily and must not be bundled.
+		'@grpc/grpc-js',
+		'@grpc/proto-loader',
 		'@remotion/bundler',
 		'@remotion/renderer',
 		'@remotion/vercel',

@@ -2,84 +2,141 @@
  * Speech -> timed words, on NVIDIA's hosted recognisers.
  *
  * The browser sends one chunk of 16 kHz mono WAV per request and this route
- * forwards it to NVIDIA with the API key that never leaves the server. Two
- * request dialects are spoken, because NVIDIA's speech endpoints answer to
- * both: the OpenAI-compatible `/v1/audio/transcriptions` form used by the NIM
- * microservices, and the Riva form (`language=en-US`, `word_time_offsets`) used
- * by the NVCF function endpoints. The first pairing that answers is remembered
- * for the life of the instance, so only the first chunk pays for probing.
+ * forwards it to NVIDIA with the API key that never leaves the server.
  *
- * Everything the endpoints return - OpenAI verbose JSON, Riva results, or a
- * bare string of text - is normalised into the same word list, and the client
- * offsets those timings by where the chunk sat in the clip.
+ * NVIDIA hosts its speech models as NVIDIA Cloud Functions, and the documented
+ * way to reach them is gRPC to `grpc.nvcf.nvidia.com:443` carrying the model's
+ * function id - there is no OpenAI-style `/v1/audio/transcriptions` on
+ * integrate.api.nvidia.com, which is why an HTTP-only client fails on every
+ * request however the key is set. gRPC is therefore the primary transport here.
+ *
+ * Two HTTP transports are still tried afterwards, because a self-hosted NIM or
+ * an NVCF function with HTTP enabled speaks them: the OpenAI-compatible form,
+ * and the Riva form (`language=en-US`, `word_time_offsets`). Whichever pairing
+ * answers first is remembered for the life of the instance, so only the first
+ * chunk pays for probing, and every failed attempt is reported back so a
+ * misconfiguration names itself instead of hiding behind "could not transcribe".
  */
 
 import {
+	CLOUD_ASR_LIMITS,
 	CLOUD_ASR_MODELS,
+	cloudAsrModelById,
 	cloudModelForLanguage,
 	isCloudAsrModel,
+	languageCandidates,
 	rivaLocale,
+	type CloudAsrModel,
 	type CloudWord,
 } from '../../../../lib/captions/asr-models'
+import { RIVA_GRPC_TARGET, rivaRecognize } from '../../../../lib/captions/riva/client'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
-const DEFAULT_ENDPOINTS = [
-	'https://integrate.api.nvidia.com/v1/audio/transcriptions',
-	'https://ai.api.nvidia.com/v1/audio/transcriptions',
-]
-
-/** A chunk is ~3.2 MB of WAV; anything much larger is not from this studio. */
+/** A chunk is ~1.9 MB of WAV; anything much larger is not from this studio. */
 const MAX_AUDIO_BYTES = 12 * 1024 * 1024
 const REQUEST_TIMEOUT_MS = 120_000
 
-type Dialect = 'openai' | 'riva'
-type Candidate = { endpoint: string; dialect: Dialect }
+type Transport =
+	| { kind: 'grpc'; target: string }
+	| { kind: 'http'; endpoint: string; dialect: 'openai' | 'riva' }
+
+type Attempt = { transport: string; language: string; error: string }
 
 /** Remembered across requests on a warm instance so probing happens once. */
-let preferred: Candidate | null = null
+let preferred: { transport: Transport; language: string } | null = null
 
 function apiKey(): string | null {
 	const key = process.env.NVIDIA_API_KEY?.trim()
 	return key ? key : null
 }
 
-function endpoints(): string[] {
-	const list: string[] = []
+function grpcTarget(): string {
+	return process.env.NVIDIA_ASR_GRPC?.trim() || RIVA_GRPC_TARGET
+}
+
+function httpEndpoints(model: CloudAsrModel): { endpoint: string; dialect: 'openai' | 'riva' }[] {
+	const list: { endpoint: string; dialect: 'openai' | 'riva' }[] = []
 	const explicit = process.env.NVIDIA_ASR_ENDPOINT?.trim()
-	if (explicit) list.push(explicit)
+	if (explicit) list.push({ endpoint: explicit, dialect: 'openai' }, { endpoint: explicit, dialect: 'riva' })
 
-	const functionId = process.env.NVIDIA_ASR_FUNCTION_ID?.trim()
+	// Some NVCF functions expose the NIM's own HTTP server as well as gRPC.
+	const functionId = process.env.NVIDIA_ASR_FUNCTION_ID?.trim() || model.functionId
 	if (functionId) {
-		list.push(`https://${functionId}.invocation.api.nvcf.nvidia.com/v1/audio/transcriptions`)
+		const invocation = `https://${functionId}.invocation.api.nvcf.nvidia.com/v1/audio/transcriptions`
+		list.push({ endpoint: invocation, dialect: 'riva' }, { endpoint: invocation, dialect: 'openai' })
 	}
-
-	for (const endpoint of DEFAULT_ENDPOINTS) list.push(endpoint)
-	return [...new Set(list)]
+	return list
 }
 
-function candidates(): Candidate[] {
-	const all: Candidate[] = []
-	for (const endpoint of endpoints()) {
-		all.push({ endpoint, dialect: 'openai' }, { endpoint, dialect: 'riva' })
-	}
+/** Escape hatch for an HTTP-only deployment - a NIM behind a plain proxy. */
+function grpcDisabled(): boolean {
+	const value = process.env.NVIDIA_ASR_DISABLE_GRPC?.trim()
+	return value === '1' || value === 'true'
+}
+
+function transportsFor(model: CloudAsrModel): Transport[] {
+	const all: Transport[] = [
+		...(grpcDisabled() ? [] : [{ kind: 'grpc' as const, target: grpcTarget() }]),
+		...httpEndpoints(model).map(
+			(entry): Transport => ({ kind: 'http', endpoint: entry.endpoint, dialect: entry.dialect }),
+		),
+	]
 	if (!preferred) return all
-	// Keep the known-good pairing first, but never drop the rest: a model change
-	// can make yesterday's winner the wrong dialect.
-	const rest = all.filter(
-		(candidate) =>
-			candidate.endpoint !== preferred?.endpoint || candidate.dialect !== preferred?.dialect,
-	)
-	return [preferred, ...rest]
+	const key = transportKey(preferred.transport)
+	return [preferred.transport, ...all.filter((transport) => transportKey(transport) !== key)]
 }
 
-function modelFor(requested: string | null, language: string): string {
+function transportKey(transport: Transport): string {
+	return transport.kind === 'grpc' ? `grpc:${transport.target}` : `${transport.dialect}:${transport.endpoint}`
+}
+
+function modelFor(requested: string | null, language: string): CloudAsrModel {
 	const override = process.env.NVIDIA_ASR_MODEL?.trim()
-	if (override) return override
-	if (requested && isCloudAsrModel(requested)) return requested
-	return cloudModelForLanguage(language)
+	const id = override && isCloudAsrModel(override)
+		? override
+		: requested && isCloudAsrModel(requested)
+			? requested
+			: cloudModelForLanguage(language)
+	return cloudAsrModelById(id) ?? CLOUD_ASR_MODELS[0]
+}
+
+/* --------------------------------------------------------------- the audio */
+
+/**
+ * Riva wants raw little-endian PCM, not a container. The studio always sends a
+ * 16-bit mono WAV, so the header is parsed for the real sample rate and the
+ * `data` chunk is handed over untouched.
+ */
+function pcmFromWav(bytes: Uint8Array): { pcm: Buffer; sampleRate: number } {
+	const defaultRate: number = CLOUD_ASR_LIMITS.sampleRate
+	const fallback = { pcm: Buffer.from(bytes), sampleRate: defaultRate }
+	if (bytes.length < 44) return fallback
+
+	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+	const tag = (offset: number) =>
+		String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3])
+	if (tag(0) !== 'RIFF' || tag(8) !== 'WAVE') return fallback
+
+	let sampleRate = defaultRate
+	let cursor = 12
+	while (cursor + 8 <= bytes.length) {
+		const id = tag(cursor)
+		const size = view.getUint32(cursor + 4, true)
+		const body = cursor + 8
+		if (id === 'fmt ' && body + 16 <= bytes.length) {
+			sampleRate = view.getUint32(body + 4, true) || sampleRate
+		}
+		if (id === 'data') {
+			const end = Math.min(bytes.length, body + size)
+			return { pcm: Buffer.from(bytes.subarray(body, end)), sampleRate }
+		}
+		// Chunks are word aligned; an odd size carries a pad byte.
+		cursor = body + size + (size % 2)
+	}
+	return { pcm: Buffer.from(bytes.subarray(44)), sampleRate }
 }
 
 /* ------------------------------------------------------------- normalising */
@@ -211,31 +268,33 @@ function normalise(
 	return null
 }
 
-/* ------------------------------------------------------------- upstream */
+/* ------------------------------------------------------------- transports */
+
+class CredentialError extends Error {}
 
 function buildForm(args: {
-	dialect: Dialect
+	dialect: 'openai' | 'riva'
 	audio: Blob
 	fileName: string
-	model: string
+	model: CloudAsrModel
 	language: string
 }): FormData {
 	const form = new FormData()
 	form.append('file', args.audio, args.fileName)
 
 	if (args.dialect === 'openai') {
-		form.append('model', args.model)
+		form.append('model', args.model.id)
 		form.append('response_format', 'verbose_json')
 		form.append('timestamp_granularities[]', 'word')
 		form.append('timestamp_granularities[]', 'segment')
-		if (args.language !== 'auto') form.append('language', args.language)
+		if (args.language !== 'multi') form.append('language', args.language)
 		return form
 	}
 
-	form.append('language', rivaLocale(args.language))
+	form.append('language', args.language === 'multi' ? 'multi' : rivaLocale(args.language))
 	form.append('word_time_offsets', 'true')
 	form.append('automatic_punctuation', 'true')
-	if (process.env.NVIDIA_ASR_MODEL?.trim()) form.append('model', args.model)
+	if (process.env.NVIDIA_ASR_MODEL?.trim()) form.append('model', args.model.id)
 	return form
 }
 
@@ -265,40 +324,67 @@ function errorText(payload: unknown, status: number): string {
 		const message = firstString(payload, ['message', 'detail', 'title'])
 		if (message) return message.slice(0, 300)
 	}
-	return `NVIDIA returned HTTP ${status}.`
+	return `HTTP ${status}`
 }
 
-class CredentialError extends Error {}
-
-async function callNvidia(args: {
-	candidate: Candidate
+async function callHttp(args: {
+	endpoint: string
+	dialect: 'openai' | 'riva'
 	audio: Blob
 	fileName: string
-	model: string
+	model: CloudAsrModel
 	language: string
 	key: string
-}): Promise<unknown> {
-	const form = buildForm({
-		dialect: args.candidate.dialect,
-		audio: args.audio,
-		fileName: args.fileName,
-		model: args.model,
-		language: args.language,
-	})
-
-	const response = await fetch(args.candidate.endpoint, {
+	durationMs: number
+}): Promise<{ text: string; words: CloudWord[]; estimated: boolean }> {
+	const response = await fetch(args.endpoint, {
 		method: 'POST',
 		headers: { Authorization: `Bearer ${args.key}`, Accept: 'application/json' },
-		body: form,
+		body: buildForm(args),
 		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
 	})
 
 	const payload = await readPayload(response)
-	if (response.ok) return payload
+	if (!response.ok) {
+		const message = errorText(payload, response.status)
+		if (response.status === 401 || response.status === 403) throw new CredentialError(message)
+		throw new Error(message)
+	}
 
-	const message = errorText(payload, response.status)
-	if (response.status === 401 || response.status === 403) throw new CredentialError(message)
-	throw new Error(message)
+	const normalised = normalise(payload, args.durationMs)
+	if (!normalised) throw new Error('the endpoint returned no transcript')
+	return normalised
+}
+
+async function callGrpc(args: {
+	target: string
+	pcm: Buffer
+	sampleRate: number
+	language: string
+	model: CloudAsrModel
+	key: string
+	durationMs: number
+}): Promise<{ text: string; words: CloudWord[]; estimated: boolean }> {
+	const result = await rivaRecognize({
+		pcm: args.pcm,
+		sampleRate: args.sampleRate,
+		languageCode: args.language,
+		functionId: process.env.NVIDIA_ASR_FUNCTION_ID?.trim() || args.model.functionId,
+		apiKey: args.key,
+		timeoutMs: REQUEST_TIMEOUT_MS,
+		target: args.target,
+	}).catch((error: unknown) => {
+		const message = error instanceof Error ? error.message : String(error)
+		if (/rejected the credential/i.test(message)) throw new CredentialError(message)
+		throw new Error(message)
+	})
+
+	if (result.words.length > 0) return { text: result.text, words: result.words, estimated: false }
+	if (result.text) {
+		return { text: result.text, words: spreadWords(result.text, args.durationMs), estimated: true }
+	}
+	// Silence is a legitimate answer, not a failure - the caller merges chunks.
+	return { text: '', words: [], estimated: false }
 }
 
 /* ------------------------------------------------------------------ route */
@@ -311,9 +397,14 @@ export function GET() {
 			reason: configured
 				? undefined
 				: 'NVIDIA_API_KEY is not set on the server, so cloud transcription is off. Add a generated nvapi- key to .env.local, or transcribe on this device instead.',
-			endpoints: endpoints(),
+			endpoints: [
+				...(grpcDisabled() ? [] : [grpcTarget()]),
+				...httpEndpoints(CLOUD_ASR_MODELS[0]).map((entry) => entry.endpoint),
+			],
 			models: CLOUD_ASR_MODELS,
-			verified: preferred ? { endpoint: preferred.endpoint, model: 'ok' } : null,
+			verified: preferred
+				? { endpoint: transportKey(preferred.transport), model: preferred.language }
+				: null,
 		},
 		{ headers: { 'cache-control': 'no-store' } },
 	)
@@ -357,62 +448,91 @@ export async function POST(request: Request) {
 	const requestedModel = (form.get('model') as string | null)?.trim() || null
 	const durationValue = Number((form.get('durationMs') as string | null) ?? '')
 	const durationMs = Number.isFinite(durationValue) && durationValue > 0 ? durationValue : 30_000
-	const model = modelFor(requestedModel, language)
 	const fileName = (form.get('fileName') as string | null)?.trim() || 'chunk.wav'
 
-	const attempts: { endpoint: string; dialect: Dialect; error: string }[] = []
+	const model = modelFor(requestedModel, language)
+	const bytes = new Uint8Array(await audio.arrayBuffer())
+	const { pcm, sampleRate } = pcmFromWav(bytes)
 
-	for (const candidate of candidates()) {
-		try {
-			const payload = await callNvidia({ candidate, audio, fileName, model, language, key })
-			const normalised = normalise(payload, durationMs)
-			if (!normalised) {
-				attempts.push({
-					endpoint: candidate.endpoint,
-					dialect: candidate.dialect,
-					error: 'The endpoint returned no transcript.',
-				})
-				continue
-			}
+	// The remembered language spelling goes first; the rest still follow, so a
+	// model swap mid-session cannot strand the request on the wrong dialect.
+	const languages = languageCandidates(model, language)
+	const ordered =
+		preferred && languages.includes(preferred.language)
+			? [preferred.language, ...languages.filter((entry) => entry !== preferred?.language)]
+			: languages
 
-			preferred = candidate
-			return Response.json(
-				{
-					text: normalised.text,
-					words: normalised.words,
-					model,
-					endpoint: candidate.endpoint,
-					dialect: candidate.dialect,
-					estimatedTimings: normalised.estimated,
-				},
-				{ headers: { 'cache-control': 'no-store' } },
-			)
-		} catch (error) {
-			if (error instanceof CredentialError) {
-				console.warn('[api/captions/transcribe] credential rejected', { error: error.message })
+	const attempts: Attempt[] = []
+
+	for (const transport of transportsFor(model)) {
+		for (const languageCode of ordered) {
+			const label = transportKey(transport)
+			try {
+				const result =
+					transport.kind === 'grpc'
+						? await callGrpc({
+								target: transport.target,
+								pcm,
+								sampleRate,
+								language: languageCode,
+								model,
+								key,
+								durationMs,
+							})
+						: await callHttp({
+								endpoint: transport.endpoint,
+								dialect: transport.dialect,
+								audio,
+								fileName,
+								model,
+								language: languageCode,
+								key,
+								durationMs,
+							})
+
+				preferred = { transport, language: languageCode }
 				return Response.json(
 					{
-						error: `NVIDIA rejected the API key: ${error.message}. NVIDIA keys start with nvapi-; update NVIDIA_API_KEY and restart the server.`,
-						code: 'credentials',
+						text: result.text,
+						words: result.words,
+						model: model.id,
+						endpoint: label,
+						language: languageCode,
+						estimatedTimings: result.estimated,
 					},
-					{ status: 502 },
+					{ headers: { 'cache-control': 'no-store' } },
 				)
+			} catch (error) {
+				if (error instanceof CredentialError) {
+					console.warn('[api/captions/transcribe] credential rejected', { error: error.message })
+					return Response.json(
+						{
+							error: `NVIDIA rejected the API key: ${error.message}. NVIDIA keys start with nvapi-; check NVIDIA_API_KEY and that the key has access to ${model.id}.`,
+							code: 'credentials',
+						},
+						{ status: 502 },
+					)
+				}
+				const message = error instanceof Error ? error.message : String(error)
+				attempts.push({ transport: label, language: languageCode, error: message.slice(0, 240) })
+				// A language the model refuses is worth retrying with another
+				// spelling; a dead transport is not, so stop cycling spellings once
+				// the failure is clearly not about the language code.
+				if (!/language|locale|unsupported|not available|invalid[_ ]argument/i.test(message)) break
 			}
-			const message = error instanceof Error ? error.message : String(error)
-			attempts.push({ endpoint: candidate.endpoint, dialect: candidate.dialect, error: message })
 		}
 	}
 
-	console.warn('[api/captions/transcribe] every endpoint failed', { model, attempts })
+	console.warn('[api/captions/transcribe] every transport failed', { model: model.id, attempts })
 	return Response.json(
 		{
-			error: `No NVIDIA speech endpoint accepted the audio. Tried: ${attempts
-				.map((attempt) => `${attempt.endpoint} (${attempt.dialect}): ${attempt.error}`)
+			error: `NVIDIA did not accept the audio for ${model.id}. ${attempts
+				.map((attempt) => `${attempt.transport} [${attempt.language}]: ${attempt.error}`)
 				.join(' | ')
-				.slice(0, 600)}`,
+				.slice(0, 700)}`,
 			code: 'upstream',
 			attempts,
-			model,
+			model: model.id,
 		},
 		{ status: 502 },
 	)

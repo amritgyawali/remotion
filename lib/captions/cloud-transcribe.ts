@@ -196,6 +196,9 @@ export async function transcribeInCloud(
 	const words: WordTiming[] = []
 	const inflight = new Set<Promise<void>>()
 	const failures: number[] = []
+	// The upstream text is the only part of a failure a user can act on, so it
+	// is carried all the way out instead of being replaced by a generic message.
+	let lastError: string | null = null
 	let fatal: unknown = null
 	let started = 0
 	let finished = 0
@@ -239,6 +242,7 @@ export async function transcribeInCloud(
 				fatal ??= error
 				throw error
 			}
+			lastError = error instanceof Error ? error.message : String(error)
 			failures.push(chunk.index)
 		} finally {
 			finished++
@@ -278,7 +282,8 @@ export async function transcribeInCloud(
 
 	if (failures.length === extraction.chunks && extraction.chunks > 0) {
 		throw new CloudTranscriptionError(
-			'NVIDIA could not transcribe any part of that audio. Check the server logs for the endpoint error, or transcribe on this device instead.',
+			lastError ??
+				'NVIDIA could not transcribe any part of that audio. Check the server logs for the endpoint error, or transcribe on this device instead.',
 		)
 	}
 
