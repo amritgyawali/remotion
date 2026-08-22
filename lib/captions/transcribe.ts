@@ -636,9 +636,16 @@ export async function runTranscription(args: RunTranscriptionArgs): Promise<Tran
 			if (error instanceof TranscriptionCancelled || signal.aborted) throw new TranscriptionCancelled()
 			const label = attempt === 'nvidia' ? 'NVIDIA cloud transcription' : 'On-device transcription'
 			failures.push(`${label} failed: ${describeError(error)}`)
-			// A single-engine run has nowhere to fall back to.
+			// A single-engine run has nowhere to fall back to, so the error says
+			// which other engine is still worth trying rather than dead-ending.
 			if (order.length === 1 || attempt === order[order.length - 1]) {
-				throw new Error(failures.join(' Then '))
+				const hint =
+					order.length === 1
+						? attempt === 'nvidia'
+							? ' Set the speech engine to Auto or On this device to transcribe without NVIDIA.'
+							: ' Set the speech engine to Auto or NVIDIA cloud to transcribe without a model download.'
+						: ''
+				throw new Error(`${failures.join(' Then ')}${hint}`)
 			}
 			onProgress({
 				stage: 'checking',

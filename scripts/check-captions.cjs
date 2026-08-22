@@ -57,6 +57,9 @@ global.OfflineAudioContext = class {
 }
 
 process.env.NVIDIA_API_KEY = 'nvapi-check'
+// These checks stub HTTP only; the gRPC transport has its own suite in
+// scripts/check-riva.cjs, which runs a real Riva-speaking server.
+process.env.NVIDIA_ASR_DISABLE_GRPC = '1'
 
 const { streamAudioChunks } = require('../lib/captions/audio.ts')
 const { transcribeInCloud } = require('../lib/captions/cloud-transcribe.ts')
@@ -148,7 +151,7 @@ async function checkChunker() {
 		signal: new AbortController().signal,
 	})
 
-	check('250s becomes three chunks', result.chunks === 3, result.chunks)
+	check('250s becomes five chunks of about a minute', result.chunks === 5, result.chunks)
 	check('duration is preserved', Math.abs(result.durationMs - 250_000) < 50, result.durationMs)
 	check('a speaking track is not called silent', result.silent === false)
 	check(
@@ -213,8 +216,8 @@ async function checkUploader() {
 		signal: new AbortController().signal,
 	})
 
-	check('one request per chunk', requests === 3, requests)
-	check('all words are kept', result.words.length === 6, result.words.length)
+	check('one request per chunk', requests === 5, requests)
+	check('all words are kept', result.words.length === 10, result.words.length)
 	check('the model is reported back', result.model === 'openai/whisper-large-v3', result.model)
 	check(
 		'later chunks are offset into the clip',
@@ -250,7 +253,7 @@ async function checkUploader() {
 		signal: new AbortController().signal,
 	})
 	check('a failing chunk is retried', attempts === 3, attempts)
-	check('the other chunks still produce a transcript', partial.words.length === 2, partial.words.length)
+	check('the other chunks still produce a transcript', partial.words.length === 4, partial.words.length)
 	check('the loss is counted, not thrown', partial.failedChunks === 1, partial.failedChunks)
 }
 
@@ -322,7 +325,12 @@ async function checkTranscribeRoute() {
 	}
 	body = await (await transcribeRoute.POST(audioRequest())).json()
 	check('a rejected dialect falls through to the next', body.words.length === 1, body)
-	check('the fallback speaks the Riva dialect', dialects[1].includes('word_time_offsets'), dialects[1])
+	check('NVIDIA gets the Riva dialect first', dialects[0].includes('word_time_offsets'), dialects[0])
+	check(
+		'and the OpenAI form is the fallback',
+		dialects[1].includes('response_format'),
+		dialects[1],
+	)
 
 	global.fetch = async () => nvidiaReply({ error: { message: 'invalid api key' } }, 401)
 	const rejected = await transcribeRoute.POST(audioRequest())

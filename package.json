@@ -18,6 +18,8 @@
     "samples": "node scripts/sync-samples.mjs",
     "ai:check": "node scripts/check-ai-compose.cjs",
     "captions:check": "node scripts/check-captions.cjs",
+    "riva:check": "node scripts/check-riva.cjs",
+    "riva:descriptor": "node scripts/build-riva-descriptor.mjs",
     "assets:visual": "node scripts/generate-visual-assets.mjs",
     "assets:audio": "node scripts/generate-audio-assets.mjs",
     "assets:texture": "node scripts/generate-texture-assets.mjs",
@@ -33,6 +35,8 @@
     "render:sample": "node scripts/render-local.mjs samples/code-becomes-geometry.tsx --preset max"
   },
   "dependencies": {
+    "@grpc/grpc-js": "^1.14.4",
+    "@grpc/proto-loader": "^0.7.15",
     "@react-three/fiber": "9.7.0",
     "@remotion/bundler": "4.0.508",
     "@remotion/captions": "4.0.508",
@@ -63,6 +67,7 @@
     "mp4-muxer": "^5.0.0",
     "next": "16.3.0",
     "pdfjs-dist": "^4.10.38",
+    "protobufjs": "^7.6.5",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "remotion": "4.0.508",

@@ -134,10 +134,10 @@ Open **Subtitle a video** in the top bar, or go straight to
      decodes the audio in the browser, resamples it to 16 kHz mono, cuts it at
      the quietest point near each boundary and uploads those chunks to
      `/api/captions/transcribe`, which calls NVIDIA's hosted recognisers -
-     Whisper large-v3 for Nepali and the other 98 languages, Parakeet TDT for
-     English and 25 European ones. The video never leaves the device, there is
-     nothing to download, and a chunk that fails is retried and then skipped
-     rather than losing the whole transcript.
+     Whisper large-v3 for Nepali and the other 98 languages, Parakeet and Canary
+     for English and the major European ones. The video never leaves the device,
+     there is nothing to download, and a chunk that fails is retried and then
+     skipped rather than losing the whole transcript.
 
      **On this device** runs Whisper as WebAssembly inside the tab. Six models
      from tiny to small, English-only or multilingual (77 MB - 488 MB),
@@ -256,19 +256,34 @@ English, à la *"यो feature धेरै राम्रो छ"*.
   `getLoadedModels()` tells the UI which models are already cached so it can
   say "ready" instead of a download size, and threading is capped at
   `hardwareConcurrency - 1` so the UI thread keeps painting the progress bar.
-* **Cloud speech recognition** posts 16 kHz mono WAV chunks to
-  `/api/captions/transcribe`, which holds the key and speaks both dialects
-  NVIDIA's speech endpoints answer to - the OpenAI-compatible
-  `/v1/audio/transcriptions` form and the Riva form (`language=ne-NP`,
-  `word_time_offsets`) - remembering whichever pairing answered. Word timings
-  come back as seconds or milliseconds depending on the endpoint; both are
-  normalised, and a reply with text but no timings is spread by word length and
-  labelled as estimated. Chunks are cut at the quietest 20 ms frame within four
-  seconds of the target boundary, so a word is not split across two requests.
+* **Cloud speech recognition speaks gRPC**, because that is what NVIDIA
+  actually hosts. Every speech model on build.nvidia.com is an NVIDIA Cloud
+  Function reached at `grpc.nvcf.nvidia.com:443` with the model's function id
+  and the `nvapi-` bearer token as call metadata - there is no OpenAI-style
+  `/v1/audio/transcriptions` on `integrate.api.nvidia.com`, so an HTTP-only
+  client fails on every single request no matter how the key is set. The route
+  ships the function ids, vendors the Riva protos under
+  `lib/captions/riva/proto/` (MIT), and compiles them to a JSON descriptor with
+  `npm run riva:descriptor` so nothing has to be read off disk at runtime.
+* **HTTP is still tried after gRPC**, in both the Riva and OpenAI-compatible
+  dialects, so a self-hosted NIM or an NVCF function with HTTP enabled works
+  through the same route. Whichever transport and language spelling answers
+  first is remembered for the life of the instance; every failed attempt is
+  returned to the browser, so a misconfiguration names itself instead of hiding
+  behind "could not transcribe".
+* **Word timings** come back as milliseconds from Riva and seconds from the
+  OpenAI-shaped payloads; both are normalised, and a reply with text but no
+  timings is spread by word length and labelled as estimated. Chunks are cut at
+  the quietest 20 ms frame within four seconds of the target boundary, so a word
+  is not split across two requests, and the WAV header is stripped before the
+  PCM goes on the wire.
 * **Where the audio goes**: the video file itself is never uploaded. Only the
   decoded speech is, and only when the NVIDIA engine is selected; the on-device
   engine sends nothing at all. `npm run captions:check` exercises the chunker,
-  the uploader and both routes against canned NVIDIA responses, with no network.
+  the uploader and both routes against canned responses, and `npm run riva:check`
+  runs a real gRPC server built from the same protos and asserts the metadata,
+  the audio bytes, the config fields and the returned word timings - neither
+  needs the network.
 * **Transcript hygiene**: bracketed sound events (`[Music]`, `(applause)`),
   subtitle-credit lines (`Subtitles by...`, `अनुवाद:`, `सदस्यता लिनुहोस्`) and the
   repeat-loops Whisper produces on long silence are filtered before a single
@@ -326,8 +341,11 @@ your deployment retention policy.
 | `ENABLE_SERVER_RENDER` | unset | Set to `1` to turn on protected Node/Vercel Sandbox rendering. |
 | `RENDER_ACCESS_KEY` | unset | Shared render key. **Required** for both Node and Vercel server rendering. |
 | `NVIDIA_API_KEY` | unset | Server-only `nvapi-…` key for Chat → Remotion generation and for cloud speech recognition in the Subtitle Studio. |
-| `NVIDIA_ASR_ENDPOINT` | unset | Full URL of an OpenAI-compatible `/v1/audio/transcriptions` endpoint, e.g. a self-hosted NIM. Tried before the hosted defaults. |
-| `NVIDIA_ASR_FUNCTION_ID` | unset | NVCF function id; expands to `https://<id>.invocation.api.nvcf.nvidia.com/v1/audio/transcriptions`. |
+| `NVIDIA_ASR_GRPC` | `grpc.nvcf.nvidia.com:443` | Riva ASR target. Point it at a self-hosted NIM (`localhost:50051`) to keep audio on your own hardware. |
+| `NVIDIA_ASR_GRPC_INSECURE` | unset | `1` for a plaintext Riva server, `0` to force TLS. Unset means TLS everywhere except loopback. |
+| `NVIDIA_ASR_DISABLE_GRPC` | unset | `1` skips gRPC and uses the HTTP transports only. |
+| `NVIDIA_ASR_ENDPOINT` | unset | Full URL of an HTTP `/v1/audio/transcriptions` endpoint, e.g. a self-hosted NIM. |
+| `NVIDIA_ASR_FUNCTION_ID` | unset | Pin one NVCF function id instead of the one belonging to the selected model. |
 | `NVIDIA_ASR_MODEL` | unset | Pin one speech model instead of choosing by spoken language. |
 | `MAX_RENDER_FRAMES` | `1800` | Frame ceiling for a single server render. |
 | `MAX_RENDER_PIXELS` | `8294400` | Resolution ceiling (4K) for a single server render. |
