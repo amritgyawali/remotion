@@ -123,6 +123,7 @@ export default function CaptionSourcePanel({
 	cloudStatus,
 	cloudModel,
 	polish,
+	restoreEnglish,
 	whisperModel,
 	whisperLanguage,
 	whisperSupport,
@@ -144,6 +145,7 @@ export default function CaptionSourcePanel({
 	onEngine,
 	onCloudModel,
 	onPolish,
+	onRestoreEnglish,
 	onWhisperModel,
 	onWhisperLanguage,
 	onTranscribe,
@@ -164,6 +166,7 @@ export default function CaptionSourcePanel({
 	/** null means "let the server pick for the spoken language" */
 	cloudModel: string | null
 	polish: boolean
+	restoreEnglish: boolean
 	whisperModel: WhisperModelId
 	whisperLanguage: string
 	whisperSupport: WhisperSupport | null
@@ -185,6 +188,7 @@ export default function CaptionSourcePanel({
 	onEngine: (engine: TranscribeEngine) => void
 	onCloudModel: (model: string | null) => void
 	onPolish: (polish: boolean) => void
+	onRestoreEnglish: (restore: boolean) => void
 	onWhisperModel: (model: WhisperModelId) => void
 	onWhisperLanguage: (language: string) => void
 	onTranscribe: () => void
@@ -568,6 +572,27 @@ export default function CaptionSourcePanel({
 										A language model fixes punctuation, capitalisation and misheard words line by
 										line. It never translates, and every word keeps the timing the recogniser gave
 										it. Only the text is sent - never the audio.
+									</span>
+								</span>
+							</label>
+
+							<label className="field" style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+								<input
+									type="checkbox"
+									checked={restoreEnglish}
+									disabled={transcribing}
+									onChange={(event) => onRestoreEnglish(event.target.checked)}
+									style={{ marginTop: 2 }}
+								/>
+								<span>
+									<span className="field-label" style={{ display: 'block' }}>
+										Keep English words in English
+									</span>
+									<span style={{ fontSize: 11.5, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
+										Nepali speech is code-switched, and a recogniser told the language is Nepali
+										writes the English it hears in Devanagari anyway - कम्प्युटर for computer,
+										बैंक for bank, ओटिपी for OTP. Those go back into Latin; a Nepali word never
+										does, and a word carrying a Nepali ending is left alone.
 									</span>
 								</span>
 							</label>

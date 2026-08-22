@@ -213,6 +213,18 @@ Open **Subtitle a video** in the top bar, or go straight to
      rewritten line per recognised line, so punctuation and spelling improve
      while every word timing is kept. It is refused if the model changes the
      line count or rewrites a line beyond recognition.
+
+     **English words come back in English.** Nepali speech is code-switched, and
+     a recogniser told the language is Nepali writes the English it hears in
+     Devanagari anyway - कम्प्युटर for computer, बैंक for bank, अपडेट for update,
+     ओटिपी for OTP. That is neither what the speaker said nor how any Nepali
+     writer spells it, so three layers put it back: the recogniser is handed the
+     common loanwords as phrase hints before it starts, a hand-decided lexicon
+     restores the ones it still wrote in Devanagari, and the clean-up model is
+     told explicitly that each word keeps the script it belongs to. It never
+     runs the other way - a Nepali word is never written in Latin - and a
+     loanword that has taken a Nepali ending is left whole, because बैंकमा is a
+     Nepali word and "bankमा" is not an improvement.
    * **Write** - paste the script and it is spread across the clip, weighted by
      word length (Devanagari clusters count as one syllable, not one code
      point, so Nepali timing reads naturally), with a blank line acting as a
@@ -224,6 +236,16 @@ Open **Subtitle a video** in the top bar, or go straight to
    losing a single word timing. A readability pass stretches any cue shorter
    than ~0.7s into the following silence, never over the next line, so a quick
    word never flashes past unread.
+
+   **Type in either script.** The timeline switches between English and Nepali,
+   for one line or for the whole list. In Nepali the roman letters you type
+   become Devanagari the moment a word is finished - namaste → नमस्ते, banda →
+   बन्द - and the conversion is shown under the field while you are still typing
+   it, so nothing is a guess. A word typed in CAPITALS stays Latin, which is
+   what OTP, ATM and PIN want, and Ctrl/Cmd + Space flips one line mid-sentence
+   for the English in the middle of a Nepali one. A Devanagari face ships with
+   the editor, so the text is readable on a machine that has no Nepali font
+   installed.
 4. **Style them** with 18 finished looks - social pop, money caps, karaoke
    fill, broadcast bar, frosted glass, clean minimal, cinema serif, neon glow,
    neon tube, sunset gradient, chrome Y2K, accent box, comic slam, arcade, VHS
@@ -253,7 +275,8 @@ Open **Subtitle a video** in the top bar, or go straight to
    punctuation tidying, `Name:` speaker splitting, speed correction for a
    transcript that drifts, holding captions through short pauses, frame
    snapping, splitting long cues, folding short flashes into their neighbour,
-   and copy/paste of the whole look as JSON.
+   restoring English loanwords on demand, and copy/paste of the whole look as
+   JSON.
 6. **Render** with the same browser or server engine the code studio uses. The
    output carries the original audio unless you mute it. Subtitles also export
    as `.srt`, `.vtt` and a fully styled `.ass` with per-word karaoke tags.
@@ -313,6 +336,19 @@ English, à la *"यो feature धेरै राम्रो छ"*.
   frame N is identical in the preview, in a browser export and on a render farm.
   `npm run captions:check` compiles all 18 presets and all 64 faces and asserts
   exactly that.
+* **Code-switching is treated as the normal case, not an edge case.**
+  `lib/captions/devanagari.ts` holds one table read in both directions: forwards
+  it is a phonetic input method, so a caption can be typed in Nepali from a
+  Latin keyboard; backwards it sounds a Devanagari spelling out, which is how
+  `lib/captions/loanwords.ts` recognises कम्प्युटर as "computer". The lexicon is
+  exact-match and hand-decided, because the expensive mistake is the other
+  direction: turning a Nepali word into an English one is a wrong transcript,
+  while a loanword left in Devanagari is only an unpolished one. The fuzzy
+  fallback behind it is gated three ways - a blocklist of Nepali words that
+  collide once their vowels are dropped (कर against "car", बस against "bus",
+  बन्द against "band"), a minimum of three consonants, and a refusal to touch
+  any word carrying Nepali grammar - and skeletons shared by two English words
+  are dropped rather than guessed at.
 * **Audio is conditioned before it is recognised**: DC removal, a second-order
   high-pass at 85 Hz under the voice, and a level pass that measures loudness
   over the detected speech only and never over the pauses. Measuring the whole

@@ -5020,3 +5020,106 @@ code {
 	font-size: 11.5px;
 	line-height: 1.45;
 }
+
+/* --------------------------------------------------------- bilingual editing */
+
+/**
+ * A Devanagari face for the interface itself.
+ *
+ * The caption faces are loaded into the player at render time and are the wrong
+ * size and weight for a text field. This one is scoped by unicode-range, so a
+ * browser only fetches it once Devanagari is actually on screen - an English
+ * transcript never pays for it - and it means a machine with no Devanagari font
+ * installed still shows नमस्ते instead of a row of boxes while it is being typed.
+ */
+@font-face {
+	font-family: 'Noto Sans Devanagari UI';
+	src: url('/assets/fonts/v1/noto-sans-devanagari/NotoSansDevanagari%5Bwdth%2Cwght%5D.ttf') format('truetype');
+	font-weight: 100 900;
+	font-style: normal;
+	font-display: swap;
+	unicode-range: U+0900-097F, U+200C-200D, U+A830-A839;
+}
+
+.devanagari {
+	font-family: 'Noto Sans Devanagari UI', 'Noto Sans Devanagari', Mangal, Kalimati, var(--sans);
+}
+
+.script-input {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	min-width: 0;
+}
+
+.script-input-row {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	align-items: center;
+	gap: 5px;
+	min-width: 0;
+}
+
+/* The per-line script switch. Small, but it has to stay legible: it is the
+   only thing telling the writer which alphabet the next keystroke produces. */
+.script-chip {
+	flex: none;
+	min-width: 26px;
+	padding: 4px 5px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-xs);
+	background: var(--surface-2);
+	color: var(--text-tertiary);
+	font-size: 9.5px;
+	font-weight: 640;
+	line-height: 1;
+	letter-spacing: 0.02em;
+	cursor: pointer;
+	transition:
+		background var(--fast) var(--ease),
+		color var(--fast) var(--ease),
+		border-color var(--fast) var(--ease);
+}
+
+.script-chip:hover:not(:disabled) {
+	color: var(--text);
+	border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+}
+
+.script-chip[data-mode='ne'] {
+	border-color: color-mix(in srgb, var(--accent) 62%, transparent);
+	background: var(--accent-soft);
+	color: var(--accent);
+	font-family: 'Noto Sans Devanagari UI', 'Noto Sans Devanagari', Mangal, Kalimati, var(--sans);
+}
+
+.script-chip:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+/* The word being typed, in the script it is about to become. Without it the
+   writer is guessing what "chha" will turn into until they press space. */
+.script-preview {
+	padding-left: 32px;
+	color: var(--text-tertiary);
+	font-size: 10px;
+	line-height: 1.4;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.cue-script {
+	flex: none;
+}
+
+.cue-script button {
+	padding: 6px 10px;
+	font-size: 10.5px;
+	font-weight: 620;
+}
+
+.cue-row--advanced .script-input .cue-text {
+	font-size: 11.5px;
+}
