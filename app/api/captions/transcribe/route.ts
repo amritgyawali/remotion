@@ -1,21 +1,31 @@
 /**
- * Speech -> timed words, on NVIDIA's hosted recognisers.
+ * Speech -> timed words. Groq's hosted Whisper first, NVIDIA's recognisers second.
  *
  * The browser sends one chunk of 16 kHz mono WAV per request and this route
- * forwards it to NVIDIA with the API key that never leaves the server.
+ * forwards it to a provider with an API key that never leaves the server. Two
+ * providers are tried in order, and the browser never learns which one answered
+ * beyond a `provider` field it may show:
  *
- * NVIDIA hosts its speech models as NVIDIA Cloud Functions, and the documented
- * way to reach them is gRPC to `grpc.nvcf.nvidia.com:443` carrying the model's
- * function id - there is no OpenAI-style `/v1/audio/transcriptions` on
- * integrate.api.nvidia.com, which is why an HTTP-only client fails on every
- * request however the key is set. gRPC is therefore the primary transport here.
+ *  1. Groq. One HTTPS hop to `api.groq.com/openai/v1/audio/transcriptions`,
+ *     `whisper-large-v3`, `verbose_json` with word *and* segment timestamps. It
+ *     returns a real per-word clock in seconds under keys the normaliser already
+ *     reads, and its multilingual model handles Nepali and code-switched English
+ *     in one pass - which is why it leads. Language is left undeclared so Whisper
+ *     detects it; forcing a wrong ISO code only makes the transcript worse.
  *
- * Two HTTP transports are still tried afterwards, because a self-hosted NIM or
- * an NVCF function with HTTP enabled speaks them: the OpenAI-compatible form,
- * and the Riva form (`language=en-US`, `word_time_offsets`). Whichever pairing
- * answers first is remembered for the life of the instance, so only the first
- * chunk pays for probing, and every failed attempt is reported back so a
- * misconfiguration names itself instead of hiding behind "could not transcribe".
+ *  2. NVIDIA, unchanged, as the fallback for when Groq is unset, rate limited, or
+ *     down. NVIDIA hosts its speech models as NVIDIA Cloud Functions reached by
+ *     gRPC to `grpc.nvcf.nvidia.com:443` carrying the model's function id - there
+ *     is no OpenAI-style `/v1/audio/transcriptions` on integrate.api.nvidia.com,
+ *     so gRPC is the primary NVIDIA transport. Two HTTP transports follow it for
+ *     a self-hosted NIM or an HTTP-enabled NVCF function: the OpenAI-compatible
+ *     form and the Riva form (`language=en-US`, `word_time_offsets`). Whichever
+ *     pairing answers first is remembered for the life of the instance, so only
+ *     the first chunk pays for probing.
+ *
+ * Either provider's key alone is enough to run. Every failed attempt is reported
+ * back so a misconfiguration names itself instead of hiding behind "could not
+ * transcribe".
  */
 
 import {
@@ -49,8 +59,14 @@ type Attempt = { transport: string; language: string; error: string }
 /** Remembered across requests on a warm instance so probing happens once. */
 let preferred: { transport: Transport; language: string } | null = null
 
-function apiKey(): string | null {
+function nvidiaApiKey(): string | null {
 	const key = process.env.NVIDIA_API_KEY?.trim()
+	return key ? key : null
+}
+
+/** Groq's key. Whisper is the primary recogniser; the key stays server-side only. */
+function groqApiKey(): string | null {
+	const key = process.env.GROQ_API_KEY?.trim()
 	return key ? key : null
 }
 
@@ -402,6 +418,60 @@ function buildForm(args: {
 	return form
 }
 
+/**
+ * The Groq request. `whisper-large-v3` is the accuracy target (10.3% WER on
+ * multilingual test sets) and `temperature=0` removes the one knob that makes
+ * a recogniser invent a word it never heard. Timestamps come back as seconds
+ * under `start`/`end`, which the normaliser already treats as seconds.
+ */
+function buildGroqForm(args: { audio: Blob; fileName: string; language: string | null }): FormData {
+	const form = new FormData()
+	form.append('file', args.audio, args.fileName)
+	form.append('model', GROQ_MODEL)
+	form.append('response_format', 'verbose_json')
+	form.append('timestamp_granularities[]', 'word')
+	form.append('timestamp_granularities[]', 'segment')
+	form.append('temperature', '0')
+	// Leave language out entirely. Whisper detects it, and an ISO code that
+	// disagrees with the audio makes the transcript worse, not better.
+	if (args.language && args.language !== 'auto' && args.language !== 'multi') {
+		form.append('language', args.language)
+	}
+	return form
+}
+
+const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/audio/transcriptions'
+const GROQ_MODEL = 'whisper-large-v3'
+
+async function callGroq(args: {
+	audio: Blob
+	fileName: string
+	language: string | null
+	key: string
+	durationMs: number
+}): Promise<{ text: string; words: CloudWord[]; estimated: boolean }> {
+	const response = await fetch(GROQ_ENDPOINT, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${args.key}`,
+			'Content-Type': 'application/x-www-form-urlencoded',
+		},
+		body: buildGroqForm(args),
+		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+	})
+
+	const payload = await readPayload(response)
+	if (!response.ok) {
+		const message = errorText(payload, response.status)
+		if (response.status === 401 || response.status === 403) throw new CredentialError(message)
+		throw new Error(message)
+	}
+
+	const normalised = normalise(payload, args.durationMs)
+	if (!normalised) throw new Error('the endpoint returned no transcript')
+	return normalised
+}
+
 async function readPayload(response: Response): Promise<unknown> {
 	const contentType = response.headers.get('content-type')?.toLowerCase() ?? ''
 	const body = await response.text()
@@ -525,12 +595,13 @@ export function GET() {
 }
 
 export async function POST(request: Request) {
-	const key = apiKey()
-	if (!key) {
+	const groqKey = groqApiKey()
+	const nvidiaKey = nvidiaApiKey()
+	if (!groqKey && !nvidiaKey) {
 		return Response.json(
 			{
 				error:
-					'NVIDIA_API_KEY is not set on the server, so cloud transcription is unavailable. Switch the engine to on-device, or add a key to .env.local and restart.',
+					'Neither GROQ_API_KEY nor NVIDIA_API_KEY is set on the server. Add at least one to .env.local and restart.',
 				code: 'not-configured',
 			},
 			{ status: 503 },
@@ -581,8 +652,56 @@ export async function POST(request: Request) {
 			? [preferred.language, ...languages.filter((entry) => entry !== preferred?.language)]
 			: languages
 
-	const attempts: Attempt[] = []
+	// 1. Try Groq first (if key present)
+	if (groqKey) {
+		const groqAttempts: Attempt[] = []
+		for (const languageCode of ordered) {
+			try {
+				const result = await callGroq({
+					audio,
+					fileName,
+					language: languageCode === 'auto' || languageCode === 'multi' ? null : languageCode,
+					key: groqKey,
+					durationMs,
+				})
+				// Remember the successful Groq language for next time? Not required, but we can update preferred for Groq if we want.
+				// We'll keep the existing preferred for NVIDIA only, so we don't touch it here.
+				return Response.json(
+					{
+						text: result.text,
+						words: result.words,
+						model: GROQ_MODEL,
+						endpoint: 'groq',
+						language: languageCode,
+						estimatedTimings: result.estimated,
+						contextMs,
+						durationMs,
+					},
+					{ headers: { 'cache-control': 'no-store' } },
+				)
+			} catch (error) {
+				if (error instanceof CredentialError) {
+					console.warn('[api/captions/transcribe] groq credential rejected', { error: error.message })
+					return Response.json(
+						{
+							error: `Groq rejected the API key: ${error.message}. Check GROQ_API_KEY and that the key has access to ${GROQ_MODEL}.`,
+							code: 'credentials',
+						},
+						{ status: 502 },
+					)
+				}
+				const message = error instanceof Error ? error.message : String(error)
+				groqAttempts.push({ transport: `groq:${GROQ_ENDPOINT}`, language: languageCode, error: message.slice(0, 240) })
+				// If the error is clearly not about language, break the language loop for Groq.
+				if (!/language|locale|unsupported|not available|invalid[_ ]argument/i.test(message)) break
+			}
+		}
+		console.warn('[api/captions/transcribe] groq every attempt failed', { model: GROQ_MODEL, attempts: groqAttempts })
+		// Fall through to NVIDIA fallback
+	}
 
+	// 2. Fallback to NVIDIA (original logic, but using nvidiaKey)
+	const attempts: Attempt[] = []
 	for (const transport of transportsFor(model)) {
 		for (const languageCode of ordered) {
 			const label = transportKey(transport)
@@ -595,7 +714,7 @@ export async function POST(request: Request) {
 								sampleRate,
 								language: languageCode,
 								model,
-								key,
+								key: nvidiaKey,
 								durationMs,
 								hints,
 							})
@@ -606,7 +725,7 @@ export async function POST(request: Request) {
 								fileName,
 								model,
 								language: languageCode,
-								key,
+								key: nvidiaKey,
 								durationMs,
 								hints,
 							})
@@ -638,9 +757,6 @@ export async function POST(request: Request) {
 				}
 				const message = error instanceof Error ? error.message : String(error)
 				attempts.push({ transport: label, language: languageCode, error: message.slice(0, 240) })
-				// A language the model refuses is worth retrying with another
-				// spelling; a dead transport is not, so stop cycling spellings once
-				// the failure is clearly not about the language code.
 				if (!/language|locale|unsupported|not available|invalid[_ ]argument/i.test(message)) break
 			}
 		}
