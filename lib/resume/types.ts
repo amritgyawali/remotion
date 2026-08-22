@@ -63,6 +63,23 @@ export type AtsCheck = {
 	fix?: string
 }
 
+export type AtsCategory = {
+	id: 'contact' | 'structure' | 'targeting' | 'impact' | 'writing' | 'parsing'
+	label: string
+	points: number
+	maxPoints: number
+	percentage: number
+	detail: string
+}
+
+export type AtsKeyword = {
+	keyword: string
+	kind: 'hard skill' | 'soft skill' | 'role term'
+	jobMentions: number
+	resumeMentions: number
+	matched: boolean
+}
+
 export type AtsReport = {
 	score: number
 	grade: 'Excellent' | 'Strong' | 'Developing' | 'Needs work'
@@ -71,13 +88,50 @@ export type AtsReport = {
 	improvements: string[]
 	matchedKeywords: string[]
 	missingKeywords: string[]
+	categories: AtsCategory[]
+	keywords: AtsKeyword[]
 	stats: {
 		wordCount: number
 		bulletCount: number
 		quantifiedBullets: number
 		actionLedBullets: number
+		strongBullets: number
+		weakBullets: number
 		keywordCoverage: number | null
 	}
+}
+
+export type ResumeTemplate = 'classic' | 'modern' | 'compact'
+export type ResumePageSize = 'letter' | 'a4'
+
+export type ResumeDesign = {
+	template: ResumeTemplate
+	pageSize: ResumePageSize
+	accent: string
+	fontScale: number
+	sectionSpacing: number
+}
+
+export type ResumeVersion = {
+	id: string
+	name: string
+	createdAt: string
+	resume: ResumeData
+	jobDescription: string
+	targetRole: string
+	targetCompany: string
+	design: ResumeDesign
+}
+
+export type CareerToolId = 'cover-letter' | 'recruiter-email' | 'linkedin-profile' | 'interview-prep'
+
+export type CareerArtifact = {
+	id: string
+	tool: CareerToolId
+	title: string
+	content: string
+	createdAt: string
+	model: string | null
 }
 
 export type ResumeChatMessage = {
@@ -104,6 +158,24 @@ export const EMPTY_RESUME: ResumeData = {
 	education: [],
 	projects: [],
 	certifications: [],
+}
+
+export const DEFAULT_RESUME_DESIGN: ResumeDesign = {
+	template: 'classic',
+	pageSize: 'letter',
+	accent: '#334155',
+	fontScale: 1,
+	sectionSpacing: 1,
+}
+
+export function normalizeResumeDesign(value: unknown): ResumeDesign {
+	const raw = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+	const template: ResumeTemplate = raw.template === 'modern' || raw.template === 'compact' ? raw.template : 'classic'
+	const pageSize: ResumePageSize = raw.pageSize === 'a4' ? 'a4' : 'letter'
+	const accent = typeof raw.accent === 'string' && /^#[0-9a-f]{6}$/i.test(raw.accent) ? raw.accent : DEFAULT_RESUME_DESIGN.accent
+	const fontScale = typeof raw.fontScale === 'number' ? Math.min(1.12, Math.max(0.88, raw.fontScale)) : 1
+	const sectionSpacing = typeof raw.sectionSpacing === 'number' ? Math.min(1.2, Math.max(0.78, raw.sectionSpacing)) : 1
+	return { template, pageSize, accent, fontScale, sectionSpacing }
 }
 
 const clean = (value: unknown, max = 500): string =>

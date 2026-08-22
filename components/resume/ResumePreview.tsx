@@ -1,7 +1,7 @@
 'use client'
 
-import { createElement, memo, type KeyboardEvent } from 'react'
-import type { ResumeData } from '../../lib/resume/types'
+import { createElement, memo, type CSSProperties, type KeyboardEvent } from 'react'
+import type { ResumeData, ResumeDesign } from '../../lib/resume/types'
 import { IconPlus, IconTrash } from '../Icons'
 
 function Editable({
@@ -44,9 +44,11 @@ function Editable({
 function ResumePreview({
 	resume,
 	onResume,
+	design,
 }: {
 	resume: ResumeData
 	onResume: (resume: ResumeData) => void
+	design: ResumeDesign
 }) {
 	const contact = (key: keyof ResumeData['contact'], value: string) =>
 		onResume({ ...resume, contact: { ...resume.contact, [key]: value } })
@@ -73,8 +75,16 @@ function ResumePreview({
 
 	return (
 		<div className="resume-paper-wrap">
-			<div className="resume-edit-hint">Click any text on the page to edit it</div>
-			<article className="resume-paper" aria-label="Editable resume preview">
+			<div className="resume-edit-hint">Click any text to edit · changes save on this device</div>
+			<article
+				className={`resume-paper resume-paper--${design.template} resume-paper--${design.pageSize}`}
+				aria-label="Editable resume preview"
+				style={{
+					'--resume-accent': design.accent,
+					'--resume-font-scale': design.fontScale,
+					'--resume-section-space': design.sectionSpacing,
+				} as CSSProperties}
+			>
 				<header className="resume-document-header">
 					<Editable
 						as="h1"
@@ -92,14 +102,14 @@ function ResumePreview({
 					/>
 					<div className="resume-contact-line">
 						<Editable value={resume.contact.email} placeholder="email@example.com" onChange={(value) => contact('email', value)} />
-						<span>•</span>
+						<span className="resume-contact-separator">•</span>
 						<Editable value={resume.contact.phone} placeholder="Phone" onChange={(value) => contact('phone', value)} />
-						<span>•</span>
+						<span className="resume-contact-separator">•</span>
 						<Editable value={resume.contact.location} placeholder="City, Country" onChange={(value) => contact('location', value)} />
 					</div>
 					<div className="resume-contact-line">
 						<Editable value={resume.contact.linkedin} placeholder="LinkedIn URL" onChange={(value) => contact('linkedin', value)} />
-						<span>•</span>
+						<span className="resume-contact-separator">•</span>
 						<Editable value={resume.contact.website} placeholder="Portfolio URL" onChange={(value) => contact('website', value)} />
 					</div>
 				</header>
@@ -137,7 +147,7 @@ function ResumePreview({
 								</button>
 							</span>
 						))}
-						<button type="button" className="resume-add-inline" onClick={() => onResume({ ...resume, skills: [...resume.skills, 'New skill'] })}>
+						<button type="button" className="resume-add-inline" onClick={() => onResume({ ...resume, skills: [...resume.skills, ''] })}>
 							<IconPlus size={11} /> Add skill
 						</button>
 					</div>
@@ -183,7 +193,7 @@ function ResumePreview({
 									</li>
 								))}
 							</ul>
-							<button type="button" className="resume-add-inline" onClick={() => changeExperience(index, { bullets: [...item.bullets, 'New achievement'] })}>
+			<button type="button" className="resume-add-inline" onClick={() => changeExperience(index, { bullets: [...item.bullets, ''] })}>
 								<IconPlus size={11} /> Add achievement
 							</button>
 						</div>
@@ -196,7 +206,7 @@ function ResumePreview({
 								...resume,
 								experience: [
 									...resume.experience,
-									{ id: `experience-${Date.now()}`, company: 'Company', role: 'Role title', location: '', startDate: '', endDate: '', bullets: ['New achievement'] },
+									{ id: `experience-${Date.now()}`, company: '', role: '', location: '', startDate: '', endDate: '', bullets: [''] },
 								],
 							})
 						}
@@ -225,12 +235,12 @@ function ResumePreview({
 									</li>
 								))}
 							</ul>
-							<button type="button" className="resume-add-inline" onClick={() => changeProject(index, { bullets: [...item.bullets, 'New project achievement'] })}>
+			<button type="button" className="resume-add-inline" onClick={() => changeProject(index, { bullets: [...item.bullets, ''] })}>
 								<IconPlus size={11} /> Add achievement
 							</button>
 						</div>
 					))}
-					<button type="button" className="resume-add-block" onClick={() => onResume({ ...resume, projects: [...resume.projects, { id: `project-${Date.now()}`, name: 'Project name', link: '', description: '', bullets: ['New project achievement'] }] })}>
+					<button type="button" className="resume-add-block" onClick={() => onResume({ ...resume, projects: [...resume.projects, { id: `project-${Date.now()}`, name: '', link: '', description: '', bullets: [''] }] })}>
 						<IconPlus size={12} /> Add project
 					</button>
 				</section>
@@ -258,7 +268,7 @@ function ResumePreview({
 							<Editable as="p" multiline value={item.details} placeholder="Honors, coursework, or details (optional)" onChange={(details) => changeEducation(index, { details })} />
 						</div>
 					))}
-					<button type="button" className="resume-add-block" onClick={() => onResume({ ...resume, education: [...resume.education, { id: `education-${Date.now()}`, institution: 'Institution', degree: 'Degree', location: '', startDate: '', endDate: '', details: '' }] })}>
+					<button type="button" className="resume-add-block" onClick={() => onResume({ ...resume, education: [...resume.education, { id: `education-${Date.now()}`, institution: '', degree: '', location: '', startDate: '', endDate: '', details: '' }] })}>
 						<IconPlus size={12} /> Add education
 					</button>
 				</section>
@@ -280,7 +290,7 @@ function ResumePreview({
 							</div>
 						</div>
 					))}
-					<button type="button" className="resume-add-block" onClick={() => onResume({ ...resume, certifications: [...resume.certifications, { id: `certification-${Date.now()}`, name: 'Certification', issuer: 'Issuer', date: '' }] })}>
+					<button type="button" className="resume-add-block" onClick={() => onResume({ ...resume, certifications: [...resume.certifications, { id: `certification-${Date.now()}`, name: '', issuer: '', date: '' }] })}>
 						<IconPlus size={12} /> Add certification
 					</button>
 				</section>

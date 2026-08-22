@@ -12,6 +12,9 @@ const MAX_JOB_DESCRIPTION = 14_000
 type GenerateBody = {
 	prompt?: unknown
 	jobDescription?: unknown
+	targetRole?: unknown
+	targetCompany?: unknown
+	evidenceNotes?: unknown
 	history?: unknown
 	currentResume?: unknown
 }
@@ -29,6 +32,9 @@ Rules:
 6. Preserve names, dates, contact details, organizations, credentials, and numbers exactly. Use reverse chronological order where dates make that possible.
 7. If the user asks for a revision, update the supplied current resume instead of discarding unrelated verified facts.
 8. The assistantMessage should briefly say what was created or changed and mention any critical missing facts the user should provide next.
+9. Treat candidate evidence notes as the only source for new metrics or proof. Never infer a metric from a job description.
+10. Prefer the XYZ/CAR pattern for bullets: action and task, truthful scope or method, then result. Vary verbs and remove filler.
+11. Tailor for the named role and employer where supplied, but never copy requirements the candidate has not demonstrated.
 
 Return exactly this shape:
 {
@@ -69,6 +75,9 @@ export async function POST(request: Request) {
 
 	const prompt = cleanText(body.prompt, MAX_PROMPT)
 	const jobDescription = cleanText(body.jobDescription, MAX_JOB_DESCRIPTION)
+	const targetRole = cleanText(body.targetRole, 180)
+	const targetCompany = cleanText(body.targetCompany, 180)
+	const evidenceNotes = cleanText(body.evidenceNotes, 8_000)
 	if (prompt.length < 10) {
 		return Response.json({ error: 'Please provide at least 10 characters about your background or requested change.' }, { status: 400 })
 	}
@@ -78,7 +87,10 @@ export async function POST(request: Request) {
 	const userMessage = [
 		'CANDIDATE REQUEST AND FACTS:',
 		prompt,
+		`\nTARGET ROLE: ${targetRole || 'Not supplied.'}`,
+		`TARGET COMPANY: ${targetCompany || 'Not supplied.'}`,
 		jobDescription ? `\nTARGET JOB DESCRIPTION:\n${jobDescription}` : '\nTARGET JOB DESCRIPTION: Not supplied.',
+		evidenceNotes ? `\nVERIFIED EVIDENCE BANK:\n${evidenceNotes}` : '\nVERIFIED EVIDENCE BANK: Not supplied.',
 		history.length ? `\nRECENT CONVERSATION:\n${JSON.stringify(history)}` : '',
 		currentResume ? `\nCURRENT RESUME TO REVISE:\n${JSON.stringify(currentResume)}` : '',
 	].join('\n')
