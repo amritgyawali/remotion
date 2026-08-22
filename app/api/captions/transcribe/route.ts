@@ -574,7 +574,7 @@ async function callGrpc(args: {
 /* ------------------------------------------------------------------ route */
 
 export function GET() {
-	const configured = apiKey() !== null
+	const configured = nvidiaApiKey() !== null
 	return Response.json(
 		{
 			configured,
@@ -661,7 +661,7 @@ export async function POST(request: Request) {
 					audio,
 					fileName,
 					language: languageCode === 'auto' || languageCode === 'multi' ? null : languageCode,
-					key: groqKey,
+					key: groqKey!,
 					durationMs,
 				})
 				// Remember the successful Groq language for next time? Not required, but we can update preferred for Groq if we want.
@@ -714,7 +714,7 @@ export async function POST(request: Request) {
 								sampleRate,
 								language: languageCode,
 								model,
-								key: nvidiaKey,
+								key: nvidiaKey!,
 								durationMs,
 								hints,
 							})
@@ -725,7 +725,7 @@ export async function POST(request: Request) {
 								fileName,
 								model,
 								language: languageCode,
-								key: nvidiaKey,
+								key: nvidiaKey!,
 								durationMs,
 								hints,
 							})
