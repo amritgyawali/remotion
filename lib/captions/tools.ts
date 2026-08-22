@@ -8,7 +8,9 @@
  * as the recogniser produced it, which is what karaoke styles depend on.
  */
 
+import { distributeOverSpeech, monotonic, snapWordsToSpeech, type TimedWord } from './align'
 import { makeCue, nextCueId, timeWords, splitWords } from './cues'
+import type { SpeechSegment } from './vad'
 import type { CaptionCue, CaptionToken } from './types'
 
 /* --------------------------------------------------------------- helpers */
@@ -216,6 +218,139 @@ export function stretchTiming(cues: CaptionCue[], factor: number, durationMs: nu
 			toMs: Math.max(scale(token.fromMs) + 1, scale(token.toMs)),
 		})),
 	}))
+}
+
+/* -------------------------------------------------------- align to speech */
+
+export type AlignMode = 'auto' | 'snap' | 'redistribute'
+
+export type AlignResult = {
+	cues: CaptionCue[]
+	/** what was actually done, once `auto` has decided */
+	mode: 'snap' | 'redistribute'
+	/** constant offset removed, ms - only ever non-zero in `snap` */
+	offsetMs: number
+	/** share of words sitting on speech afterwards, 0 - 1 */
+	onSpeech: number
+	/** how many cues moved by more than a frame */
+	moved: number
+}
+
+function overlapsSpeech(speech: SpeechSegment[], startMs: number, endMs: number): boolean {
+	for (const segment of speech) {
+		if (segment.startMs >= endMs) break
+		if (segment.endMs > startMs) return true
+	}
+	return false
+}
+
+/** Puts a flat list of timed words back into the cues they came from. */
+function rebuild(cues: CaptionCue[], words: TimedWord[]): CaptionCue[] {
+	const out: CaptionCue[] = []
+	let cursor = 0
+
+	for (const cue of cues) {
+		const slice = words.slice(cursor, cursor + cue.tokens.length)
+		cursor += cue.tokens.length
+		if (slice.length === 0) {
+			out.push(cue)
+			continue
+		}
+		const tokens: CaptionToken[] = slice.map((word) => ({
+			text: word.text,
+			fromMs: word.startMs,
+			toMs: Math.max(word.startMs + 1, word.endMs),
+		}))
+		out.push({
+			...cue,
+			startMs: tokens[0].fromMs,
+			endMs: Math.max(tokens[0].fromMs + 120, tokens[tokens.length - 1].toMs),
+			tokens,
+		})
+	}
+
+	return out
+}
+
+/**
+ * Re-times a finished transcript against the speech in the audio.
+ *
+ * This is the manual counterpart to what the cloud path now does on its own,
+ * and the only thing that rescues a transcript that arrived with no reliable
+ * clock at all - a pasted .srt cut for a different edit, a script typed by
+ * hand, or a recogniser whose timings were plausible enough to be believed and
+ * wrong enough to be visible.
+ *
+ * Line breaks are never touched. Every cue keeps exactly the words it had; only
+ * when each of them is said changes. Two ways of changing it:
+ *
+ *   snap         - the existing timings are roughly right, so the constant
+ *                  offset is measured and removed and stragglers are pulled
+ *                  onto the speech beside them
+ *   redistribute - the existing timings carry no information, so every word is
+ *                  laid down across the measured speech in proportion to how
+ *                  long it takes to say
+ *
+ * `auto` picks between them by asking how much of the transcript currently
+ * lands on speech at all.
+ */
+export function alignToSpeech(
+	cues: CaptionCue[],
+	speech: SpeechSegment[],
+	options: { durationMs: number; mode?: AlignMode },
+): AlignResult {
+	const words: TimedWord[] = cues.flatMap((cue) =>
+		cue.tokens.map((token) => ({ text: token.text, startMs: token.fromMs, endMs: token.toMs })),
+	)
+	if (words.length === 0 || speech.length === 0) {
+		return { cues, mode: 'snap', offsetMs: 0, onSpeech: 0, moved: 0 }
+	}
+
+	const hits = words.filter((word) => overlapsSpeech(speech, word.startMs, word.endMs)).length
+	const requested = options.mode ?? 'auto'
+	// Below two thirds on speech the timings are not a rough version of the
+	// truth, they are unrelated to it - and nudging noise only moves the noise.
+	const mode: 'snap' | 'redistribute' =
+		requested === 'auto' ? (hits / words.length >= 0.66 ? 'snap' : 'redistribute') : requested
+
+	const limitMs = options.durationMs > 0 ? options.durationMs : undefined
+	let timed: TimedWord[]
+	let offsetMs = 0
+
+	if (mode === 'snap') {
+		const snapped = snapWordsToSpeech(words, speech, { maxShiftMs: 2_000, limitMs })
+		timed = snapped.words
+		offsetMs = snapped.offsetMs
+	} else {
+		const endMs = Math.max(
+			options.durationMs || 0,
+			speech[speech.length - 1].endMs,
+		)
+		timed = distributeOverSpeech(
+			words.map((word) => word.text),
+			speech,
+			Math.min(speech[0].startMs, words[0].startMs),
+			endMs,
+		)
+	}
+
+	timed = monotonic(timed, { minWordMs: 60, limitMs })
+	if (timed.length !== words.length) {
+		// Never silently drop a word: an aligner that loses text is worse than
+		// one that leaves the timings alone.
+		return { cues, mode, offsetMs: 0, onSpeech: hits / words.length, moved: 0 }
+	}
+
+	const next = rebuild(cues, timed)
+	const landed = timed.filter((word) => overlapsSpeech(speech, word.startMs, word.endMs)).length
+
+	return {
+		cues: next,
+		mode,
+		offsetMs,
+		onSpeech: landed / timed.length,
+		moved: next.filter((cue, index) => Math.abs(cue.startMs - cues[index].startMs) > 40).length,
+	}
 }
 
 /**

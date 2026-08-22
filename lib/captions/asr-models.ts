@@ -163,6 +163,12 @@ export type CloudTranscribeResponse = {
 	estimatedTimings: boolean
 }
 
+/**
+ * How a chunk's timings were arrived at, so the uploader can say honestly
+ * whether the captions are aligned to the audio or merely spread across it.
+ */
+export type TimingSource = 'recogniser' | 'aligned' | 'spread'
+
 export type CloudAsrStatus = {
 	configured: boolean
 	/** why the cloud path is unavailable, when it is */
@@ -185,5 +191,11 @@ export const CLOUD_ASR_LIMITS = {
 	chunkSeconds: 60,
 	/** how far the cutter may move a boundary to land it in silence */
 	chunkSlackSeconds: 4,
+	/**
+	 * Overlap carried into the next chunk when a boundary could not be placed in
+	 * a pause. A second and a half is longer than any single spoken word, so the
+	 * word that straddled the cut is complete for at least one recogniser call.
+	 */
+	contextSeconds: 1.5,
 	sampleRate: 16_000,
 } as const

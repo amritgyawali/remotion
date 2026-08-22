@@ -170,13 +170,18 @@ Open **Subtitle a video** in the top bar, or go straight to
    * **Auto** - speech recognition, with two engines behind one button.
 
      **NVIDIA cloud** (used first whenever the server has an `NVIDIA_API_KEY`)
-     decodes the audio in the browser, resamples it to 16 kHz mono, cuts it at
-     the quietest point near each boundary and uploads those chunks to
-     `/api/captions/transcribe`, which calls NVIDIA's hosted recognisers -
-     Whisper large-v3 for Nepali and the other 98 languages, Parakeet and Canary
-     for English and the major European ones. The video never leaves the device,
-     there is nothing to download, and a chunk that fails is retried and then
-     skipped rather than losing the whole transcript.
+     decodes the audio in the browser, resamples it to 16 kHz mono, conditions
+     it (DC removal, an 85 Hz high-pass under the voice, and a level pass
+     measured over speech only), cuts it in the longest pause near each boundary
+     and uploads those chunks to `/api/captions/transcribe`, which calls
+     NVIDIA's hosted recognisers - Whisper large-v3 for Nepali and the other 98
+     languages, Parakeet and Canary for English and the major European ones. The
+     video never leaves the device, there is nothing to download, and a chunk
+     that fails is retried and then skipped rather than losing the whole
+     transcript. When a boundary genuinely cannot be placed in a pause, the next
+     chunk carries a second and a half of overlap so the word sitting on the cut
+     is transcribed whole by somebody, and the two copies are stitched back into
+     one.
 
      **On this device** runs Whisper as WebAssembly inside the tab. Six models
      from tiny to small, English-only or multilingual (77 MB - 488 MB),
@@ -188,6 +193,21 @@ Open **Subtitle a video** in the top bar, or go straight to
      music/silence hallucinations and the credit-loop lines Whisper falls into
      on long clips. **Auto** falls back to the other engine when one fails, so a
      missing key or a browser without SharedArrayBuffer still produces captions.
+
+     **Every timestamp is then checked against the audio itself.** The same pass
+     that cut the chunks also measured where speech is, frame by frame, using a
+     two-threshold detector whose speech/silence split is recomputed per three
+     seconds by Otsu's method rather than assumed. That map does three jobs. A
+     recogniser that returns no word timings at all - which is what NVIDIA's
+     hosted Whisper function does - has its text laid down on the speech,
+     weighted by syllables, so a pause on screen is a pause in the audio instead
+     of the text being smeared evenly across a whole minute. A recogniser that
+     does return timings has its constant offset measured by cross-correlating
+     its word activity against the real speech and taken back out, and any word
+     left stranded in a silence is pulled onto the speech beside it. Line breaks
+     are placed on real pauses rather than on whatever gap the word timings
+     happened to leave. The studio reports what it did - the offset it removed,
+     and the share of words that landed on speech.
 
      Optionally an NVIDIA language model then tidies the transcript - one
      rewritten line per recognised line, so punctuation and spelling improve
@@ -225,12 +245,15 @@ Open **Subtitle a video** in the top bar, or go straight to
      punctuation. The Tools tab ranks the candidates for you.
    * **Reveal**: word by word, whole line, or a typewriter that types each word
      across its own timestamp without the line ever reflowing.
-5. **Work in bulk** in the Tools tab: find and replace (word timings survive a
-   same-length replacement), sentence/title/upper/lower rewriting, punctuation
-   tidying, `Name:` speaker splitting, speed correction for a transcript that
-   drifts, holding captions through short pauses, frame snapping, splitting long
-   cues, folding short flashes into their neighbour, and copy/paste of the whole
-   look as JSON.
+5. **Work in bulk** in the Tools tab: **align every line to the speech** (reads
+   the audio, finds where the voice is, and moves each word onto it without
+   touching a single line break - the fix for an imported `.srt` cut for a
+   different edit, or a hand-typed script), find and replace (word timings
+   survive a same-length replacement), sentence/title/upper/lower rewriting,
+   punctuation tidying, `Name:` speaker splitting, speed correction for a
+   transcript that drifts, holding captions through short pauses, frame
+   snapping, splitting long cues, folding short flashes into their neighbour,
+   and copy/paste of the whole look as JSON.
 6. **Render** with the same browser or server engine the code studio uses. The
    output carries the original audio unless you mute it. Subtitles also export
    as `.srt`, `.vtt` and a fully styled `.ass` with per-word karaoke tags.
@@ -290,6 +313,13 @@ English, à la *"यो feature धेरै राम्रो छ"*.
   frame N is identical in the preview, in a browser export and on a render farm.
   `npm run captions:check` compiles all 18 presets and all 64 faces and asserts
   exactly that.
+* **Audio is conditioned before it is recognised**: DC removal, a second-order
+  high-pass at 85 Hz under the voice, and a level pass that measures loudness
+  over the detected speech only and never over the pauses. Measuring the whole
+  chunk makes a talker who leaves long pauses quieter than one who does not,
+  and amplifies a near-silent chunk until its noise floor sounds like whispering
+  - which is the classic way to make a model hallucinate a sentence into
+  silence.
 * **On-device speech recognition** uses `@remotion/whisper-web` -
   whisper.cpp compiled to WebAssembly, running entirely in the tab.
   `getLoadedModels()` tells the UI which models are already cached so it can
@@ -311,11 +341,34 @@ English, à la *"यो feature धेरै राम्रो छ"*.
   returned to the browser, so a misconfiguration names itself instead of hiding
   behind "could not transcribe".
 * **Word timings** come back as milliseconds from Riva and seconds from the
-  OpenAI-shaped payloads; both are normalised, and a reply with text but no
-  timings is spread by word length and labelled as estimated. Chunks are cut at
-  the quietest 20 ms frame within four seconds of the target boundary, so a word
-  is not split across two requests, and the WAV header is stripped before the
-  PCM goes on the wire.
+  OpenAI-shaped payloads. Which unit a payload is using is read off the key
+  name, not guessed from magnitude, because a Riva reply holding small
+  millisecond values looks exactly like an OpenAI reply holding seconds. Timings
+  that cannot be true - all zeros, everything crammed into the first instant, or
+  a transcript claiming to run past the audio it came from - are rejected as
+  timings and the text is aligned to the audio instead, which is a better answer
+  than pinning captions to a clock that is wrong.
+* **Alignment is measured, not assumed.** `lib/captions/vad.ts` finds where
+  speech is: 10 ms frames, two thresholds with a hangover so a stop consonant
+  does not end a word, and a speech/silence split recomputed every three seconds
+  by Otsu's method rather than taken as a fixed percentile - a percentile floor
+  only works on a window that happens to be about that percent silent, and gets
+  unbroken narration and long pauses both wrong. `lib/captions/align.ts` then
+  places words on that map: syllable-weighted distribution when no timings came
+  back (Devanagari clusters are counted by nuclei, English by vowel groups with
+  the common hiatus cases), and for timings that did come back, a
+  cross-correlation of word activity against real speech to measure the constant
+  offset, remove it, and rescue any word stranded in a silence. Both are pure
+  functions over `Float32Array` and plain data, so `npm run captions:check`
+  exercises them directly.
+* **Chunks are cut in real pauses**: the window around each boundary is scanned
+  for the longest silence rather than the single quietest 20 ms frame, and when
+  a boundary genuinely falls mid-word - unbroken speech, or a music bed under it
+  - the next chunk carries 1.5 s of overlap so that word is heard whole by at
+  least one request, with the two copies stitched back into one afterwards. The
+  chunk clock comes from the demuxer's own timestamps, so a container whose
+  audio starts late or drops a packet shifts nothing; the hole becomes a hole of
+  silence. The WAV header is stripped before the PCM goes on the wire.
 * **Where the audio goes**: the video file itself is never uploaded. Only the
   decoded speech is, and only when the NVIDIA engine is selected; the on-device
   engine sends nothing at all. `npm run captions:check` exercises the chunker,
@@ -386,6 +439,8 @@ your deployment retention policy.
 | `NVIDIA_ASR_ENDPOINT` | unset | Full URL of an HTTP `/v1/audio/transcriptions` endpoint, e.g. a self-hosted NIM. |
 | `NVIDIA_ASR_FUNCTION_ID` | unset | Pin one NVCF function id instead of the one belonging to the selected model. |
 | `NVIDIA_ASR_MODEL` | unset | Pin one speech model instead of choosing by spoken language. |
+| `NVIDIA_ASR_PHRASES` | unset | Comma-separated names, products or places the recogniser should expect. Riva boosts them against similar-sounding words - the one lever that fixes a proper noun written differently from the way it was spoken. |
+| `NVIDIA_ASR_PHRASE_BOOST` | `6` | How hard to push those phrases. NVIDIA recommends 0 - 20; higher recall costs false positives. |
 | `MAX_RENDER_FRAMES` | `1800` | Frame ceiling for a single server render. |
 | `MAX_RENDER_PIXELS` | `8294400` | Resolution ceiling (4K) for a single server render. |
 | `REMOTION_CONCURRENCY` | `auto` | Remotion chooses a memory-safe worker count; a number pins it. |
