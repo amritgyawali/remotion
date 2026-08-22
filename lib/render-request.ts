@@ -32,6 +32,7 @@ const ALLOWED_BARE_IMPORTS = new Set([
 	'@remotion/three',
 	'@react-three/fiber',
 	'three',
+	'three/addons/loaders/GLTFLoader.js',
 ])
 
 const IMPORT_SPECIFIER =

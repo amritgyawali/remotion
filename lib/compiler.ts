@@ -124,7 +124,7 @@ function projectNeedsWebRenderer(files: SourceFile[]): boolean {
 	return files
 		.filter((file) => ['.ts', '.tsx', '.js', '.jsx'].includes(extname(file.path)))
 		.some((file) =>
-			/(?:from\s*|require\s*\(\s*)['"](?:@remotion\/(?:media|three|gif)|@react-three\/fiber|three)['"]/.test(
+			/(?:from\s*|require\s*\(\s*)['"](?:@remotion\/(?:media|three|gif)|@react-three\/fiber|three(?:\/addons\/[^'"]+)?)['"]/.test(
 				file.contents,
 			),
 		)
@@ -187,7 +187,7 @@ function auditCreativeManifest(value: unknown, durationInFrames: number): string
 }
 
 /** Every pack the deployed app serves from public/assets. */
-const STUDIO_KIT_PATH = /^[`'"]assets\/(?:audio|visual|texture|fonts)\/v1\//
+const STUDIO_KIT_PATH = /^[`'"]assets\/(?:3d|audio|visual|texture|fonts)\/v1\//
 
 function staticFileCallsOutsideStudioKit(code: string): boolean {
 	const calls = [...code.matchAll(/staticFile\s*\(\s*([^\r\n)]*)\)/g)]
@@ -217,7 +217,7 @@ export function analyzeSources(files: SourceFile[]): string[] {
 	const usesStaticFiles = /staticFile\s*\(/.test(code)
 	const onlyReferencesStudioKit =
 		usesStaticFiles &&
-		/staticFile\s*\(\s*[`'"]assets\/(?:audio|visual|texture|fonts)\/v1\//.test(code) &&
+		/staticFile\s*\(\s*[`'"]assets\/(?:3d|audio|visual|texture|fonts)\/v1\//.test(code) &&
 		!staticFileCallsOutsideStudioKit(code)
 	if (usesStaticFiles && !onlyReferencesStudioKit) {
 		warnings.add(
@@ -257,6 +257,16 @@ export function analyzeSources(files: SourceFile[]): string[] {
 			'3D animation must use useCurrentFrame(), not React Three Fiber useFrame(), so preview, seeking and exports stay deterministic.',
 		)
 	}
+	if (/GLTFLoader/.test(code) && /\buseLoader\s*\(/.test(code)) {
+		warnings.add(
+			'Load GLB models through GLTFLoader with delayRender()/continueRender(), not useLoader() alone, so Remotion waits for parsing before it captures a frame.',
+		)
+	}
+	if (/GLTFLoader/.test(code) && (!/\bdelayRender\s*\(/.test(code) || !/\bcontinueRender\s*\(/.test(code))) {
+		warnings.add(
+			'GLB loading must be wrapped in delayRender()/continueRender() so preview, browser export and server rendering wait for the model.',
+		)
+	}
 	// The browser exporter serialises inline SVG. A tag sized only by CSS has no
 	// intrinsic size once serialised and is rasterised at the wrong scale, which
 	// silently shifts or crops that layer in the exported file.
@@ -278,6 +288,20 @@ export function analyzeSources(files: SourceFile[]): string[] {
 	if (/<\s*ThreeCanvas\b/.test(code) && !/preserveDrawingBuffer\s*:\s*true/.test(code)) {
 		warnings.add(
 			'Add gl={{preserveDrawingBuffer: true}} to <ThreeCanvas>. Without it, browser exports capture an empty 3D canvas even though the preview looks correct.',
+		)
+	}
+	const threeCanvasTags = code.match(/<\s*ThreeCanvas\b[\s\S]*?>/g) ?? []
+	if (threeCanvasTags.some((tag) => !/\bwidth\s*=/.test(tag) || !/\bheight\s*=/.test(tag))) {
+		warnings.add(
+			'Give every <ThreeCanvas> explicit width and height props from useVideoConfig() so the render surface matches the composition.',
+		)
+	}
+	if (
+		threeCanvasTags.length > 0 &&
+		!/<\s*(?:ambientLight|directionalLight|hemisphereLight|pointLight|spotLight|rectAreaLight)\b/.test(code)
+	) {
+		warnings.add(
+			'Add intentional lighting inside <ThreeCanvas>; GLB materials may render black without a light source or environment.',
 		)
 	}
 	if (/@react-three\/fiber/.test(code) && /<\s*Canvas\b/.test(code)) {
