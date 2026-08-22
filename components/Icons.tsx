@@ -257,3 +257,17 @@ export const IconSliders = (props: IconProps) => (
 		<circle cx="16" cy="18" r="2" />
 	</Base>
 )
+
+export const IconSearch = (props: IconProps) => (
+	<Base {...props}>
+		<circle cx="11" cy="11" r="6.5" />
+		<path d="M15.8 15.8L20 20" />
+	</Base>
+)
+
+export const IconTools = (props: IconProps) => (
+	<Base {...props}>
+		<path d="M14.7 6.3a3.5 3.5 0 004.6 4.6l-8 8a2.3 2.3 0 01-3.2-3.2z" />
+		<path d="M6.5 4.5l2.6 2.6-2 2-2.6-2.6z" />
+	</Base>
+)

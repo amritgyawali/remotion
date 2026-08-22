@@ -165,12 +165,36 @@ Open **Subtitle a video** in the top bar, or go straight to
    losing a single word timing. A readability pass stretches any cue shorter
    than ~0.7s into the following silence, never over the next line, so a quick
    word never flashes past unread.
-4. **Style them** with six finished looks - social pop, karaoke fill, broadcast
-   bar, clean minimal, neon glow, accent box - then adjust font, size, colour,
-   spoken-word highlight, outline, backdrop, placement, entrance, word-by-word
-   vs. whole-line reveal, line count and a legibility scrim.
-5. **Render** with the same browser or server engine the code studio uses. The
-   output carries the original audio unless you mute it.
+4. **Style them** with 18 finished looks - social pop, money caps, karaoke
+   fill, broadcast bar, frosted glass, clean minimal, cinema serif, neon glow,
+   neon tube, sunset gradient, chrome Y2K, accent box, comic slam, arcade, VHS
+   tape, typewriter, marker note and Nepali bold - then take over every control:
+
+   * **Type**: 64 bundled families in a searchable picker that previews each
+     one in its own face, filtered by display, sans, condensed, serif, comic,
+     tech, retro, pixel, mono, script, handwritten or Devanagari. Size, weight,
+     tracking, leading, letter case, alignment and up to four balanced lines.
+   * **Fill**: a solid colour or a gradient clipped to the letterforms, at any
+     angle.
+   * **Spoken word**: colour, pop, or a solid box; a true karaoke wipe that
+     fills the word left to right across its own timing; and continuous motion -
+     bounce, wave, pulse, jitter or flip - on the word being said.
+   * **Effects**: outline, coloured drop shadow, glow, a hard-edged 3D depth
+     stack, tilt, a frosted backdrop blur and the legibility scrim.
+   * **Emphasis words**: the offer, the price, the brand name - painted in the
+     emphasis colour every time they are spoken, matched without case or
+     punctuation. The Tools tab ranks the candidates for you.
+   * **Reveal**: word by word, whole line, or a typewriter that types each word
+     across its own timestamp without the line ever reflowing.
+5. **Work in bulk** in the Tools tab: find and replace (word timings survive a
+   same-length replacement), sentence/title/upper/lower rewriting, punctuation
+   tidying, `Name:` speaker splitting, speed correction for a transcript that
+   drifts, holding captions through short pauses, frame snapping, splitting long
+   cues, folding short flashes into their neighbour, and copy/paste of the whole
+   look as JSON.
+6. **Render** with the same browser or server engine the code studio uses. The
+   output carries the original audio unless you mute it. Subtitles also export
+   as `.srt`, `.vtt` and a fully styled `.ass` with per-word karaoke tags.
 
 Everything the preview shows is one real Remotion composition, written for your
 clip and compiled in the tab. **Download the .tsx** to keep it: it is a
@@ -211,10 +235,22 @@ English, à la *"यो feature धेरै राम्रो छ"*.
 
 ### Fonts, on-device speech and readability, in depth
 
-* **Typography kit**: 12 self-hosted OFL families ship with the app - the 10
-  Latin faces plus **Noto Sans Devanagari** and **Anek Devanagari** for Nepali
-  and Hindi. `npm run assets:fonts` re-downloads and hash-locks all of them;
-  `npm run assets:verify` checks the lock without any network access.
+* **Typography kit**: 64 self-hosted open-licence families ship with the app -
+  text and grotesk faces, condensed and news faces, impact and comic display,
+  editorial serifs, tech, retro, pixel and terminal faces, script and marker
+  hands, and 13 that draw Devanagari for Nepali and Hindi. `npm run assets:fonts`
+  re-downloads and hash-locks all of them; `npm run assets:verify` checks the
+  lock without any network access.
+* **Font weights are honest**: a static face carries exactly one weight, and
+  asking a browser for 700 on a 400-only file produces a synthesised fake bold
+  that smears at caption size and differs between preview and render host. The
+  studio pins the weight for those families and greys the slider out instead.
+* **Every effect is frame-derived**: gradients, glow, the depth stack, the
+  karaoke wipe, the per-word motion and the typewriter all read the frame and
+  nothing else - no DOM measurement, no `Math.random()`, no `Date.now()` - so
+  frame N is identical in the preview, in a browser export and on a render farm.
+  `npm run captions:check` compiles all 18 presets and all 64 faces and asserts
+  exactly that.
 * **On-device speech recognition** uses `@remotion/whisper-web` -
   whisper.cpp compiled to WebAssembly, running entirely in the tab.
   `getLoadedModels()` tells the UI which models are already cached so it can
@@ -367,7 +403,7 @@ Open `/assets/index.html` in the running app, or click **Browse** under
 | --- | --- | --- |
 | Visuals | 41 editable SVGs: objects, icons, arrows, neon graphics, geometry, depth art | CC0-1.0 |
 | Textures | 20 PNGs: film grain, paper, halftone, scanlines, vignette, light leaks, glow/bokeh/spark/smoke sprites, 4 matcaps, 3 equirectangular environment maps | CC0-1.0 |
-| Typography | 12 self-hosted families (Inter, Archivo, Anton, Bebas Neue, Oswald, Playfair Display, Space Grotesk, JetBrains Mono, Nunito, Caveat, Noto Sans Devanagari, Anek Devanagari) - 10 of them variable | OFL-1.1 |
+| Typography | 64 self-hosted families across sans, grotesk, rounded, condensed, display, comic, serif, tech, retro, pixel, mono, script and handwriting, including 13 Devanagari faces (Noto Sans/Serif Devanagari, Anek, Mukta, Hind, Baloo 2, Rozha One, Yatra One, Kalam, Tiro, Martel Sans, Teko, Khand) | OFL-1.1 and Apache-2.0 |
 | Audio | 8 loopable music beds (neon, warm, cinematic, ambient, epic, lofi, corporate, tension) and 20 SFX | CC0-1.0 |
 
 ```tsx

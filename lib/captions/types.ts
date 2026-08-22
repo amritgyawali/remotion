@@ -49,20 +49,15 @@ export type CaptionVideoSource = {
 	file: File | null
 }
 
-export type CaptionFontId =
-	| 'inter'
-	| 'archivo'
-	| 'anton'
-	| 'bebasNeue'
-	| 'oswald'
-	| 'playfairDisplay'
-	| 'spaceGrotesk'
-	| 'jetBrainsMono'
-	| 'nunito'
-	| 'caveat'
+/**
+ * Font identity lives with the font table, so adding a family to the kit
+ * cannot leave a union here out of date. `CaptionDevanagariFontId` is the
+ * subset of that table whose faces actually draw Devanagari - the companion
+ * face a mixed Nepali caption needs.
+ */
+import type { CaptionDevanagariFontId, CaptionFontId } from './fonts'
 
-/** Companion face that draws Devanagari when a caption mixes scripts. */
-export type CaptionDevanagariFontId = 'notoSansDevanagari' | 'anekDevanagari'
+export type { CaptionFontId, CaptionDevanagariFontId, CaptionFontCategory } from './fonts'
 
 export type CaptionPlacement = 'bottom' | 'center' | 'top'
 
@@ -71,14 +66,30 @@ export type CaptionHighlight = 'color' | 'box' | 'scale' | 'none'
 
 export type CaptionBackground = 'none' | 'pill' | 'block'
 
-export type CaptionAnimation = 'pop' | 'fade' | 'slide' | 'none'
+export type CaptionAnimation = 'pop' | 'fade' | 'slide' | 'rise' | 'blur' | 'none'
 
 /**
  * `line` brings the whole caption in at once - the readable, broadcast way.
  * `word` holds the line's layout and lets each word arrive on its own
- * timestamp, which is the look social edits are built on.
+ * timestamp, which is the look social edits are built on. `typewriter` types
+ * the caption out character by character across its own span.
  */
-export type CaptionReveal = 'line' | 'word'
+export type CaptionReveal = 'line' | 'word' | 'typewriter'
+
+/** Case is applied at render time, so the transcript itself is never rewritten. */
+export type CaptionTextCase = 'upper' | 'lower' | 'title' | 'none'
+
+export type CaptionAlign = 'left' | 'center' | 'right'
+
+/** Solid colour, or a two-stop gradient clipped to the letterforms. */
+export type CaptionFill = 'solid' | 'gradient'
+
+/**
+ * Continuous motion applied to the word being spoken, on top of the entrance.
+ * Every one of these is a pure function of the frame, so a render matches the
+ * preview exactly.
+ */
+export type CaptionWordEffect = 'none' | 'bounce' | 'wave' | 'jitter' | 'pulse' | 'flip'
 
 export type CaptionStylePresetId =
 	| 'tiktok'
@@ -87,6 +98,18 @@ export type CaptionStylePresetId =
 	| 'minimal'
 	| 'neon'
 	| 'boxed'
+	| 'money'
+	| 'sunset'
+	| 'chrome'
+	| 'arcade'
+	| 'vhs'
+	| 'typewriter'
+	| 'comic'
+	| 'cinema'
+	| 'marker'
+	| 'glass'
+	| 'nepali'
+	| 'tube'
 
 export type CaptionStyle = {
 	preset: CaptionStylePresetId
@@ -94,7 +117,7 @@ export type CaptionStyle = {
 	fontWeight: number
 	/** cap height as a percentage of the composition height, 2 - 12 */
 	fontSizePercent: number
-	uppercase: boolean
+	textCase: CaptionTextCase
 	letterSpacing: number
 	lineHeight: number
 	textColor: string
@@ -117,13 +140,45 @@ export type CaptionStyle = {
 	maxWidthPercent: number
 	animation: CaptionAnimation
 	reveal: CaptionReveal
-	/** how many balanced lines one caption may occupy, 1 - 3 */
+	/** how many balanced lines one caption may occupy, 1 - 4 */
 	maxLines: number
 	/** darkening behind the caption zone for legibility on bright footage, 0 - 1 */
 	scrim: number
 	/** load a Devanagari companion face - set automatically when Nepali is detected */
 	devanagari: boolean
 	devanagariFontId: CaptionDevanagariFontId
+
+	/* ------------------------------------------------------------- advanced */
+
+	align: CaptionAlign
+	/** solid text colour, or a gradient clipped to the glyphs */
+	fill: CaptionFill
+	gradientFrom: string
+	gradientTo: string
+	/** gradient direction in degrees, 0 = left to right */
+	gradientAngle: number
+	/**
+	 * True karaoke: the spoken word fills left to right in the highlight colour
+	 * over its own timespan instead of switching colour on one frame.
+	 */
+	karaokeFill: boolean
+	/** halo around the type, 0 - 1; the spoken word gets a stronger one */
+	glow: number
+	glowColor: string
+	/** faked 3D depth behind the letterforms, 0 - 1 */
+	extrude: number
+	extrudeColor: string
+	/** drop shadow colour - a coloured shadow is what sells a retro look */
+	shadowColor: string
+	/** rotation of the whole caption block, degrees */
+	tilt: number
+	/** frosted backdrop behind the caption block, px of blur */
+	backdropBlur: number
+	/** continuous motion on the word being spoken */
+	wordEffect: CaptionWordEffect
+	/** words that always get the emphasis colour, matched case-insensitively */
+	emphasisWords: string[]
+	emphasisColor: string
 }
 
 /** Controls how the word stream is cut into on-screen lines. */

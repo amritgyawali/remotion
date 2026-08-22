@@ -34,6 +34,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 		<html lang="en" data-theme="dark" suppressHydrationWarning>
 			<head>
 				<script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }} />
+				{/*
+				 * The bundled typography kit. Declaring the faces costs nothing until
+				 * one is used - browsers fetch a font file only when text is actually
+				 * set in it - which is what lets the caption font picker preview all
+				 * 64 families in their own type without downloading 16 MB up front.
+				 */}
+				<link rel="stylesheet" href="/assets/fonts/v1/fonts.css" />
 			</head>
 			<body>{children}</body>
 		</html>

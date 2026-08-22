@@ -23,6 +23,19 @@ import {
 	updateCue,
 } from '../lib/captions/cues'
 import { captionProject, captionSourceFor, downloadFileName, planComposition } from '../lib/captions/project'
+import { cuesToAss } from '../lib/captions/ass'
+import { isCaptionFontId } from '../lib/captions/fonts'
+import {
+	cleanPunctuation,
+	findReplace,
+	holdThroughGaps,
+	mergeShortCues,
+	snapToFrames,
+	splitLongCues,
+	splitOnSpeakers,
+	stretchTiming,
+	transformCase,
+} from '../lib/captions/tools'
 import { DEFAULT_CAPTION_STYLE, DEFAULT_LAYOUT, presetById } from '../lib/captions/style-presets'
 import {
 	checkWhisperSupport,
@@ -51,6 +64,7 @@ import type {
 import type { CompileResult, RenderSettings, VirtualProject } from '../lib/types'
 import CaptionDesignPanel from './captions/CaptionDesignPanel'
 import CaptionExportPanel from './captions/CaptionExportPanel'
+import CaptionToolsPanel, { type ToolsActions } from './captions/CaptionToolsPanel'
 import CaptionSourcePanel, { type TranscriptMode } from './captions/CaptionSourcePanel'
 import CaptionTopBar from './captions/CaptionTopBar'
 import CueTrack from './captions/CueTrack'
@@ -151,7 +165,8 @@ export default function CaptionStudio() {
 	)
 	const [compiling, setCompiling] = useState(false)
 	const [compileError, setCompileError] = useState<string | null>(null)
-	const [tab, setTab] = useState<'design' | 'export'>('design')
+	const [tab, setTab] = useState<'design' | 'tools' | 'export'>('design')
+	const [toolNote, setToolNote] = useState<string | null>(null)
 	const [currentFrame, setCurrentFrame] = useState(0)
 	const [isolated, setIsolated] = useState(false)
 	const [placingCaption, setPlacingCaption] = useState(false)
@@ -168,6 +183,10 @@ export default function CaptionStudio() {
 		future: [],
 	})
 	cuesRef.current = cues
+	// The tool callbacks read the live style through a ref: rebuilding every
+	// handler on each colour tweak would remount the whole tools panel.
+	const styleRef = useRef(style)
+	styleRef.current = style
 	const render = useRenderController(INITIAL_SETTINGS)
 	const { reset: resetRender, startRender } = render
 
@@ -224,7 +243,20 @@ export default function CaptionStudio() {
 	// edits are pushed through defaultProps so the preview never reloads the video.
 	const sourceRef = useRef(source)
 	sourceRef.current = source
-	const structuralKey = plan && video ? `${video.url}|${plan.width}x${plan.height}|${plan.fps}|${plan.durationInFrames}` : ''
+	// Cue and colour edits ride through defaultProps, but the chosen faces are
+	// baked into the file's loadFont() calls - so typography, and only
+	// typography, has to recompile before the preview can show it.
+	const structuralKey =
+		plan && video
+			? [
+					video.url,
+					`${plan.width}x${plan.height}`,
+					plan.fps,
+					plan.durationInFrames,
+					style.fontId,
+					style.devanagari ? style.devanagariFontId : 'latin-only',
+				].join('|')
+			: ''
 
 	useEffect(() => {
 		setIsolated(typeof window !== 'undefined' && window.crossOriginIsolated === true)
@@ -645,6 +677,152 @@ export default function CaptionStudio() {
 		setStyle((current) => ({ ...current, ...patch }))
 	}, [])
 
+	/* -------------------------------------------------------------- tools */
+
+	/**
+	 * Bulk edits. Each one runs through commitCues, so the whole rewrite is a
+	 * single undo step, and each reports what it did - a tool that silently
+	 * changes 40 lines is indistinguishable from a tool that did nothing.
+	 */
+	const toolActions = useMemo<ToolsActions>(
+		() => ({
+			onFindReplace: (options) => {
+				let replaced = 0
+				setHandEdited(true)
+				commitCues((current) => {
+					const result = findReplace(current, options)
+					replaced = result.replaced
+					return normalizeCues(result.cues, durationMs)
+				})
+				setToolNote(
+					replaced > 0
+						? `Replaced ${replaced} occurrence${replaced === 1 ? '' : 's'} of "${options.find}".`
+						: `Nothing matched "${options.find}".`,
+				)
+			},
+			onCase: (mode) => {
+				setHandEdited(true)
+				commitCues((current) => normalizeCues(transformCase(current, mode), durationMs))
+				setToolNote(`Rewrote every line in ${mode} case.`)
+			},
+			onCleanPunctuation: () => {
+				let changed = 0
+				setHandEdited(true)
+				commitCues((current) => {
+					const result = cleanPunctuation(current)
+					changed = result.changed
+					return normalizeCues(result.cues, durationMs)
+				})
+				setToolNote(
+					changed > 0 ? `Tidied punctuation in ${changed} lines.` : 'The punctuation was already clean.',
+				)
+			},
+			onSplitSpeakers: () => {
+				let found = 0
+				setHandEdited(true)
+				commitCues((current) => {
+					const result = splitOnSpeakers(current)
+					found = result.found
+					return normalizeCues(result.cues, durationMs)
+				})
+				setToolNote(
+					found > 0
+						? `Split ${found} speaker change${found === 1 ? '' : 's'} onto their own cues.`
+						: 'No "Name:" prefixes were found to split on.',
+				)
+			},
+			onStretch: (factor) => {
+				setHandEdited(true)
+				commitCues((current) => normalizeCues(stretchTiming(current, factor, durationMs), durationMs))
+				setToolNote(`Scaled every timestamp by ${factor.toFixed(3)}x.`)
+			},
+			onHoldGaps: (maxHoldMs) => {
+				setHandEdited(true)
+				commitCues((current) => normalizeCues(holdThroughGaps(current, maxHoldMs, durationMs), durationMs))
+				setToolNote(`Held each caption up to ${maxHoldMs} ms longer, into the silence after it.`)
+			},
+			onSnapToFrames: () => {
+				setHandEdited(true)
+				commitCues((current) => normalizeCues(snapToFrames(current, fps), durationMs))
+				setToolNote(`Snapped every timestamp to a ${fps} fps frame boundary.`)
+			},
+			onSplitLong: (maxMs) => {
+				setHandEdited(true)
+				let before = 0
+				let after = 0
+				commitCues((current) => {
+					before = current.length
+					const next = normalizeCues(splitLongCues(current, maxMs), durationMs)
+					after = next.length
+					return next
+				})
+				setToolNote(
+					after > before
+						? `Split ${after - before} long cue${after - before === 1 ? '' : 's'}.`
+						: `No cue ran longer than ${(maxMs / 1000).toFixed(1)}s.`,
+				)
+			},
+			onMergeShort: (minMs) => {
+				setHandEdited(true)
+				let before = 0
+				let after = 0
+				commitCues((current) => {
+					before = current.length
+					const next = normalizeCues(mergeShortCues(current, minMs), durationMs)
+					after = next.length
+					return next
+				})
+				setToolNote(
+					before > after
+						? `Folded ${before - after} short cue${before - after === 1 ? '' : 's'} into their neighbour.`
+						: 'Every cue was already long enough to read.',
+				)
+			},
+			onEmphasis: (emphasisWords) => {
+				setStyle((current) => ({ ...current, emphasisWords }))
+				setToolNote(
+					emphasisWords.length > 0
+						? `${emphasisWords.length} word${emphasisWords.length === 1 ? '' : 's'} will always take the emphasis colour.`
+						: 'Emphasis cleared.',
+				)
+			},
+			onCopyStyle: () => {
+				void navigator.clipboard.writeText(JSON.stringify(styleRef.current, null, '\t'))
+				setToolNote('Caption style copied as JSON - paste it into another clip to reuse the look.')
+			},
+			onPasteStyle: (json) => {
+				try {
+					const parsed = JSON.parse(json) as Partial<CaptionStyle>
+					if (typeof parsed !== 'object' || parsed === null) throw new Error('not an object')
+					// Only keys the current style already has are taken, so a stale or
+					// hand-edited paste can never inject an unknown field.
+					const patch: Partial<CaptionStyle> = {}
+					for (const key of Object.keys(styleRef.current) as (keyof CaptionStyle)[]) {
+						if (key in parsed) Object.assign(patch, { [key]: parsed[key] })
+					}
+					// A font id from another build would leave the composition without a
+					// face to load, so the two id fields are checked against the kit.
+					if (!isCaptionFontId(patch.fontId)) delete patch.fontId
+					if (!isCaptionFontId(patch.devanagariFontId)) delete patch.devanagariFontId
+					setStyle((current) => ({ ...current, ...patch }))
+					setToolNote(`Applied ${Object.keys(patch).length} style values from the pasted JSON.`)
+				} catch {
+					setToolNote('That was not a caption style JSON - copy one from this panel first.')
+				}
+			},
+			onExportAss: () => {
+				if (!video || !plan) return
+				downloadText(
+					cuesToAss(cuesRef.current, styleRef.current, plan),
+					downloadFileName(video, 'ass'),
+					'text/plain',
+				)
+				setToolNote('Exported a styled .ass subtitle with per-word karaoke timing.')
+			},
+		}),
+		[commitCues, durationMs, fps, plan, video],
+	)
+
 	const handlePreviewPlacement = useCallback((clientY: number, top: number, height: number) => {
 		const ratio = Math.max(0, Math.min(1, (clientY - top) / Math.max(1, height)))
 		if (ratio < 0.4) {
@@ -929,6 +1107,9 @@ export default function CaptionStudio() {
 							<button data-active={tab === 'design'} onClick={() => setTab('design')}>
 								3 - Design
 							</button>
+							<button data-active={tab === 'tools'} onClick={() => setTab('tools')}>
+								Tools
+							</button>
 							<button data-active={tab === 'export'} onClick={() => setTab('export')}>
 								4 - Render
 							</button>
@@ -942,6 +1123,15 @@ export default function CaptionStudio() {
 								scriptMix={scriptMix}
 								onStyle={handleStyle}
 								onPreset={handlePreset}
+							/>
+						) : tab === 'tools' ? (
+							<CaptionToolsPanel
+								cues={cues}
+								style={style}
+								fps={fps}
+								disabled={busy}
+								lastAction={toolNote}
+								actions={toolActions}
 							/>
 						) : (
 							<CaptionExportPanel
