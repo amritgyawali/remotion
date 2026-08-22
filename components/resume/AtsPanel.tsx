@@ -1,17 +1,19 @@
 'use client'
 
 import { memo, useState } from 'react'
-import type { AtsReport, ResumeData } from '../../lib/resume/types'
+import type { AtsReport, ResumeData, ResumeDesign } from '../../lib/resume/types'
 import { downloadResumeDocx, downloadResumePdf } from '../../lib/resume/export'
 import { IconCheck, IconDownload, IconFile, IconInfo, IconSpinner } from '../Icons'
 
 function AtsPanel({
 	report,
 	resume,
+	design,
 	canDownload,
 }: {
 	report: AtsReport
 	resume: ResumeData
+	design: ResumeDesign
 	canDownload: boolean
 }) {
 	const [exporting, setExporting] = useState<'pdf' | 'docx' | null>(null)
@@ -22,8 +24,8 @@ function AtsPanel({
 		setExporting(format)
 		setError('')
 		try {
-			if (format === 'pdf') await downloadResumePdf(resume)
-			else await downloadResumeDocx(resume)
+			if (format === 'pdf') await downloadResumePdf(resume, design)
+			else await downloadResumeDocx(resume, design)
 		} catch (caught) {
 			setError(caught instanceof Error ? caught.message : 'The download could not be created.')
 		} finally {
@@ -42,7 +44,7 @@ function AtsPanel({
 						</div>
 					</div>
 					<div className="resume-score-copy">
-						<span className="section-label">ATS readiness</span>
+						<span className="section-label">Compatibility estimate</span>
 						<h2>{report.grade}</h2>
 						<p>{report.summary}</p>
 					</div>
@@ -55,8 +57,20 @@ function AtsPanel({
 				</div>
 
 				<section className="resume-insight-section">
+					<div className="resume-insight-heading"><h3>Score breakdown</h3><span>6 dimensions</span></div>
+					<div className="resume-score-categories">
+						{report.categories.map((category) => (
+							<div key={category.id} title={category.detail}>
+								<span><strong>{category.label}</strong><b>{category.points}/{category.maxPoints}</b></span>
+								<i><span style={{ width: `${category.percentage}%` }} /></i>
+							</div>
+						))}
+					</div>
+				</section>
+
+				<section className="resume-insight-section">
 					<div className="resume-insight-heading">
-						<h3>Path to 100%</h3>
+						<h3>Optimization plan</h3>
 						<span>{report.improvements.length} fixes</span>
 					</div>
 					{report.improvements.length ? (

@@ -1,6 +1,6 @@
 'use client'
 
-import type { ResumeData } from './types'
+import { DEFAULT_RESUME_DESIGN, type ResumeData, type ResumeDesign } from './types'
 
 const safeFileName = (resume: ResumeData, extension: string) => {
 	const base = resume.contact.name.trim() || 'ATS-Resume'
@@ -14,14 +14,17 @@ const asciiPdfText = (value: string): string =>
 		.replace(/[‘’]/g, "'")
 		.replace(/…/g, '...')
 
-export async function downloadResumePdf(resume: ResumeData): Promise<void> {
+export async function downloadResumePdf(resume: ResumeData, design: ResumeDesign = DEFAULT_RESUME_DESIGN): Promise<void> {
 	const { jsPDF } = await import('jspdf')
-	const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter', compress: true })
+	const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: design.pageSize, compress: true })
 	const pageWidth = pdf.internal.pageSize.getWidth()
 	const pageHeight = pdf.internal.pageSize.getHeight()
-	const margin = 46
+	const margin = design.template === 'compact' ? 38 : 46
 	const contentWidth = pageWidth - margin * 2
 	let y = margin
+	const scale = design.fontScale * (design.template === 'compact' ? 0.94 : 1)
+	const spacing = design.sectionSpacing * (design.template === 'compact' ? 0.86 : 1)
+	const accent = design.accent.match(/[a-f\d]{2}/gi)?.map((value) => Number.parseInt(value, 16)) ?? [55, 65, 81]
 
 	const ensureSpace = (height: number) => {
 		if (y + height <= pageHeight - margin) return
@@ -32,8 +35,8 @@ export async function downloadResumePdf(resume: ResumeData): Promise<void> {
 		value: string,
 		options: { size?: number; bold?: boolean; indent?: number; leading?: number; align?: 'left' | 'center' } = {},
 	) => {
-		const size = options.size ?? 9.5
-		const leading = options.leading ?? size * 1.35
+		const size = (options.size ?? 9.5) * scale
+		const leading = (options.leading ?? size * 1.35) * spacing
 		const indent = options.indent ?? 0
 		pdf.setFont('helvetica', options.bold ? 'bold' : 'normal')
 		pdf.setFontSize(size)
@@ -49,9 +52,9 @@ export async function downloadResumePdf(resume: ResumeData): Promise<void> {
 	}
 	const section = (title: string) => {
 		ensureSpace(30)
-		y += 7
+		y += 7 * spacing
 		writeLines(title.toUpperCase(), { size: 10, bold: true, leading: 13 })
-		pdf.setDrawColor(55, 65, 81)
+		pdf.setDrawColor(accent[0] ?? 55, accent[1] ?? 65, accent[2] ?? 81)
 		pdf.setLineWidth(0.7)
 		pdf.line(margin, y - 2, pageWidth - margin, y - 2)
 		y += 5
@@ -129,7 +132,7 @@ export async function downloadResumePdf(resume: ResumeData): Promise<void> {
 	pdf.save(safeFileName(resume, 'pdf'))
 }
 
-export async function downloadResumeDocx(resume: ResumeData): Promise<void> {
+export async function downloadResumeDocx(resume: ResumeData, design: ResumeDesign = DEFAULT_RESUME_DESIGN): Promise<void> {
 	const {
 		AlignmentType,
 		Document,
@@ -140,17 +143,19 @@ export async function downloadResumeDocx(resume: ResumeData): Promise<void> {
 	} = await import('docx')
 
 	const paragraphs: InstanceType<typeof Paragraph>[] = []
-	const text = (value: string, bold = false, size = 20) => new TextRun({ text: value, bold, size, font: 'Arial' })
+	const scale = design.fontScale * (design.template === 'compact' ? 0.94 : 1)
+	const spacing = design.sectionSpacing * (design.template === 'compact' ? 0.86 : 1)
+	const text = (value: string, bold = false, size = 20) => new TextRun({ text: value, bold, size: Math.round(size * scale), font: 'Arial' })
 	const standard = (value: string, options: { bold?: boolean; center?: boolean; after?: number } = {}) =>
 		new Paragraph({
 			alignment: options.center ? AlignmentType.CENTER : AlignmentType.LEFT,
-			spacing: { after: options.after ?? 80, line: 260 },
+			spacing: { after: Math.round((options.after ?? 80) * spacing), line: Math.round(260 * spacing) },
 			children: [text(value, options.bold)],
 		})
 	const heading = (value: string) =>
 		new Paragraph({
 			heading: HeadingLevel.HEADING_2,
-			spacing: { before: 180, after: 80 },
+			spacing: { before: Math.round(180 * spacing), after: Math.round(80 * spacing) },
 			border: { bottom: { color: '374151', size: 5, space: 2, style: 'single' } },
 			children: [text(value.toUpperCase(), true, 21)],
 		})
@@ -158,7 +163,7 @@ export async function downloadResumeDocx(resume: ResumeData): Promise<void> {
 		new Paragraph({
 			bullet: { level: 0 },
 			indent: { left: 300, hanging: 180 },
-			spacing: { after: 55, line: 250 },
+			spacing: { after: Math.round(55 * spacing), line: Math.round(250 * spacing) },
 			children: [text(value, false, 19)],
 		})
 
@@ -224,7 +229,12 @@ export async function downloadResumeDocx(resume: ResumeData): Promise<void> {
 		sections: [
 			{
 				properties: {
-					page: { margin: { top: 650, right: 720, bottom: 650, left: 720 } },
+					page: {
+						size: design.pageSize === 'a4' ? { width: 11906, height: 16838 } : { width: 12240, height: 15840 },
+						margin: design.template === 'compact'
+							? { top: 520, right: 600, bottom: 520, left: 600 }
+							: { top: 650, right: 720, bottom: 650, left: 720 },
+					},
 				},
 				children: paragraphs,
 			},

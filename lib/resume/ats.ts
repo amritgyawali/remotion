@@ -1,4 +1,4 @@
-import type { AtsCheck, AtsReport, ResumeData } from './types'
+import type { AtsCategory, AtsCheck, AtsKeyword, AtsReport, ResumeData } from './types'
 import { resumeToPlainText } from './types'
 
 const STOP_WORDS = new Set(
@@ -11,6 +11,10 @@ const ACTION_VERBS = new Set(
 	'achieved accelerated administered advised analyzed architected automated built launched collaborated created decreased delivered designed developed directed drove enabled engineered established executed expanded generated grew implemented improved increased initiated led managed mentored migrated negotiated optimized orchestrated owned planned produced reduced resolved scaled secured simplified spearheaded streamlined strengthened transformed'.split(
 		' ',
 	),
+)
+
+const SOFT_SKILLS = new Set(
+	'communication collaboration leadership mentoring negotiation presentation stakeholder teamwork adaptability creativity empathy organization ownership problem-solving strategic analytical detail-oriented'.split(' '),
 )
 
 const STANDARD_HEADINGS = [
@@ -98,6 +102,10 @@ function scoreFromText(text: string, jobDescription: string, structured?: Resume
 		const first = cleanWords(bullet)[0]
 		return first ? ACTION_VERBS.has(first) : false
 	}).length
+	const strongBullets = bullets.filter((bullet) => {
+		const bulletWords = cleanWords(bullet)
+		return Boolean(bulletWords[0] && ACTION_VERBS.has(bulletWords[0]) && /(?:\d|%|\$|£|€|₹|₨)\s*/.test(bullet) && bulletWords.length >= 8 && bulletWords.length <= 32)
+	}).length
 	const firstPersonCount = (normalized.match(/\b(?:i|me|my|mine|we|our|ours)\b/g) ?? []).length
 	const suspiciousFormatting = structured
 		? 0
@@ -135,6 +143,23 @@ function scoreFromText(text: string, jobDescription: string, structured?: Resume
 	const matchedKeywords = jobKeywords.filter((keyword) => normalized.includes(keyword.toLowerCase()))
 	const missingKeywords = jobKeywords.filter((keyword) => !normalized.includes(keyword.toLowerCase()))
 	const keywordCoverage = jobKeywords.length ? matchedKeywords.length / jobKeywords.length : null
+	const keywordDetails: AtsKeyword[] = jobKeywords.map((keyword) => {
+		const normalizedKeyword = keyword.toLowerCase()
+		const count = (source: string) => Math.max(0, source.toLowerCase().split(normalizedKeyword).length - 1)
+		const parts = normalizedKeyword.split(' ')
+		const kind: AtsKeyword['kind'] = parts.some((part) => SOFT_SKILLS.has(part))
+			? 'soft skill'
+			: parts.length > 1 && /(?:manager|engineer|designer|developer|analyst|specialist|lead|director|coordinator)/.test(normalizedKeyword)
+				? 'role term'
+				: 'hard skill'
+		return {
+			keyword,
+			kind,
+			jobMentions: count(jobDescription),
+			resumeMentions: count(text),
+			matched: normalized.includes(normalizedKeyword),
+		}
+	})
 
 	const checks: AtsCheck[] = []
 	checks.push(
@@ -151,7 +176,7 @@ function scoreFromText(text: string, jobDescription: string, structured?: Resume
 
 	if (keywordCoverage === null) {
 		checks.push(
-			check('keywords', 'Target-job keywords', skillCount >= 8 ? 20 : 12, 25, 'No job description was supplied, so exact keyword alignment cannot be measured.', 'Paste the target job description to measure and improve keyword coverage.'),
+			check('keywords', 'Target-job keywords', words.length < 10 ? 0 : skillCount >= 8 ? 20 : 12, 25, 'No job description was supplied, so exact keyword alignment cannot be measured.', 'Paste the target job description to measure and improve keyword coverage.'),
 		)
 	} else {
 		const points = Math.min(25, Math.round(keywordCoverage * 25))
@@ -174,15 +199,41 @@ function scoreFromText(text: string, jobDescription: string, structured?: Resume
 	checks.push(
 		check('length', 'Focused length', wordPoints, 5, `${words.length} words detected; 350–750 is a useful target for most experienced candidates.`, 'Keep the resume concise: remove repetition or add evidence where content is thin.'),
 		check('bullet-length', 'Readable bullets', ratioPoints(readableBullets, bullets.length, 4), 4, `${readableBullets} of ${bullets.length} bullets are 8–32 words long.`, 'Keep each bullet to one achievement, usually 8–32 words.'),
-		check('voice', 'Professional voice', firstPersonCount === 0 ? 3 : Math.max(0, 3 - firstPersonCount), 3, firstPersonCount === 0 ? 'No first-person pronouns were detected.' : `${firstPersonCount} first-person pronouns were found.`, 'Remove I, me, my, we, and our from resume statements.'),
-		check('specificity', 'Specific language', weakPhrases === 0 ? 2 : 0, 2, weakPhrases === 0 ? 'No weak responsibility phrases were detected.' : `${weakPhrases} weak phrases were detected.`, 'Replace “responsible for” and “worked on” with actions and outcomes.'),
+		check('voice', 'Professional voice', words.length >= 10 && firstPersonCount === 0 ? 3 : words.length >= 10 ? Math.max(0, 3 - firstPersonCount) : 0, 3, words.length < 10 ? 'Add resume content to evaluate professional voice.' : firstPersonCount === 0 ? 'No first-person pronouns were detected.' : `${firstPersonCount} first-person pronouns were found.`, 'Remove I, me, my, we, and our from resume statements.'),
+		check('specificity', 'Specific language', words.length >= 10 && weakPhrases === 0 ? 2 : 0, 2, words.length < 10 ? 'Add resume content to evaluate specificity.' : weakPhrases === 0 ? 'No weak responsibility phrases were detected.' : `${weakPhrases} weak phrases were detected.`, 'Replace “responsible for” and “worked on” with actions and outcomes.'),
 		check('repetition', 'Unique achievements', bullets.length > 0 && uniqueBullets === bullets.length ? 3 : bullets.length > 0 ? 1 : 0, 3, `${uniqueBullets} of ${bullets.length} bullets are unique.`, 'Remove duplicate achievements and give each bullet a distinct result.'),
 		check('text-layer', 'Machine-readable text', text.trim().length >= 120 ? 4 : 0, 4, text.trim().length >= 120 ? 'A usable text layer was extracted.' : 'Very little machine-readable text was extracted.', 'Use a text-based PDF or DOCX, not a scanned image.'),
-		check('single-column', 'Parser-safe layout', suspiciousFormatting <= 8 ? 3 : suspiciousFormatting <= 15 ? 1 : 0, 3, suspiciousFormatting <= 8 ? 'No strong multi-column or table signals were found.' : `${suspiciousFormatting} possible table/column separators were found.`, 'Use one column and remove tables, text boxes, tabs, icons, and sidebars.'),
+		check('single-column', 'Parser-safe layout', text.trim().length < 120 ? 0 : suspiciousFormatting <= 8 ? 3 : suspiciousFormatting <= 15 ? 1 : 0, 3, text.trim().length < 120 ? 'Add enough content to evaluate the document layout.' : suspiciousFormatting <= 8 ? 'No strong multi-column or table signals were found.' : `${suspiciousFormatting} possible table/column separators were found.`, 'Use one column and remove tables, text boxes, tabs, icons, and sidebars.'),
 		check('section-labels', 'Parser-friendly labels', headingsFound.length >= 3 ? 3 : headingsFound.length ? 1 : 0, 3, `${headingsFound.length} conventional labels were found.`, 'Use conventional text headings instead of icons or creative labels.'),
 	)
 
 	const score = Math.max(0, Math.min(100, checks.reduce((total, item) => total + item.points, 0)))
+	const categoryDefinitions: Array<{
+		id: AtsCategory['id']
+		label: string
+		checkIds: string[]
+		detail: string
+	}> = [
+		{ id: 'contact', label: 'Contact', checkIds: ['name', 'email', 'phone', 'location-link'], detail: 'Identity and recruiter contact fields' },
+		{ id: 'structure', label: 'Structure', checkIds: ['summary', 'skills', 'experience', 'education', 'headings'], detail: 'Expected resume sections and labels' },
+		{ id: 'targeting', label: 'Job match', checkIds: ['keywords'], detail: 'Truthful alignment with the target description' },
+		{ id: 'impact', label: 'Impact', checkIds: ['action-verbs', 'metrics'], detail: 'Action-led, evidence-backed achievements' },
+		{ id: 'writing', label: 'Writing', checkIds: ['length', 'bullet-length', 'voice', 'specificity', 'repetition'], detail: 'Clarity, focus, voice, and repetition' },
+		{ id: 'parsing', label: 'Parsing', checkIds: ['text-layer', 'single-column', 'section-labels'], detail: 'Machine-readable, conventional formatting' },
+	]
+	const categories: AtsCategory[] = categoryDefinitions.map((category) => {
+		const categoryChecks = checks.filter((item) => category.checkIds.includes(item.id))
+		const points = categoryChecks.reduce((total, item) => total + item.points, 0)
+		const maxPoints = categoryChecks.reduce((total, item) => total + item.maxPoints, 0)
+		return {
+			id: category.id,
+			label: category.label,
+			points,
+			maxPoints,
+			percentage: maxPoints ? Math.round((points / maxPoints) * 100) : 0,
+			detail: category.detail,
+		}
+	})
 	const grade: AtsReport['grade'] = score >= 90 ? 'Excellent' : score >= 75 ? 'Strong' : score >= 55 ? 'Developing' : 'Needs work'
 	const improvements = checks
 		.filter((item) => !item.passed && item.fix)
@@ -201,11 +252,15 @@ function scoreFromText(text: string, jobDescription: string, structured?: Resume
 		improvements,
 		matchedKeywords,
 		missingKeywords,
+		categories,
+		keywords: keywordDetails,
 		stats: {
 			wordCount: words.length,
 			bulletCount: bullets.length,
 			quantifiedBullets: quantified,
 			actionLedBullets: actionLed,
+			strongBullets,
+			weakBullets: Math.max(0, bullets.length - strongBullets),
 			keywordCoverage: keywordCoverage === null ? null : Math.round(keywordCoverage * 100),
 		},
 	}
