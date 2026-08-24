@@ -41,6 +41,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 				 * 64 families in their own type without downloading 16 MB up front.
 				 */}
 				<link rel="stylesheet" href="/assets/fonts/v1/fonts.css" />
+				<link rel="stylesheet" href="/assets/fonts/v1/google-deva.css" />
 			</head>
 			<body>{children}</body>
 		</html>
