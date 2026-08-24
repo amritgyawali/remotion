@@ -163,7 +163,7 @@ export default function SourcePanel({
 				<span className="badge badge--green">OPEN</span>
 			</div>
 			<p className="card-text">
-				1,241 editable SVGs, production textures, 64 self-hosted creative fonts, 8 music loops and
+				1,241 editable SVGs, production textures, 102 self-hosted creative fonts, 8 music loops and
 				560 motion-ready sound effects. Every raw file is saved locally for reliable future renders.
 			</p>
 			<div className="card-actions">
@@ -262,6 +262,16 @@ export default function SourcePanel({
 							<span>
 								<strong>Subtitle a video</strong>
 								<small>Upload a video, transcribe on device and burn in captions.</small>
+							</span>
+						</a>
+
+						<a className="start-card" href="/resume">
+							<span className="start-card-icon">
+								<IconFile size={17} />
+							</span>
+							<span>
+								<strong>Write a resume</strong>
+								<small>Draft it, tailor it to a job and check it against an ATS parser.</small>
 							</span>
 						</a>
 					</div>

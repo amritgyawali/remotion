@@ -1,6 +1,7 @@
 'use client'
 
-import { IconBrowser, IconCaptions, IconCheck, IconFilm, IconServer, IconTrash } from '../Icons'
+import { IconBrowser, IconCaptions, IconCheck, IconServer, IconTrash } from '../Icons'
+import StudioNav from '../StudioNav'
 import ThemeToggle from '../ThemeToggle'
 import type { RenderEngine, ServerCapabilities } from '../../lib/types'
 
@@ -80,12 +81,7 @@ export default function CaptionTopBar({
 			</span>
 
 			<div className="topbar-actions">
-				{/* A full page load on purpose: the cross-origin isolation that the
-				    speech model needs is granted per document, not per client-side route. */}
-				<a className="btn btn--ghost btn--sm" href="/" title="Back to the video studio">
-					<IconFilm size={13} />
-					<span className="btn-label">Video studio</span>
-				</a>
+				<StudioNav current="captions" />
 
 				<ThemeToggle />
 
