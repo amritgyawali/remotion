@@ -104,12 +104,20 @@ type ChunkResult = {
 	words: CloudWord[]
 	model: string
 	endpoint: string
+	/** 'groq' | 'nvidia' - which provider actually answered this chunk. */
+	provider: string
 	estimatedTimings: boolean
 }
 
 async function postChunk(
 	chunk: AudioChunk,
-	args: { language: string; model: string | null; signal: AbortSignal },
+	args: {
+		language: string
+		model: string | null
+		signal: AbortSignal
+		/** The tail of the previous chunk's transcript, when it has come back. */
+		previousText: string | null
+	},
 ): Promise<ChunkResult> {
 	const form = new FormData()
 	form.append('audio', chunk.blob, `chunk-${chunk.index}.wav`)
@@ -120,6 +128,12 @@ async function postChunk(
 	form.append('contextMs', String(chunk.contextMs))
 	form.append('fileName', `chunk-${chunk.index}.wav`)
 	if (args.model) form.append('model', args.model)
+	// Whisper decodes conditioned on the transcript so far, so the real words
+	// from the chunk before this one are better conditioning than any synthetic
+	// prompt. Best effort by design: chunks run three at a time, so the
+	// predecessor is sometimes still in flight and the server falls back to its
+	// own exemplar rather than waiting.
+	if (args.previousText) form.append('previousText', args.previousText)
 
 	const response = await fetch(TRANSCRIBE_URL, {
 		method: 'POST',
@@ -142,8 +156,18 @@ async function postChunk(
 		words: Array.isArray(payload.words) ? payload.words : [],
 		model: payload.model,
 		endpoint: payload.endpoint,
+		provider: typeof payload.provider === 'string' ? payload.provider : payload.endpoint,
 		estimatedTimings: payload.estimatedTimings === true,
 	}
+}
+
+/** Names the provider in the progress line, and stays quiet until one has answered. */
+function providerLabel(provider: string): string {
+	if (provider === 'groq') return ' with Groq Whisper'
+	if (provider === 'nvidia' || provider.startsWith('grpc') || provider.startsWith('http')) {
+		return ' with NVIDIA'
+	}
+	return ''
 }
 
 /** Credentials and configuration will not fix themselves on a retry. */
@@ -170,7 +194,12 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
 
 async function postChunkWithRetries(
 	chunk: AudioChunk,
-	args: { language: string; model: string | null; signal: AbortSignal },
+	args: {
+		language: string
+		model: string | null
+		signal: AbortSignal
+		previousText: string | null
+	},
 ): Promise<ChunkResult> {
 	let lastError: unknown
 	for (let attempt = 1; attempt <= CHUNK_ATTEMPTS; attempt++) {
@@ -198,6 +227,8 @@ export type CloudTranscribeArgs = {
 export type CloudTranscribeResult = {
 	words: WordTiming[]
 	model: string
+	/** Which provider produced this transcript: 'groq' or 'nvidia'. */
+	provider: string
 	endpoint: string
 	chunks: number
 	failedChunks: number
@@ -353,7 +384,10 @@ export async function transcribeInCloud(
 	let expected = 0
 	let usedModel = model ?? ''
 	let usedEndpoint = ''
+	let usedProvider = ''
 	let estimatedTimings = false
+	/** Finished chunk index -> the tail of its transcript, for the next chunk's prompt. */
+	const tails = new Map<number, string>()
 
 	const report = (extractRatio: number) => {
 		const extracted = Math.min(1, extractRatio)
@@ -365,16 +399,23 @@ export async function transcribeInCloud(
 			message:
 				started === 0
 					? `Reading the audio - ${Math.round(extracted * 100)}%`
-					: `Transcribing on NVIDIA - ${finished}/${Math.max(started, expected)} chunks`,
+					: `Transcribing${providerLabel(usedProvider)} - ${finished}/${Math.max(started, expected)} chunks`,
 		})
 	}
 
 	const runChunk = async (chunk: AudioChunk) => {
 		try {
-			const result = await postChunkWithRetries(chunk, { language, model, signal })
+			const result = await postChunkWithRetries(chunk, {
+				language,
+				model,
+				signal,
+				previousText: tails.get(chunk.index - 1) ?? null,
+			})
 			usedModel = result.model || usedModel
 			usedEndpoint = result.endpoint || usedEndpoint
+			usedProvider = result.provider || usedProvider
 			estimatedTimings ||= result.estimatedTimings
+			if (result.text.trim()) tails.set(chunk.index, result.text.trim().slice(-400))
 			transcripts.push(placeChunkWords(chunk, result))
 		} catch (error) {
 			if (signal.aborted) throw error
@@ -447,6 +488,7 @@ export async function transcribeInCloud(
 		words,
 		model: usedModel,
 		endpoint: usedEndpoint,
+		provider: usedProvider,
 		chunks: extraction.chunks,
 		failedChunks: failures.length,
 		estimatedTimings,
