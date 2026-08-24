@@ -23,6 +23,9 @@
  *                               request dialect falls through to the next one
  *   6. /api/captions/refine   - the clean-up pass never changes the line count
  *                               and never rewrites a line beyond recognition
+ *   7. subtitle import       - an .srt or .vtt from anywhere decodes in any
+ *                               encoding, parses even when it is malformed, and
+ *                               never silently swallows a line of transcript
  *
  *   node scripts/check-captions.cjs
  */
@@ -83,6 +86,8 @@ const { buildCaptionSource } = require('../lib/captions/composition-source.ts')
 const { CAPTION_PRESETS, CAPTION_FONT_IDS, CAPTION_FONTS } = require('../lib/captions/style-presets.ts')
 const tools = require('../lib/captions/tools.ts')
 const { cuesToAss } = require('../lib/captions/ass.ts')
+const subtitleImport = require('../lib/captions/subtitle-import.ts')
+const cueFile = require('../lib/captions/cues.ts')
 const { transform } = require('sucrase')
 
 /* ------------------------------------------------------------- test tools */
@@ -1126,6 +1131,168 @@ function checkAss() {
 	check('a static look exports without karaoke tags', !/\{\\k/.test(plain))
 }
 
+/* ------------------------------------------------------- subtitle import */
+
+/** A File stand-in: the importer only ever asks for size, name and bytes. */
+function fakeFile(name, bytes) {
+	const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+	return {
+		name,
+		size: bytes.length,
+		type: '',
+		arrayBuffer: async () => buffer,
+	}
+}
+
+async function checkSubtitleImport() {
+	console.log('\nSubtitle import (.srt / .vtt)')
+
+	const {
+		decodeSubtitleBytes,
+		explainEmptyImport,
+		importSubtitleFile,
+		looksLikeSubtitleFile,
+		parseSubtitleText,
+		parseTimecode,
+		SUBTITLE_ACCEPT,
+		SubtitleImportError,
+	} = subtitleImport
+
+	/* -- the picker ------------------------------------------------------ */
+
+	// Android and iOS pickers filter by system type; a bare `.srt` token
+	// resolves to nothing there, so the generic types have to be in the list.
+	check('the accept list offers .srt and .vtt', /\.srt/.test(SUBTITLE_ACCEPT) && /\.vtt/.test(SUBTITLE_ACCEPT))
+	check(
+		'and the generic types a mobile picker actually reports',
+		SUBTITLE_ACCEPT.includes('text/plain') && SUBTITLE_ACCEPT.includes('application/octet-stream'),
+		SUBTITLE_ACCEPT,
+	)
+	check('a share-sheet file with no type is still offered to the parser', looksLikeSubtitleFile({ name: 'captions', type: '' }))
+	check('an .srt reported as octet-stream is accepted', looksLikeSubtitleFile({ name: 'a.srt', type: 'application/octet-stream' }))
+	check('an mp4 is not', looksLikeSubtitleFile({ name: 'clip.mp4', type: 'video/mp4' }) === false)
+
+	/* -- timecodes ------------------------------------------------------- */
+
+	check('SubRip comma timing', parseTimecode('01:02:03,456') === 3_723_456)
+	check('WebVTT dot timing', parseTimecode('01:02:03.456') === 3_723_456)
+	check('WebVTT without an hour field', parseTimecode('02:03.500') === 123_500)
+	check('a one digit fraction is tenths', parseTimecode('00:00:01.5') === 1500)
+	check('frame based timing uses the clip fps', parseTimecode('00:00:01:12', 24) === 1500)
+	check('and nothing else parses', parseTimecode('soon') === null && parseTimecode('') === null)
+
+	/* -- parsing --------------------------------------------------------- */
+
+	const srt = parseSubtitleText(
+		'1\r\n00:00:01,000 --> 00:00:03,500\r\nHello <b>world</b>\r\nsecond line\r\n\r\n2\r\n00:00:04,000 --> 00:00:06,000\r\n{\\an8}Caf&eacute; &amp; bar\r\n',
+	)
+	check('a CRLF .srt reads as SubRip', srt.format === 'srt' && srt.cues.length === 2, srt.format)
+	check('both lines of a two line cue survive', srt.cues[0].text === 'Hello world second line', srt.cues[0].text)
+	check('markup and ASS overrides are stripped', srt.cues[1].text.startsWith('Caf'), srt.cues[1].text)
+	check('entities are decoded', srt.cues[1].text === 'Café & bar', srt.cues[1].text)
+	check('timings are kept exactly', srt.cues[0].startMs === 1000 && srt.cues[0].endMs === 3500)
+
+	// The failure that sent users here: several exporters omit the blank line
+	// between cues, and a blank-line splitter turns the whole file into one cue.
+	const runOn = parseSubtitleText(
+		'1\n00:00:01,000 --> 00:00:02,000\nOne\n2\n00:00:02,000 --> 00:00:03,000\nTwo\n3\n00:00:03,000 --> 00:00:04,000\nThree\n',
+	)
+	check('cues with no blank line between them still separate', runOn.cues.length === 3, runOn.cues.length)
+	check('and no sequence number leaks into the text', runOn.cues.map((cue) => cue.text).join('|') === 'One|Two|Three', runOn.cues.map((cue) => cue.text))
+
+	// A cue whose only line is a number is a caption, not an index.
+	const numeric = parseSubtitleText('1\n00:00:01,000 --> 00:00:02,000\n1998\n')
+	check('a numeric caption is never mistaken for an index', numeric.cues.length === 1 && numeric.cues[0].text === '1998', numeric.cues)
+
+	// One-word lines used to be eaten by an over-eager cue-identifier test.
+	const short = parseSubtitleText('00:00:01.000 --> 00:00:02.000\nYes\n\n00:00:02.000 --> 00:00:03.000\nNo\n')
+	check('one word cues are not swallowed', short.cues.map((cue) => cue.text).join('|') === 'Yes|No', short.cues.map((cue) => cue.text))
+
+	const vtt = parseSubtitleText(
+		'WEBVTT - Title\n\nNOTE a note\nspanning two lines\n\nSTYLE\n::cue { color: red }\n\nintro\n00:01.000 --> 00:03.000 line:90% align:center\n<v Roger>Hi there\n\n00:03.000 --> 00:05.000\n<00:00:03.000><c>Karaoke</c> <00:00:04.000><c>words</c>\n',
+	)
+	check('a WebVTT header is recognised', vtt.format === 'vtt', vtt.format)
+	check('NOTE and STYLE blocks are not cues', vtt.cues.length === 2, vtt.cues.length)
+	check('cue settings after the end timestamp are ignored', vtt.cues[0].startMs === 1000 && vtt.cues[0].endMs === 3000)
+	check('a voice span leaves only the words', vtt.cues[0].text === 'Hi there', vtt.cues[0].text)
+	check('a cue identifier is not treated as dialogue', vtt.cues[0].text.includes('intro') === false)
+	check('inline timestamps become real word timing', vtt.wordTimedCues === 1, vtt.wordTimedCues)
+	check(
+		'and each word lands on its own timestamp',
+		vtt.cues[1].tokens[0].fromMs === 3000 && vtt.cues[1].tokens[1].fromMs === 4000,
+		vtt.cues[1].tokens,
+	)
+
+	const sbv = parseSubtitleText('0:00:01.000,0:00:03.000\nSubViewer line\n\n0:00:03.000,0:00:05.000\nsecond\n')
+	check('SubViewer timing is read too', sbv.format === 'sbv' && sbv.cues.length === 2, sbv.format)
+	check('a line of dialogue with a comma is not read as timing', parseSubtitleText('00:00:01,000 --> 00:00:02,000\nWell, hello\n').cues[0].text === 'Well, hello')
+
+	const broken = parseSubtitleText('1\n00:00:05,000 --> 00:00:05,000\nZero length\n\n2\n00:00:01,000 --> 00:00:02,000\nOut of order\n')
+	check('a zero length cue is given a readable one', broken.cues.find((cue) => cue.text === 'Zero length').endMs > 5000)
+	check('and says so', broken.warnings.some((warning) => warning.includes('duration')), broken.warnings)
+	check('cues come back in time order', broken.cues[0].text === 'Out of order', broken.cues[0].text)
+
+	// The studio's own exports are the files most likely to come back in.
+	const roundTripped = parseSubtitleText(cueFile.cuesToSrt(CUES))
+	check('the studio\'s own .srt export re-imports', roundTripped.cues.length === CUES.length, roundTripped.cues.length)
+	check(
+		'with its text and timings intact',
+		roundTripped.cues.every((cue, index) => cue.text === CUES[index].text && cue.startMs === CUES[index].startMs && cue.endMs === CUES[index].endMs),
+		roundTripped.cues.map((cue) => [cue.text, cue.startMs, cue.endMs]),
+	)
+	const vttRoundTrip = parseSubtitleText(cueFile.cuesToVtt(CUES))
+	check('and so does its .vtt export', vttRoundTrip.cues.length === CUES.length && vttRoundTrip.format === 'vtt', vttRoundTrip.cues.length)
+
+	/* -- encodings ------------------------------------------------------- */
+
+	const NEPALI = '1\n00:00:01,000 --> 00:00:02,000\nनमस्ते संसार\n'
+	const readBytes = (bytes) => {
+		const decoded = decodeSubtitleBytes(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength))
+		return { ...decoded, cues: parseSubtitleText(decoded.text).cues }
+	}
+
+	const utf8Bom = readBytes(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(NEPALI, 'utf8')]))
+	check('a UTF-8 BOM does not become part of the first cue', utf8Bom.cues.length === 1 && utf8Bom.cues[0].text === 'नमस्ते संसार', utf8Bom.cues)
+
+	const utf16Bom = readBytes(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(NEPALI, 'utf16le')]))
+	check('UTF-16 with a BOM decodes (Windows tools write this)', utf16Bom.encoding === 'UTF-16' && utf16Bom.cues[0].text === 'नमस्ते संसार', utf16Bom)
+
+	const utf16Bare = readBytes(Buffer.from(NEPALI, 'utf16le'))
+	check('UTF-16 without a BOM is sniffed from its NUL bytes', utf16Bare.cues.length === 1 && utf16Bare.cues[0].text === 'नमस्ते संसार', utf16Bare)
+
+	const latin1 = readBytes(Buffer.from('1\n00:00:01,000 --> 00:00:02,000\nCaf\xe9 ferm\xe9\n', 'latin1'))
+	check('a legacy single byte file falls back rather than failing', latin1.encoding === 'Windows-1252' && latin1.cues[0].text === 'Café fermé', latin1)
+
+	/* -- the whole path, and its refusals -------------------------------- */
+
+	const imported = await importSubtitleFile(fakeFile('nepali.srt', Buffer.from(NEPALI, 'utf8')))
+	check('importing a picked file returns cues, format and encoding', imported.cues.length === 1 && imported.format === 'srt' && imported.encoding === 'UTF-8', imported)
+
+	const rejected = async (file) => {
+		try {
+			await importSubtitleFile(file)
+			return null
+		} catch (error) {
+			return error
+		}
+	}
+
+	const empty = await rejected(fakeFile('empty.srt', Buffer.alloc(0)))
+	check('an empty file is refused with a reason', empty instanceof SubtitleImportError && /empty/i.test(empty.message), empty && empty.message)
+
+	const huge = await rejected({ name: 'movie.mp4', size: 900 * 1024 * 1024, type: '', arrayBuffer: async () => new ArrayBuffer(0) })
+	check('a video picked by mistake is refused before it is read', huge instanceof SubtitleImportError, huge && huge.message)
+
+	const plain = await rejected(fakeFile('script.txt', Buffer.from('Just some words with no timings at all.\n', 'utf8')))
+	check('a transcript with no timestamps points at the Write tab', plain instanceof SubtitleImportError && /Write tab/.test(plain.message), plain && plain.message)
+
+	check(
+		'a binary file is named as such rather than as bad subtitles',
+		/binary/.test(explainEmptyImport('\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd', 'x.srt')),
+		explainEmptyImport('\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd', 'x.srt'),
+	)
+}
+
 async function main() {
 	checkScript()
 	checkLoanwords()
@@ -1138,6 +1305,7 @@ async function main() {
 	checkComposition()
 	checkTools()
 	checkAss()
+	await checkSubtitleImport()
 
 	if (failures > 0) {
 		console.error(`\n${failures} of ${checks} checks failed.`)

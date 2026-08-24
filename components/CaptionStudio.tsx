@@ -8,7 +8,6 @@ import { downloadBlobUrl, formatSeconds } from '../lib/format'
 import { useRenderController } from '../lib/use-render-controller'
 import {
 	cuesFromPlainText,
-	cuesFromSubtitleFile,
 	cuesToPlainText,
 	cuesToSrt,
 	cuesToVtt,
@@ -52,6 +51,15 @@ import { cloudAsrStatus } from '../lib/captions/cloud-transcribe'
 import type { SpeechSegment } from '../lib/captions/vad'
 import type { CloudAsrStatus } from '../lib/captions/asr-models'
 import { isVideoFile, probeVideo, releaseVideoSource } from '../lib/captions/video-source'
+import {
+	explainEmptyImport,
+	importSubtitleFile,
+	looksLikeSubtitleFile,
+	parseSubtitleText,
+	SubtitleImportError,
+	subtitleFormatLabel,
+	type SubtitleImportResult,
+} from '../lib/captions/subtitle-import'
 import type {
 	CaptionCue,
 	CaptionLayoutOptions,
@@ -165,6 +173,8 @@ export default function CaptionStudio() {
 	const [transcribeProgress, setTranscribeProgress] = useState<TranscribeProgress>(IDLE_TRANSCRIBE)
 	const [transcribeError, setTranscribeError] = useState<string | null>(null)
 	const [transcribeNotice, setTranscribeNotice] = useState<string | null>(null)
+	/** What the last .srt/.vtt import actually produced - shown under the Import tab. */
+	const [importNotice, setImportNotice] = useState<string | null>(null)
 
 	const [compiled, setCompiled] = useState<{ project: VirtualProject; result: CompileResult } | null>(
 		null,
@@ -432,17 +442,86 @@ export default function CaptionStudio() {
 		[clearCueHistory, resetRender],
 	)
 
+	/**
+	 * What an accepted import says back to the user. The counts matter: the
+	 * commonest silent failure used to be a file that imported as a single
+	 * enormous cue, and a cue count next to the file name makes that obvious
+	 * at a glance rather than three edits later.
+	 */
+	const announceImport = useCallback(
+		(result: SubtitleImportResult, label: string, encoding?: string) => {
+			const parts = [
+				`${label}: ${result.cues.length} cue${result.cues.length === 1 ? '' : 's'} from ${subtitleFormatLabel(result.format)}`,
+			]
+			if (result.wordTimedCues > 0) {
+				parts.push(`${result.wordTimedCues} with word timing from the file`)
+			}
+			if (encoding && encoding !== 'UTF-8') parts.push(`read as ${encoding}`)
+			setImportNotice([parts.join(' - '), ...result.warnings].join(' '))
+		},
+		[],
+	)
+
+	const handleImportSubtitles = useCallback(
+		async (file: File) => {
+			setImportNotice(null)
+			try {
+				const result = await importSubtitleFile(file, { fps })
+				applyCues(result.cues, 'srt')
+				announceImport(result, result.name, result.encoding)
+				setTranscribeError(null)
+			} catch (error) {
+				setTranscribeError(
+					error instanceof SubtitleImportError
+						? error.message
+						: error instanceof Error
+							? error.message
+							: String(error),
+				)
+			}
+		},
+		[announceImport, applyCues, fps],
+	)
+
+	/**
+	 * The paste path. On a phone, "open the .srt" is often the hardest step of
+	 * the whole studio - the file lives in a chat thread or a cloud folder that
+	 * the picker will not surface - while long-pressing its text and pasting it
+	 * here always works.
+	 */
+	const handleImportSubtitleText = useCallback(
+		(text: string) => {
+			setImportNotice(null)
+			const result = parseSubtitleText(text, { fps })
+			if (result.cues.length === 0) {
+				setTranscribeError(explainEmptyImport(text, 'The pasted subtitles'))
+				return
+			}
+			applyCues(result.cues, 'srt')
+			announceImport(result, 'Pasted subtitles')
+			setTranscribeError(null)
+		},
+		[announceImport, applyCues, fps],
+	)
+
 	const handleVideoFiles = useCallback(
 		(files: File[]) => {
 			const file = files.find(isVideoFile) ?? files[0]
 			if (!file) return
 			if (!isVideoFile(file)) {
+				// A subtitle dropped on the video well is not a mistake worth an
+				// error - it is the file the user came here with. Take it.
+				if (looksLikeSubtitleFile(file)) {
+					setMode('import')
+					void handleImportSubtitles(file)
+					return
+				}
 				setVideoError(`${file.name} is not a video file. Drop an MP4, MOV or WebM.`)
 				return
 			}
 			void adoptVideo({ file })
 		},
-		[adoptVideo],
+		[adoptVideo, handleImportSubtitles],
 	)
 
 	const handleVideoUrl = useCallback(
@@ -541,23 +620,6 @@ export default function CaptionStudio() {
 		if (!video || !transcriptText.trim()) return
 		applyCues(cuesFromPlainText(transcriptText, { durationMs, layout }), 'text')
 	}, [applyCues, durationMs, layout, transcriptText, video])
-
-	const handleImportSubtitles = useCallback(
-		async (file: File) => {
-			try {
-				const parsed = cuesFromSubtitleFile(await file.text())
-				if (parsed.length === 0) {
-					setTranscribeError(`${file.name} has no readable cues. Export it as .srt or .vtt.`)
-					return
-				}
-				applyCues(parsed, 'srt')
-				setTranscribeError(null)
-			} catch (error) {
-				setTranscribeError(error instanceof Error ? error.message : String(error))
-			}
-		},
-		[applyCues],
-	)
 
 	const handleRegroup = useCallback(() => {
 		commitCues((current) =>
@@ -1060,6 +1122,8 @@ export default function CaptionStudio() {
 					onTranscriptText={setTranscriptText}
 					onAutoTime={handleAutoTime}
 					onImportSubtitles={(file) => void handleImportSubtitles(file)}
+					onImportSubtitleText={handleImportSubtitleText}
+					importNotice={importNotice}
 					onSpeechProfile={handleSpeechProfile}
 					onEngine={setEngine}
 					onCloudModel={setCloudModel}

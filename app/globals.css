@@ -1125,6 +1125,24 @@ code {
 	font-size: 11.5px;
 }
 
+/*
+ * The subtitle well sits inside a step that already has a heading and a paste
+ * box under it, so it is shorter than the video well - but never shorter than
+ * a comfortable thumb target.
+ */
+.dropzone--compact {
+	padding: 18px 14px;
+	min-height: 96px;
+	justify-content: center;
+}
+
+.dropzone--compact .dropzone-icon {
+	width: 36px;
+	height: 36px;
+	margin-bottom: 2px;
+	border-radius: 12px;
+}
+
 /* ----------------------------------------------------------------- chips */
 
 .chip-row {
@@ -2173,6 +2191,18 @@ code {
 }
 
 @media (max-width: 560px) {
+	/*
+	 * iOS Safari zooms the viewport when a field under 16px takes focus, and
+	 * never zooms back out. Every text field on a phone therefore sets 16px -
+	 * it matters most on the subtitle paste box, which is the fallback route
+	 * for importing an .srt when the file picker will not surface it.
+	 */
+	.input,
+	.textarea,
+	select.input {
+		font-size: 16px;
+	}
+
 	.topbar-actions .btn-label {
 		display: none;
 	}

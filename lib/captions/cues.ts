@@ -255,54 +255,11 @@ export function cuesFromPlainText(
 
 /* ------------------------------------------------------------------ files */
 
-function parseTimestamp(value: string): number | null {
-	const match = value
-		.trim()
-		.match(/^(?:(\d+):)?(\d{1,2}):(\d{1,2})[.,](\d{1,3})$/)
-	if (!match) return null
-	const [, hours, minutes, seconds, fraction] = match
-	return (
-		Number(hours ?? 0) * 3_600_000 +
-		Number(minutes) * 60_000 +
-		Number(seconds) * 1000 +
-		Number(fraction.padEnd(3, '0'))
-	)
-}
-
-/** Reads both .srt and .vtt - the two formats every caption tool exports. */
-export function cuesFromSubtitleFile(input: string): CaptionCue[] {
-	const normalized = input.replace(/\r\n?/g, '\n').replace(/^﻿/, '')
-	const blocks = normalized.split(/\n{2,}/)
-	const cues: CaptionCue[] = []
-
-	for (const block of blocks) {
-		const lines = block.split('\n').filter((line) => line.trim().length > 0)
-		if (lines.length === 0) continue
-		if (/^WEBVTT/i.test(lines[0])) lines.shift()
-		if (lines.length === 0) continue
-
-		const arrowIndex = lines.findIndex((line) => line.includes('-->'))
-		if (arrowIndex === -1) continue
-
-		const [rawStart, rawEnd] = lines[arrowIndex].split('-->')
-		const startMs = parseTimestamp(rawStart ?? '')
-		// VTT allows cue settings after the end timestamp: "00:02.000 line:90%".
-		const endMs = parseTimestamp((rawEnd ?? '').trim().split(/\s+/)[0] ?? '')
-		if (startMs === null || endMs === null) continue
-
-		const text = lines
-			.slice(arrowIndex + 1)
-			.join(' ')
-			.replace(/<[^>]+>/g, '')
-			.replace(/\s+/g, ' ')
-			.trim()
-		if (!text) continue
-
-		cues.push(makeCue(text, startMs, endMs))
-	}
-
-	return cues
-}
+/**
+ * Reading .srt and .vtt lives in ./subtitle-import, next to the file decoding
+ * and picker handling it cannot be correct without. `cuesToSrt` and
+ * `cuesToVtt` below are the matching writers.
+ */
 
 function formatTimestamp(ms: number, separator: ',' | '.'): string {
 	const clamped = Math.max(0, Math.round(ms))
