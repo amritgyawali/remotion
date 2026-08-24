@@ -320,10 +320,15 @@ English, à la *"यो feature धेरै राम्रो छ"*.
 
 ### Fonts, on-device speech and readability, in depth
 
-* **Typography kit**: 64 self-hosted open-licence families ship with the app -
+* **Typography kit**: 102 self-hosted open-licence families ship with the app -
   text and grotesk faces, condensed and news faces, impact and comic display,
   editorial serifs, tech, retro, pixel and terminal faces, script and marker
-  hands, and 13 that draw Devanagari for Nepali and Hindi. `npm run assets:fonts`
+  hands, and 51 that draw Devanagari for Nepali and Hindi. Nothing is fetched
+  from a font CDN: a caption looks the same in the preview, in a browser export
+  and on a render host, and an offline machine renders the same frames as an
+  online one. Every Devanagari face is checked against its own `cmap` table for
+  the full Nepali sample - consonants, matras, halanta, danda and the Devanagari
+  digits - so no face in the picker can ship tofu boxes. `npm run assets:fonts`
   re-downloads and hash-locks all of them; `npm run assets:verify` checks the
   lock without any network access.
 * **Font weights are honest**: a static face carries exactly one weight, and
@@ -334,7 +339,7 @@ English, à la *"यो feature धेरै राम्रो छ"*.
   karaoke wipe, the per-word motion and the typewriter all read the frame and
   nothing else - no DOM measurement, no `Math.random()`, no `Date.now()` - so
   frame N is identical in the preview, in a browser export and on a render farm.
-  `npm run captions:check` compiles all 18 presets and all 64 faces and asserts
+  `npm run captions:check` compiles all 18 presets and all 102 faces and asserts
   exactly that.
 * **Code-switching is treated as the normal case, not an edge case.**
   `lib/captions/devanagari.ts` holds one table read in both directions: forwards
@@ -552,7 +557,7 @@ and downloadable archive contain more than 1,800 production assets:
 | --- | --- | --- |
 | Visuals | 1,241 editable SVGs: 1,200 deterministic variants in 24 kinetic, organic, cosmic, framing, data and symbol families, plus 41 compatible originals | CC0-1.0 |
 | Textures | 20 PNGs: film grain, paper, halftone, scanlines, vignette, light leaks, glow/bokeh/spark/smoke sprites, 4 matcaps, 3 equirectangular environment maps | CC0-1.0 |
-| Typography | 64 self-hosted families across sans, grotesk, rounded, condensed, display, comic, serif, tech, retro, pixel, mono, script and handwriting, including 13 Devanagari faces (Noto Sans/Serif Devanagari, Anek, Mukta, Hind, Baloo 2, Rozha One, Yatra One, Kalam, Tiro, Martel Sans, Teko, Khand) | OFL-1.1 and Apache-2.0 |
+| Typography | 102 self-hosted families across sans, grotesk, rounded, condensed, display, comic, serif, tech, retro, pixel, mono, script and handwriting, including 51 Devanagari faces for Nepali and Hindi - text (Noto Sans/Serif Devanagari, Mukta, Ek Mukta, Hind, Khula, Karma, Sarala, Palanquin, Biryani, Cambay, IBM Plex Sans Devanagari, Yantramanav, Arya, Gotu, Jaldi), serif (Martel, Sahitya, Kadwa, Glegoo, Halant, Sumana, Asar, Kurale, Rhodium Libre, Vesper Libre, Inknut Antiqua), condensed (Khand, Teko, Rajdhani, Anek Devanagari, Pragati Narrow, Laila), display (Rozha One, Modak, Yatra One, Ranga, Jaini, Jaini Purva, Tillana, Eczar, Sarpanch, Baloo 2), calligraphic (Tiro Devanagari Hindi/Marathi/Sanskrit, Amita) and hands (Kalam, Dekko) | OFL-1.1 and Apache-2.0 |
 | Audio | 8 loopable music beds and 560 SFX: 540 compact motion-ready variants in 15 families plus 20 compatible originals | CC0-1.0 |
 
 ```tsx
@@ -574,6 +579,7 @@ Regenerate and validate the library with:
 ```bash
 npm run assets           # visuals, audio, textures, fonts, then the combined catalog + ZIP
 npm run assets:verify    # offline: counts, hashes, duplicates, stale files and audio levels
+npm run fonts:check      # offline: every Devanagari face really draws Nepali, read from its own cmap
 ```
 
 Everything except the fonts is synthesised from seeded math by the scripts in

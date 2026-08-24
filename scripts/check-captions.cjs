@@ -80,7 +80,13 @@ const { transcribeInCloud } = require('../lib/captions/cloud-transcribe.ts')
 const transcribeRoute = require('../app/api/captions/transcribe/route.ts')
 const refineRoute = require('../app/api/captions/refine/route.ts')
 const { buildCaptionSource } = require('../lib/captions/composition-source.ts')
-const { CAPTION_PRESETS, CAPTION_FONT_IDS, CAPTION_FONTS } = require('../lib/captions/style-presets.ts')
+const {
+	CAPTION_PRESETS,
+	CAPTION_FONT_IDS,
+	CAPTION_FONTS,
+	DEVANAGARI_FONT_IDS,
+	DEVANAGARI_FONTS,
+} = require('../lib/captions/style-presets.ts')
 const tools = require('../lib/captions/tools.ts')
 const { cuesToAss } = require('../lib/captions/ass.ts')
 const { transform } = require('sucrase')
@@ -873,6 +879,36 @@ function checkComposition() {
 		}
 	}
 	check(`all ${CAPTION_FONT_IDS.length} bundled faces render into the file`, badFonts === 0, badFonts)
+
+	// The Devanagari companion is a second loadFont() call in the generated
+	// file. If its family or file goes missing, Nepali words render as tofu
+	// boxes on the render host while the preview looks fine, so every face on
+	// the shelf is asserted rather than sampled.
+	let badCompanions = 0
+	for (const id of DEVANAGARI_FONT_IDS) {
+		const face = DEVANAGARI_FONTS[id]
+		const code = buildCaptionSource({
+			videoSrc: 'https://example.com/clip.mp4',
+			videoName: 'clip.mp4',
+			cues: CUES,
+			style: { ...CAPTION_PRESETS[0].style, devanagari: true, devanagariFontId: id },
+			plan: PLAN,
+			origin: 'test',
+		})
+		const issues = auditSource(code)
+		if (!code.includes(`assets/fonts/v1/${face.file}`)) issues.push('companion file not referenced')
+		if (!code.includes(`family: ${JSON.stringify(face.family)}`)) issues.push('companion never loaded')
+		if (!code.includes(`'${face.family}'`)) issues.push('companion missing from the stack')
+		if (issues.length > 0) {
+			badCompanions++
+			console.log(`  FAIL ${id}: ${issues.join('; ')}`)
+		}
+	}
+	check(
+		`all ${DEVANAGARI_FONT_IDS.length} Devanagari companions load into the file`,
+		badCompanions === 0,
+		badCompanions,
+	)
 
 	const fancy = buildCaptionSource({
 		videoSrc: 'https://example.com/clip.mp4',
