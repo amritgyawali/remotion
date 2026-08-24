@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { formatBytes, formatSeconds } from '../../lib/format'
 import {
 	modelSupportsLanguage,
@@ -12,6 +12,12 @@ import {
 	type WhisperSupport,
 } from '../../lib/captions/transcribe'
 import { ACCEPTED_VIDEO_TYPES } from '../../lib/captions/video-source'
+import {
+	isRestrictiveFilePicker,
+	looksLikeSubtitleFile,
+	SUBTITLE_ACCEPT,
+	SUBTITLE_EXTENSIONS,
+} from '../../lib/captions/subtitle-import'
 import {
 	CLOUD_ASR_MODELS,
 	cloudAsrModelById,
@@ -141,6 +147,8 @@ export default function CaptionSourcePanel({
 	onTranscriptText,
 	onAutoTime,
 	onImportSubtitles,
+	onImportSubtitleText,
+	importNotice,
 	onSpeechProfile,
 	onEngine,
 	onCloudModel,
@@ -184,6 +192,9 @@ export default function CaptionSourcePanel({
 	onTranscriptText: (value: string) => void
 	onAutoTime: () => void
 	onImportSubtitles: (file: File) => void
+	onImportSubtitleText: (text: string) => void
+	/** What the last import produced - cue count, format, encoding, warnings. */
+	importNotice: string | null
 	onSpeechProfile: (profile: SpeechProfile['id']) => void
 	onEngine: (engine: TranscribeEngine) => void
 	onCloudModel: (model: string | null) => void
@@ -202,6 +213,31 @@ export default function CaptionSourcePanel({
 	const [showUrl, setShowUrl] = useState(false)
 	const [urlValue, setUrlValue] = useState('')
 	const [promptCopied, setPromptCopied] = useState(false)
+	const [subtitleDragging, setSubtitleDragging] = useState(false)
+	const [pasteOpen, setPasteOpen] = useState(false)
+	const [pasteValue, setPasteValue] = useState('')
+	/**
+	 * Phones and tablets filter the picker by system type, and no mobile OS has
+	 * a type for .srt or .vtt - so an `accept` list that helps on desktop greys
+	 * out every file there. Start with the desktop filter, which is what the
+	 * server renders, and drop it after hydration on the platforms that need it.
+	 */
+	const [subtitleAccept, setSubtitleAccept] = useState<string | undefined>(SUBTITLE_ACCEPT)
+
+	useEffect(() => {
+		if (isRestrictiveFilePicker()) setSubtitleAccept(undefined)
+	}, [])
+
+	const handleSubtitleDrop = useCallback(
+		(event: React.DragEvent<HTMLDivElement>) => {
+			event.preventDefault()
+			setSubtitleDragging(false)
+			const files = Array.from(event.dataTransfer.files ?? [])
+			const file = files.find(looksLikeSubtitleFile) ?? files[0]
+			if (file) onImportSubtitles(file)
+		},
+		[onImportSubtitles],
+	)
 
 	const copyPrompt = useCallback(() => {
 		navigator.clipboard.writeText(AI_CAPTION_PROMPT).then(() => {
@@ -736,27 +772,115 @@ export default function CaptionSourcePanel({
 
 					{mode === 'import' ? (
 						<div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-							<button
-								className="btn btn--block"
-								disabled={!video}
+							<div
+								className="dropzone dropzone--compact"
+								data-active={subtitleDragging}
+								role="button"
+								tabIndex={0}
 								onClick={() => subtitleInputRef.current?.click()}
+								onKeyDown={(event) => {
+									if (event.key === 'Enter' || event.key === ' ') {
+										event.preventDefault()
+										subtitleInputRef.current?.click()
+									}
+								}}
+								onDragOver={(event) => {
+									event.preventDefault()
+									setSubtitleDragging(true)
+								}}
+								onDragLeave={() => setSubtitleDragging(false)}
+								onDrop={handleSubtitleDrop}
 							>
-								<IconUpload size={14} /> Choose a .srt or .vtt file
-							</button>
+								<div className="dropzone-icon">
+									<IconUpload size={20} />
+								</div>
+								<div className="dropzone-title">Choose a subtitle file</div>
+								<div className="dropzone-hint">
+									{SUBTITLE_EXTENSIONS.slice(0, 4).join(', ')} - tap to browse, or drop one here
+								</div>
+							</div>
+							{/*
+							 * Kept out of the layout rather than display:none - iOS Safari
+							 * ignores a programmatic click on an input it considers hidden.
+							 * No `capture` attribute either: it forces the camera on Android
+							 * and there is no camera that produces a subtitle file.
+							 */}
 							<input
 								ref={subtitleInputRef}
 								type="file"
 								className="sr-only"
-								accept=".srt,.vtt,text/vtt,application/x-subrip"
+								accept={subtitleAccept}
 								onChange={(event) => {
 									const file = event.target.files?.[0]
 									if (file) onImportSubtitles(file)
+									// Cleared so picking the same file twice fires onChange again.
 									event.target.value = ''
 								}}
 							/>
+
+							<button
+								className="btn btn--ghost btn--sm"
+								onClick={() => setPasteOpen((current) => !current)}
+								aria-expanded={pasteOpen}
+							>
+								<IconType size={12} />
+								{pasteOpen ? 'Hide the paste box' : 'Or paste the subtitle text'}
+							</button>
+
+							{pasteOpen ? (
+								<>
+									<textarea
+										className="input textarea"
+										rows={7}
+										inputMode="text"
+										autoCapitalize="off"
+										autoCorrect="off"
+										spellCheck={false}
+										placeholder={
+											'1\n00:00:01,000 --> 00:00:03,000\nPaste the whole .srt or .vtt here'
+										}
+										value={pasteValue}
+										onChange={(event) => setPasteValue(event.target.value)}
+									/>
+									<button
+										className="btn btn--primary btn--block"
+										disabled={pasteValue.trim().length === 0}
+										onClick={() => onImportSubtitleText(pasteValue)}
+									>
+										<IconUpload size={14} /> Import pasted subtitles
+									</button>
+									<p className="hint-text">
+										The reliable route on a phone: open the .srt in any text or files app,
+										select all, and paste it here. Timestamps in either format are read.
+									</p>
+								</>
+							) : null}
+
+							{importNotice ? (
+								<div className="notice notice--info">
+									<span className="notice-icon">
+										<IconCheck size={14} />
+									</span>
+									<span>{importNotice}</span>
+								</div>
+							) : null}
+
+							{!video ? (
+								<div className="notice notice--info">
+									<span className="notice-icon">
+										<IconInfo size={14} />
+									</span>
+									<span>
+										Subtitles import without a video, and the preview and export unlock once
+										you add one in step 1.
+									</span>
+								</div>
+							) : null}
+
 							<p className="hint-text">
-								Existing subtitles keep their timings. Word timing is filled in so the karaoke
-								styles still work.
+								Existing subtitles keep their timings. SubRip, WebVTT and SubViewer are all read,
+								in any text encoding, and word timing is filled in - or lifted straight out of a
+								WebVTT that carries it - so the karaoke styles still work.
 							</p>
 						</div>
 					) : null}

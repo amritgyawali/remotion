@@ -1,5 +1,6 @@
-import "/public/assets/fonts/v1/google-deva.css"
 'use client'
+
+import '/public/assets/fonts/v1/google-deva.css'
 
 import { useMemo, useState } from 'react'
 import {
