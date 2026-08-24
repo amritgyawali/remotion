@@ -250,7 +250,10 @@ export default function CaptionDesignPanel({
 			const entry = CAPTION_FONTS[id]
 			if (fontCategory !== 'all' && entry.category !== fontCategory) return false
 			if (!query) return true
-			return `${entry.family} ${entry.mood} ${entry.useFor} ${entry.category}`
+			// "देवनागरी" and "nepali" are how a Nepali editor looks for this shelf,
+			// so both find every face that can actually draw the script.
+			const script = entry.devanagari ? 'devanagari देवनागरी nepali hindi नेपाली' : 'latin'
+			return `${entry.family} ${entry.mood} ${entry.useFor} ${entry.category} ${script}`
 				.toLowerCase()
 				.includes(query)
 		})
@@ -295,7 +298,7 @@ export default function CaptionDesignPanel({
 						<IconSearch size={13} />
 						<input
 							className="input"
-							placeholder="Search 64 faces - try neon, pixel, serif, Nepali"
+							placeholder={`Search ${CAPTION_FONT_IDS.length} faces - try neon, pixel, serif, Nepali`}
 							value={fontQuery}
 							disabled={disabled}
 							onChange={(event) => setFontQuery(event.target.value)}

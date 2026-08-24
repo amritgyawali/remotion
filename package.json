@@ -18,6 +18,7 @@
     "samples": "node scripts/sync-samples.mjs",
     "ai:check": "node scripts/check-ai-compose.cjs",
     "captions:check": "node scripts/check-captions.cjs",
+    "fonts:check": "node scripts/check-devanagari-glyphs.mjs",
     "riva:check": "node scripts/check-riva.cjs",
     "riva:descriptor": "node scripts/build-riva-descriptor.mjs",
     "assets:3d": "node scripts/generate-3d-assets.mjs",

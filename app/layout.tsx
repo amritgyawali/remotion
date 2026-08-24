@@ -38,10 +38,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 				 * The bundled typography kit. Declaring the faces costs nothing until
 				 * one is used - browsers fetch a font file only when text is actually
 				 * set in it - which is what lets the caption font picker preview all
-				 * 64 families in their own type without downloading 16 MB up front.
+				 * 102 families in their own type without downloading 30 MB up front.
 				 */}
 				<link rel="stylesheet" href="/assets/fonts/v1/fonts.css" />
-				<link rel="stylesheet" href="/assets/fonts/v1/google-deva.css" />
 			</head>
 			<body>{children}</body>
 		</html>

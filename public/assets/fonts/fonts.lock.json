@@ -514,6 +514,310 @@
 		"v1/teko/OFL.txt": {
 			"sha256": "4a193c54e911c1e8194d4db657423f2527f54a1239f24cb67ecb09128dc9f065",
 			"bytes": 4385
+		},
+		"v1/amita/Amita-Bold.ttf": {
+			"sha256": "2e3db0a183495cc55b81346311bc2c22dde0e4b6599a9f8a7469b5feffdbf0e8",
+			"bytes": 221116
+		},
+		"v1/amita/OFL.txt": {
+			"sha256": "0dd8e32457e18621737b593ab0fac49905cd948a078ed0e64f4890df714a1dfb",
+			"bytes": 4534
+		},
+		"v1/arya/Arya-Bold.ttf": {
+			"sha256": "96449d0ec5f452f56c05fd3072115435f41ed3f78d362444b79a8379de2479f4",
+			"bytes": 186404
+		},
+		"v1/arya/OFL.txt": {
+			"sha256": "dd028a807788d5e22e9f8cc18f026cda23369954673658f2ecc7d30bdb364b89",
+			"bytes": 4506
+		},
+		"v1/asar/Asar-Regular.ttf": {
+			"sha256": "8b4147354af009836d031f50af3e0450768d78b1e0e0281c7df17cd26440cc2e",
+			"bytes": 669032
+		},
+		"v1/asar/OFL.txt": {
+			"sha256": "223fa23e8419ee762c662e0faf912dfcf386fa7093ac9ff690e380ce1993ba55",
+			"bytes": 4488
+		},
+		"v1/eczar/Eczar[wght].ttf": {
+			"sha256": "b52af3a3b457f9b2278612b73c97eaf28270ffc91c99e4c90471cc15bb8748c6",
+			"bytes": 407304
+		},
+		"v1/eczar/OFL.txt": {
+			"sha256": "003e3a0675b0b5d38cb6a188039d33a8d747a84effec32e7f8aa6e25cf6d3e2d",
+			"bytes": 4384
+		},
+		"v1/gotu/Gotu-Regular.ttf": {
+			"sha256": "766fbfb19d8a0c38814b23c42515ed9dea538fce18d741221eca321d0604a3f5",
+			"bytes": 697792
+		},
+		"v1/gotu/OFL.txt": {
+			"sha256": "159eb46ed0b08f8b9678d6f22f54cc614452d4ab0fb670b568f7a5f315afe511",
+			"bytes": 4349
+		},
+		"v1/glegoo/Glegoo-Bold.ttf": {
+			"sha256": "8ad5922db134fe9bf9f2691fc5554293c06884cf89823f452fc76db6b3de7fef",
+			"bytes": 271068
+		},
+		"v1/glegoo/OFL.txt": {
+			"sha256": "638774cdf8233b5ddaf9ebee1821e9de1d5d59c335d8ee3ba0b47fb17833b502",
+			"bytes": 4446
+		},
+		"v1/jaini/Jaini-Regular.ttf": {
+			"sha256": "67224e60cafa27291c4b03cd907ca61ec678ba59fc1743af89da4472ea50d5c7",
+			"bytes": 757280
+		},
+		"v1/jaini/OFL.txt": {
+			"sha256": "5f716b45b3d7c1e206a6a40da96208f151c1fcd33d7de578b88124d1ae341ec3",
+			"bytes": 4382
+		},
+		"v1/jaini-purva/JainiPurva-Regular.ttf": {
+			"sha256": "178d7f5a40594d4ef6c28b7a68d85da7eae46df2f71becedfb40251ff678c2f5",
+			"bytes": 762796
+		},
+		"v1/jaini-purva/OFL.txt": {
+			"sha256": "5f716b45b3d7c1e206a6a40da96208f151c1fcd33d7de578b88124d1ae341ec3",
+			"bytes": 4382
+		},
+		"v1/kadwa/Kadwa-Bold.ttf": {
+			"sha256": "4dca4a79280ecc1911deb83cc0441dbd53d65af10a42b07157c7a9f2de1e25cc",
+			"bytes": 239892
+		},
+		"v1/kadwa/OFL.txt": {
+			"sha256": "84991b97bbcb16199fd156d20d45cffb049d063b14e94991d1d4960fcdd4d8b2",
+			"bytes": 4456
+		},
+		"v1/karma/Karma-Bold.ttf": {
+			"sha256": "3819cedaa8ef7247aaae77113cbb9b22b207f5fe6c045ae0e1442a7b6b69328e",
+			"bytes": 346620
+		},
+		"v1/karma/OFL.txt": {
+			"sha256": "f62ef357d3a1c3d27edd35a6e1ba350e8a8d13499797964eeadefbf0b3b15d1f",
+			"bytes": 4373
+		},
+		"v1/khula/Khula-Bold.ttf": {
+			"sha256": "923cafe77cf48066e151f91358800bd9e036b1c417b9fcc326da39d281b87fe7",
+			"bytes": 155640
+		},
+		"v1/khula/OFL.txt": {
+			"sha256": "2171558d2482764644a2f793696fa2e48c361730ecc87686b9a29082d6daeb10",
+			"bytes": 4418
+		},
+		"v1/kurale/Kurale-Regular.ttf": {
+			"sha256": "6055aaca6870ca64210dd81fa47f8bb71595a9c8fbe570351ed45a15f1a0820d",
+			"bytes": 265304
+		},
+		"v1/kurale/OFL.txt": {
+			"sha256": "b712dacdda5da76c0213f8478886f893b855665c1153ae438bc3e55a7dc525ef",
+			"bytes": 4363
+		},
+		"v1/laila/Laila-Bold.ttf": {
+			"sha256": "3b50aae09041e0941e4309ba1cbc4bacd858f8852b5e76e240157ae6e7da87b3",
+			"bytes": 369496
+		},
+		"v1/laila/OFL.txt": {
+			"sha256": "f62ef357d3a1c3d27edd35a6e1ba350e8a8d13499797964eeadefbf0b3b15d1f",
+			"bytes": 4373
+		},
+		"v1/modak/Modak-Regular.ttf": {
+			"sha256": "9a96ba056ddcbb7d0c937c52f744ff5d71004a97689b1fd2cdbd678f314db245",
+			"bytes": 650188
+		},
+		"v1/modak/OFL.txt": {
+			"sha256": "5fb0694694dc307d1eb0121689395e634b6329ff545acc53f55ad66a716b3cf1",
+			"bytes": 4346
+		},
+		"v1/rhodium-libre/RhodiumLibre-Regular.ttf": {
+			"sha256": "d068be8060fd77135bd7c94ee36822d6902aed3bf0d382d8bcdfcbb5ad1b8283",
+			"bytes": 233792
+		},
+		"v1/rhodium-libre/OFL.txt": {
+			"sha256": "0886960207bb5bcf81a46ce663bab6c52a742dad80ee2cff5cbcda6f1df88568",
+			"bytes": 4513
+		},
+		"v1/sahitya/Sahitya-Bold.ttf": {
+			"sha256": "9feb27b5d2980b741355bb6240d0f0b44d0f4cfdb15c11980049f4750fcaa88a",
+			"bytes": 267140
+		},
+		"v1/sahitya/OFL.txt": {
+			"sha256": "0c875366ccdc762e7e2c1a3ff7f0f0dd2ee5d9aa0e4a835cbf3ddceffede16fc",
+			"bytes": 4393
+		},
+		"v1/sarpanch/Sarpanch-Bold.ttf": {
+			"sha256": "c23f96c15d1d075b339bb7a5ede342591d1389924331464b98584865d88c8ebf",
+			"bytes": 291920
+		},
+		"v1/sarpanch/OFL.txt": {
+			"sha256": "f62ef357d3a1c3d27edd35a6e1ba350e8a8d13499797964eeadefbf0b3b15d1f",
+			"bytes": 4373
+		},
+		"v1/sumana/Sumana-Bold.ttf": {
+			"sha256": "e32150c36ced10804d077dc41714df7e5c8471408bccc7036fba30314a914e79",
+			"bytes": 223880
+		},
+		"v1/sumana/OFL.txt": {
+			"sha256": "c8155eb9337078a9ea9f1e576ac813a03030ca43e2694593e90cd4fee6fce937",
+			"bytes": 4365
+		},
+		"v1/tillana/Tillana-Bold.ttf": {
+			"sha256": "76c53b8963432418087fa3748d14be25f090fd89cd709f6c14b63679c4c72244",
+			"bytes": 306716
+		},
+		"v1/tillana/OFL.txt": {
+			"sha256": "f62ef357d3a1c3d27edd35a6e1ba350e8a8d13499797964eeadefbf0b3b15d1f",
+			"bytes": 4373
+		},
+		"v1/vesper-libre/VesperLibre-Bold.ttf": {
+			"sha256": "11e59ae4fd3d5276573f95cea3e7e2361756817b5029b49f43c66701f81d96f8",
+			"bytes": 168172
+		},
+		"v1/vesper-libre/OFL.txt": {
+			"sha256": "f3758ee70600ecd5450f01ea373204b202e048d0454c9db2d1175c5a5dd1e92f",
+			"bytes": 4358
+		},
+		"v1/yantramanav/Yantramanav-Bold.ttf": {
+			"sha256": "682ef4ebc9c8dde1f312c435ade5eca9cafea6ab0c3602e1638c02d3759b135d",
+			"bytes": 158048
+		},
+		"v1/yantramanav/OFL.txt": {
+			"sha256": "8f2e5a9b52cf355023104413827e17dd7126c5a3656492d45eaa1ceb270aa4f1",
+			"bytes": 4412
+		},
+		"v1/rajdhani/Rajdhani-Bold.ttf": {
+			"sha256": "691470dd3286a14e9677940d0bf75796179841ba5215cbda1a2c8910a3226afd",
+			"bytes": 400680
+		},
+		"v1/rajdhani/OFL.txt": {
+			"sha256": "f62ef357d3a1c3d27edd35a6e1ba350e8a8d13499797964eeadefbf0b3b15d1f",
+			"bytes": 4373
+		},
+		"v1/ek-mukta/EkMukta-Bold.ttf": {
+			"sha256": "1d62434625ca99e03acd200702ed5fd4d47231d134809807cdd7fb419f6409d1",
+			"bytes": 418448
+		},
+		"v1/ek-mukta/OFL.txt": {
+			"sha256": "2ee5e8e47cd7d08f60bb9555f72b25912c9e81b13f5bc9a0551ddf943da6ca98",
+			"bytes": 4367
+		},
+		"v1/ibm-plex-sans-devanagari/IBMPlexSansDevanagari-Bold.ttf": {
+			"sha256": "8c1a55530a59f4d3df71e36ed7090e78511cf1e03c32b932c693ae6ac603b38f",
+			"bytes": 330896
+		},
+		"v1/ibm-plex-sans-devanagari/OFL.txt": {
+			"sha256": "7e6b2818edbd8f6a01ae80641cc8f16a51080d08fb4e532be3a0b6f74adb07da",
+			"bytes": 4456
+		},
+		"v1/martel/Martel-Bold.ttf": {
+			"sha256": "072b7259061a99128e50056b081024975dfc6e4c0b265ab99f75bf66bd50c338",
+			"bytes": 170240
+		},
+		"v1/martel/OFL.txt": {
+			"sha256": "f177d98c67b84250ec87a03ca6ad161e84cab15b435e960039b971797a065f4a",
+			"bytes": 4436
+		},
+		"v1/jaldi/Jaldi-Bold.ttf": {
+			"sha256": "5518eef27bab146f957c70fe50ef10bea8fe363d3ac75cc797aa882a7226bd99",
+			"bytes": 468300
+		},
+		"v1/jaldi/OFL.txt": {
+			"sha256": "a74380bba78a364ec70b3a5fb6a1161b83cb05cc3e75a0910afbd1b5aff4f9c8",
+			"bytes": 4387
+		},
+		"v1/pragati-narrow/PragatiNarrow-Bold.ttf": {
+			"sha256": "8e151c9307194e6fdd69503999f2150e066dc5e9cdb2a966c861ec53286fc863",
+			"bytes": 419792
+		},
+		"v1/pragati-narrow/OFL.txt": {
+			"sha256": "2dab153a33dcb2101bba3f194d27d953c848a0fabf2e336650a81f84a0c33b3f",
+			"bytes": 4482
+		},
+		"v1/dekko/Dekko-Regular.ttf": {
+			"sha256": "e6b151a5bdc521833ceb9a4f8010195515259e9416abfe055cfd16adb2e1af42",
+			"bytes": 271164
+		},
+		"v1/dekko/OFL.txt": {
+			"sha256": "f139d6f43d2a63a8fb3ded48b8ec747d9d59a7fbb13d077d9b96ac88580bc1ad",
+			"bytes": 4428
+		},
+		"v1/halant/Halant-Bold.ttf": {
+			"sha256": "ee33e5ad2f8b8ff03ef91b286ea3bf93583cc162b614790e2ddcfd5772939daf",
+			"bytes": 306388
+		},
+		"v1/halant/OFL.txt": {
+			"sha256": "f62ef357d3a1c3d27edd35a6e1ba350e8a8d13499797964eeadefbf0b3b15d1f",
+			"bytes": 4373
+		},
+		"v1/inknut-antiqua/InknutAntiqua-Bold.ttf": {
+			"sha256": "222a233da522553541938fa7780d3bcc008af009679797658885f0052ffb76ef",
+			"bytes": 398368
+		},
+		"v1/inknut-antiqua/OFL.txt": {
+			"sha256": "3c6545e1923c7dbbe2103b93023e21514d005012ef6543f90ecf51ee45667a73",
+			"bytes": 4492
+		},
+		"v1/palanquin/Palanquin-Bold.ttf": {
+			"sha256": "b9ff87d5743c179d1300ecbbdb97c53e7a1adb2f54c446c21acec50e2bc77acf",
+			"bytes": 508152
+		},
+		"v1/palanquin/OFL.txt": {
+			"sha256": "548890e4083028f04e5feba04b6e00554654d840aab81c8664eb66c2216a571b",
+			"bytes": 4366
+		},
+		"v1/palanquin-dark/PalanquinDark-Bold.ttf": {
+			"sha256": "8bf3591c758a3a35977b9af72c6a9639aa60c6652743ddb9cdc59dc1a30f7971",
+			"bytes": 511480
+		},
+		"v1/palanquin-dark/OFL.txt": {
+			"sha256": "548890e4083028f04e5feba04b6e00554654d840aab81c8664eb66c2216a571b",
+			"bytes": 4366
+		},
+		"v1/sarala/Sarala-Bold.ttf": {
+			"sha256": "b08ccab2a22b3dcfad6a9b88d5b700cb830c7557ae13e9264e61cd6a96ecc268",
+			"bytes": 239072
+		},
+		"v1/sarala/OFL.txt": {
+			"sha256": "afb8c471158619593df0fb501453bd39fda42396e2cc3911e2a0a471c11b863c",
+			"bytes": 4451
+		},
+		"v1/biryani/Biryani-Bold.ttf": {
+			"sha256": "5e1b0cc60cbf479a1ce41c6b764fcb25160726485c6676db8e789ed4bab43e43",
+			"bytes": 178968
+		},
+		"v1/biryani/OFL.txt": {
+			"sha256": "505bb8f3c30f2006b4e02d250fda31ed94b651a35f1124a201ca1c405ce989af",
+			"bytes": 4372
+		},
+		"v1/cambay/Cambay-Bold.ttf": {
+			"sha256": "75b8835327db778da23a029ad0782bde9f82567f902f9cf0cd1e18efa0fa96bc",
+			"bytes": 231232
+		},
+		"v1/cambay/OFL.txt": {
+			"sha256": "846e8cc6dc69bf685d2db14cfa758ff3d9d771d54c9e0d3b511f0ecb97ac0e8a",
+			"bytes": 4356
+		},
+		"v1/ranga/Ranga-Bold.ttf": {
+			"sha256": "c5c763628e805a2af3c9deb68abd0b70227a98911f7ba56f4f8c2a3e8c286b96",
+			"bytes": 127288
+		},
+		"v1/ranga/OFL.txt": {
+			"sha256": "8c22fb3866eaebd77a2cb8e8ecbb095381ff32300db57758326fef35a26132f5",
+			"bytes": 4335
+		},
+		"v1/tiro-devanagari-marathi/TiroDevanagariMarathi-Regular.ttf": {
+			"sha256": "8e1d4edf924c0685f1383d0d37aa7c4662103d2e485e53b535b4528af5acd966",
+			"bytes": 439712
+		},
+		"v1/tiro-devanagari-marathi/OFL.txt": {
+			"sha256": "2ed6051706542c5d6d96480318152b17900bb6d4dbadb11d7d5d6464d8b3e0dd",
+			"bytes": 4387
+		},
+		"v1/tiro-devanagari-sanskrit/TiroDevanagariSanskrit-Regular.ttf": {
+			"sha256": "75ae873e5e3f9c30fb962a3d283b9f5e7bc5bca57822a2aa926753b297b150ca",
+			"bytes": 761856
+		},
+		"v1/tiro-devanagari-sanskrit/OFL.txt": {
+			"sha256": "2ed6051706542c5d6d96480318152b17900bb6d4dbadb11d7d5d6464d8b3e0dd",
+			"bytes": 4387
 		}
 	}
 }

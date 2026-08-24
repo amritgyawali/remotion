@@ -1,5 +1,6 @@
 import Link from 'next/link'
-import { IconFile, IconFilm, IconLogo } from '../Icons'
+import { IconFile, IconLogo } from '../Icons'
+import StudioNav from '../StudioNav'
 import ThemeToggle from '../ThemeToggle'
 
 export default function ResumeHeader() {
@@ -19,10 +20,7 @@ export default function ResumeHeader() {
 				<IconFile size={12} /> ATS-safe editor
 			</span>
 			<div className="topbar-actions">
-				<Link className="btn btn--ghost btn--sm" href="/" aria-label="Video Studio">
-					<IconFilm size={13} />
-					<span className="btn-label">Video Studio</span>
-				</Link>
+				<StudioNav current="resume" />
 				<ThemeToggle />
 			</div>
 		</header>

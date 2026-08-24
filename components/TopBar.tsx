@@ -1,6 +1,7 @@
 'use client'
 
-import { IconBrowser, IconCaptions, IconFile, IconLogo, IconServer, IconTrash } from './Icons'
+import { IconBrowser, IconLogo, IconServer, IconTrash } from './Icons'
+import StudioNav from './StudioNav'
 import ThemeToggle from './ThemeToggle'
 import type { RenderEngine, ServerCapabilities, VirtualProject } from '../lib/types'
 
@@ -61,17 +62,7 @@ export default function TopBar({
 			</span>
 
 			<div className="topbar-actions">
-				<a className="btn btn--ghost btn--sm" href="/resume" title="Create and check an ATS-friendly resume">
-					<IconFile size={13} />
-					<span className="btn-label">Resume</span>
-				</a>
-
-				{/* A plain link, not next/link: /captions is served with cross-origin
-				    isolation headers that a client-side navigation would not pick up. */}
-				<a className="btn btn--ghost btn--sm" href="/captions" title="Add subtitles to a video">
-					<IconCaptions size={13} />
-					<span className="btn-label">Subtitles</span>
-				</a>
+				<StudioNav current="video" />
 
 				<ThemeToggle />
 
