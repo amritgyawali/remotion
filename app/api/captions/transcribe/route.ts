@@ -40,6 +40,7 @@ import {
 	type CloudWord,
 } from '../../../../lib/captions/asr-models'
 import { loanwordHints } from '../../../../lib/captions/loanwords'
+import { buildWhisperPrompt, whisperLanguage } from '../../../../lib/captions/asr-prompt'
 import { RIVA_GRPC_TARGET, rivaRecognize } from '../../../../lib/captions/riva/client'
 
 export const runtime = 'nodejs'
@@ -419,12 +420,42 @@ function buildForm(args: {
 }
 
 /**
- * The Groq request. `whisper-large-v3` is the accuracy target (10.3% WER on
- * multilingual test sets) and `temperature=0` removes the one knob that makes
- * a recogniser invent a word it never heard. Timestamps come back as seconds
- * under `start`/`end`, which the normaliser already treats as seconds.
+ * The Groq request, tuned for a verbatim transcript on a measured clock.
+ *
+ * Every field here is doing one job:
+ *
+ *   `model`                     whisper-large-v3, the accuracy target. Its
+ *                               turbo and distil siblings are faster and
+ *                               measurably worse, and this studio's case -
+ *                               Nepali, and Nepali code-switched with English -
+ *                               is exactly where the gap is widest.
+ *   `response_format`           verbose_json is the only format that carries
+ *                               timings at all.
+ *   `timestamp_granularities[]` word *and* segment. Word timings are what the
+ *                               karaoke styles ride on; segments give the cue
+ *                               splitter real sentence boundaries rather than
+ *                               guessed ones.
+ *   `temperature=0`             greedy decoding. Whisper's default schedule
+ *                               re-rolls a segment at rising temperature when
+ *                               it looks low-confidence, and those re-rolls are
+ *                               where invented words and loops come from.
+ *   `prompt`                    224 tokens of *demonstrated* style and
+ *                               vocabulary - see ./asr-prompt for why this is
+ *                               an exemplar and never an instruction.
+ *   `language`                  sent only when it is a real ISO-639-1 code.
+ *
+ * Note what is NOT set: no `Content-Type` header. Passing FormData to fetch
+ * makes the runtime write `multipart/form-data` with the generated boundary,
+ * and setting the header by hand replaces that boundary with nothing - which
+ * Groq rejects as a malformed body on every single request.
  */
-function buildGroqForm(args: { audio: Blob; fileName: string; language: string | null }): FormData {
+function buildGroqForm(args: {
+	audio: Blob
+	fileName: string
+	language: string | null
+	vocabulary: string[]
+	previousText: string | null
+}): FormData {
 	const form = new FormData()
 	form.append('file', args.audio, args.fileName)
 	form.append('model', GROQ_MODEL)
@@ -432,11 +463,20 @@ function buildGroqForm(args: { audio: Blob; fileName: string; language: string |
 	form.append('timestamp_granularities[]', 'word')
 	form.append('timestamp_granularities[]', 'segment')
 	form.append('temperature', '0')
-	// Leave language out entirely. Whisper detects it, and an ISO code that
-	// disagrees with the audio makes the transcript worse, not better.
-	if (args.language && args.language !== 'auto' && args.language !== 'multi') {
-		form.append('language', args.language)
-	}
+
+	const language = whisperLanguage(args.language)
+	// Left out entirely when it is not a real code: Whisper detects it, and a
+	// declared language that disagrees with the audio makes the transcript
+	// worse, not better.
+	if (language) form.append('language', language)
+
+	const prompt = buildWhisperPrompt({
+		language,
+		vocabulary: args.vocabulary,
+		previousText: args.previousText,
+	})
+	if (prompt) form.append('prompt', prompt)
+
 	return form
 }
 
@@ -449,13 +489,13 @@ async function callGroq(args: {
 	language: string | null
 	key: string
 	durationMs: number
+	vocabulary: string[]
+	previousText: string | null
 }): Promise<{ text: string; words: CloudWord[]; estimated: boolean }> {
 	const response = await fetch(GROQ_ENDPOINT, {
 		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${args.key}`,
-			'Content-Type': 'application/x-www-form-urlencoded',
-		},
+		// Authorization only. See buildGroqForm on why Content-Type is absent.
+		headers: { Authorization: `Bearer ${args.key}`, Accept: 'application/json' },
 		body: buildGroqForm(args),
 		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
 	})
@@ -573,15 +613,32 @@ async function callGrpc(args: {
 
 /* ------------------------------------------------------------------ route */
 
+/**
+ * What the browser is allowed to know about the server's keys: whether cloud
+ * transcription can run at all, and which provider would take the request.
+ *
+ * `configured` must be true when *either* key is set. It used to read the
+ * NVIDIA key alone, so a server holding only GROQ_API_KEY - the free tier this
+ * studio leads with - reported the cloud as unavailable, and the Auto engine
+ * silently fell back to the on-device Whisper it was meant to replace.
+ */
 export function GET() {
-	const configured = nvidiaApiKey() !== null
+	const groq = groqApiKey() !== null
+	const nvidia = nvidiaApiKey() !== null
+	const configured = groq || nvidia
 	return Response.json(
 		{
 			configured,
+			primary: groq ? 'groq' : nvidia ? 'nvidia' : null,
+			providers: [
+				{ id: 'groq', label: `Groq ${GROQ_MODEL}`, available: groq, role: 'primary' },
+				{ id: 'nvidia', label: 'NVIDIA Riva', available: nvidia, role: 'fallback' },
+			],
 			reason: configured
 				? undefined
-				: 'NVIDIA_API_KEY is not set on the server, so cloud transcription is off. Add a generated nvapi- key to .env.local, or transcribe on this device instead.',
+				: 'Neither GROQ_API_KEY nor NVIDIA_API_KEY is set on the server, so cloud transcription is off. A free Groq key at console.groq.com is the quickest fix - add GROQ_API_KEY to .env.local and restart, or transcribe on this device instead.',
 			endpoints: [
+				...(groq ? [GROQ_ENDPOINT] : []),
 				...(grpcDisabled() ? [] : [grpcTarget()]),
 				...httpEndpoints(CLOUD_ASR_MODELS[0]).map((entry) => entry.endpoint),
 			],
@@ -639,6 +696,15 @@ export async function POST(request: Request) {
 	// which starts at the blob, back onto the clip's clock.
 	const contextValue = Number((form.get('contextMs') as string | null) ?? '')
 	const contextMs = Number.isFinite(contextValue) && contextValue > 0 ? Math.round(contextValue) : 0
+	/*
+	 * The tail of the transcript the browser already has for the chunk before
+	 * this one. Whisper is a next-token model conditioned on the transcript so
+	 * far, so handing it the real preceding words is the single strongest thing
+	 * available: it keeps a name spelled the same way either side of a chunk
+	 * boundary, and stops a sentence that straddles the cut from restarting in
+	 * a different register.
+	 */
+	const previousText = ((form.get('previousText') as string | null) ?? '').trim().slice(-600) || null
 
 	const model = modelFor(requestedModel, language)
 	const bytes = new Uint8Array(await audio.arrayBuffer())
@@ -652,56 +718,84 @@ export async function POST(request: Request) {
 			? [preferred.language, ...languages.filter((entry) => entry !== preferred?.language)]
 			: languages
 
-	// 1. Try Groq first (if key present)
+	const attempts: Attempt[] = []
+
+	/*
+	 * 1. Groq, the primary.
+	 *
+	 * Whisper takes a bare ISO-639-1 code or nothing at all, so the Riva locale
+	 * candidates (`ne-NP`, `en-US`) that the NVIDIA path walks are meaningless
+	 * here - `whisperLanguage` reduces them to one code, and detection covers
+	 * the rest. That makes this a single attempt rather than a language loop,
+	 * which also means a Groq outage costs one request instead of three before
+	 * the fallback gets its turn.
+	 */
 	if (groqKey) {
-		const groqAttempts: Attempt[] = []
-		for (const languageCode of ordered) {
-			try {
-				const result = await callGroq({
-					audio,
-					fileName,
-					language: languageCode === 'auto' || languageCode === 'multi' ? null : languageCode,
-					key: groqKey!,
+		try {
+			const result = await callGroq({
+				audio,
+				fileName,
+				language,
+				key: groqKey,
+				durationMs,
+				vocabulary: hints,
+				previousText,
+			})
+			return Response.json(
+				{
+					text: result.text,
+					words: result.words,
+					model: GROQ_MODEL,
+					provider: 'groq',
+					endpoint: 'groq',
+					language: whisperLanguage(language) ?? 'auto',
+					estimatedTimings: result.estimated,
+					contextMs,
 					durationMs,
-				})
-				// Remember the successful Groq language for next time? Not required, but we can update preferred for Groq if we want.
-				// We'll keep the existing preferred for NVIDIA only, so we don't touch it here.
-				return Response.json(
-					{
-						text: result.text,
-						words: result.words,
-						model: GROQ_MODEL,
-						endpoint: 'groq',
-						language: languageCode,
-						estimatedTimings: result.estimated,
-						contextMs,
-						durationMs,
-					},
-					{ headers: { 'cache-control': 'no-store' } },
-				)
-			} catch (error) {
-				if (error instanceof CredentialError) {
-					console.warn('[api/captions/transcribe] groq credential rejected', { error: error.message })
+				},
+				{ headers: { 'cache-control': 'no-store' } },
+			)
+		} catch (error) {
+			if (error instanceof CredentialError) {
+				console.warn('[api/captions/transcribe] groq credential rejected', { error: error.message })
+				// A bad key is worth stopping on only when there is nothing to
+				// fall back to; otherwise NVIDIA still deserves its turn.
+				if (!nvidiaKey) {
 					return Response.json(
 						{
-							error: `Groq rejected the API key: ${error.message}. Check GROQ_API_KEY and that the key has access to ${GROQ_MODEL}.`,
+							error: `Groq rejected the API key: ${error.message}. Check GROQ_API_KEY at console.groq.com and that the key has access to ${GROQ_MODEL}.`,
 							code: 'credentials',
 						},
 						{ status: 502 },
 					)
 				}
+				attempts.push({ transport: 'groq', language: 'auto', error: `credential rejected: ${error.message}`.slice(0, 240) })
+			} else {
 				const message = error instanceof Error ? error.message : String(error)
-				groqAttempts.push({ transport: `groq:${GROQ_ENDPOINT}`, language: languageCode, error: message.slice(0, 240) })
-				// If the error is clearly not about language, break the language loop for Groq.
-				if (!/language|locale|unsupported|not available|invalid[_ ]argument/i.test(message)) break
+				attempts.push({ transport: 'groq', language: 'auto', error: message.slice(0, 240) })
+				console.warn('[api/captions/transcribe] groq failed, falling back', { error: message })
 			}
 		}
-		console.warn('[api/captions/transcribe] groq every attempt failed', { model: GROQ_MODEL, attempts: groqAttempts })
-		// Fall through to NVIDIA fallback
 	}
 
-	// 2. Fallback to NVIDIA (original logic, but using nvidiaKey)
-	const attempts: Attempt[] = []
+	// 2. NVIDIA, the fallback. Skipped entirely without a key - running the
+	//    transport loop on a null key only buries the real (Groq) failure under
+	//    a pile of authentication errors.
+	if (!nvidiaKey) {
+		return Response.json(
+			{
+				error: `Groq could not transcribe this audio. ${attempts
+					.map((attempt) => `${attempt.transport}: ${attempt.error}`)
+					.join(' | ')
+					.slice(0, 700)}`,
+				code: 'upstream',
+				attempts,
+				model: GROQ_MODEL,
+			},
+			{ status: 502 },
+		)
+	}
+
 	for (const transport of transportsFor(model)) {
 		for (const languageCode of ordered) {
 			const label = transportKey(transport)
@@ -714,7 +808,7 @@ export async function POST(request: Request) {
 								sampleRate,
 								language: languageCode,
 								model,
-								key: nvidiaKey!,
+								key: nvidiaKey,
 								durationMs,
 								hints,
 							})
@@ -725,7 +819,7 @@ export async function POST(request: Request) {
 								fileName,
 								model,
 								language: languageCode,
-								key: nvidiaKey!,
+								key: nvidiaKey,
 								durationMs,
 								hints,
 							})
@@ -765,7 +859,7 @@ export async function POST(request: Request) {
 	console.warn('[api/captions/transcribe] every transport failed', { model: model.id, attempts })
 	return Response.json(
 		{
-			error: `NVIDIA did not accept the audio for ${model.id}. ${attempts
+			error: `No speech provider accepted the audio (${model.id}). ${attempts
 				.map((attempt) => `${attempt.transport} [${attempt.language}]: ${attempt.error}`)
 				.join(' | ')
 				.slice(0, 700)}`,

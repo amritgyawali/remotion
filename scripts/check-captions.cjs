@@ -26,6 +26,10 @@
  *   7. subtitle import       - an .srt or .vtt from anywhere decodes in any
  *                               encoding, parses even when it is malformed, and
  *                               never silently swallows a line of transcript
+ *   8. Groq, the primary ASR  - it is tried first, its request is shaped the way
+ *                               Whisper actually wants, its prompt demonstrates
+ *                               style instead of instructing, and NVIDIA takes
+ *                               over only when Groq cannot answer
  *
  *   node scripts/check-captions.cjs
  */
@@ -87,6 +91,7 @@ const { CAPTION_PRESETS, CAPTION_FONT_IDS, CAPTION_FONTS } = require('../lib/cap
 const tools = require('../lib/captions/tools.ts')
 const { cuesToAss } = require('../lib/captions/ass.ts')
 const subtitleImport = require('../lib/captions/subtitle-import.ts')
+const asrPrompt = require('../lib/captions/asr-prompt.ts')
 const cueFile = require('../lib/captions/cues.ts')
 const { transform } = require('sucrase')
 
@@ -1293,6 +1298,159 @@ async function checkSubtitleImport() {
 	)
 }
 
+/* ------------------------------------------------- Groq as the primary ASR */
+
+async function checkGroqPrimary() {
+	console.log('\nGroq Whisper (primary speech provider)')
+
+	const { buildWhisperPrompt, whisperLanguage, PROMPT_TOKEN_BUDGET } = asrPrompt
+
+	/* -- the prompt is an exemplar, never an instruction ------------------ */
+
+	const english = buildWhisperPrompt({ language: 'en' })
+	check('a prompt is produced', english.length > 0)
+	check(
+		'it never issues an instruction (Whisper would transcribe it)',
+		!/\b(transcribe|do not|don't|you (are|should|must)|output|please)\b/i.test(english),
+		english,
+	)
+	check('it demonstrates sentence casing and terminal punctuation', /[A-Z][^.?!]*[.?!]/.test(english))
+	check('it demonstrates a disfluency, so verbatim speech is kept', /\bum\b/i.test(english), english)
+	check('it stays inside the 224 token window', english.length <= PROMPT_TOKEN_BUDGET * 4, english.length)
+
+	const nepali = buildWhisperPrompt({ language: 'ne' })
+	check('Nepali gets a Devanagari exemplar', /[ऀ-ॿ]/.test(nepali))
+	check(
+		'that exemplar keeps English loanwords in Latin script',
+		/feature|update|release/.test(nepali),
+		nepali,
+	)
+	check('and the loanword vocabulary rides along', nepali.length > english.length)
+
+	// The vocabulary is the part that must never be truncated away, so it goes last.
+	const withVocab = buildWhisperPrompt({ language: 'en', vocabulary: ['Remotion', 'Zathura'] })
+	check('supplied vocabulary reaches the prompt', /Remotion/.test(withVocab) && /Zathura/.test(withVocab))
+	// The caller's own terms are the ones a recogniser cannot guess, so they must
+	// sit behind the generic loanwords where clamping cannot reach them.
+	const mixed = buildWhisperPrompt({ language: 'ne', vocabulary: ['Kathmandu', 'Remotion'] })
+	check(
+		"the caller's terms come last, after the generic loanwords",
+		mixed.trim().endsWith('Kathmandu, Remotion.'),
+		mixed.slice(-70),
+	)
+	// Terms long enough that 60 of them alone blow the window, so the clamp
+	// genuinely fires rather than the vocabulary cap quietly doing the work.
+	const flooded = buildWhisperPrompt({
+		language: 'en',
+		vocabulary: Array.from({ length: 400 }, (_, i) => `Supercalifragilistic${i}Expialidocious`),
+	})
+	check('an over-long prompt is clamped', flooded.length <= PROMPT_TOKEN_BUDGET * 4, flooded.length)
+	// Clamping drops the FRONT, so the exemplar goes and the vocabulary - the
+	// part a recogniser cannot guess - is what survives.
+	check('clamping keeps the tail, where the vocabulary lives', /Expialidocious\.$/.test(flooded.trim()), flooded.slice(-60))
+	check('and spends the lost budget on the style exemplar, not the terms', !/\bum\b/i.test(flooded), flooded.slice(0, 60))
+
+	const continued = buildWhisperPrompt({ language: 'en', previousText: 'and then the render finished.' })
+	check('real previous text is carried in', /render finished/.test(continued), continued)
+
+	/* -- language codes --------------------------------------------------- */
+
+	check('a Riva locale is reduced to ISO-639-1', whisperLanguage('ne-NP') === 'ne')
+	check('an ISO code passes through', whisperLanguage('en') === 'en')
+	check("'auto' and 'multi' mean 'let Whisper detect'", whisperLanguage('auto') === null && whisperLanguage('multi') === null)
+	check('so does nothing at all', whisperLanguage('') === null && whisperLanguage(null) === null)
+
+	/* -- the route prefers Groq ------------------------------------------- */
+
+	process.env.GROQ_API_KEY = 'gsk-check'
+	try {
+		const seen = []
+		global.fetch = async (url, init) => {
+			seen.push({ url: String(url), init })
+			return nvidiaReply({
+				text: 'नमस्ते this is a test',
+				words: [
+					{ word: 'नमस्ते', start: 0.1, end: 0.6 },
+					{ word: 'this', start: 0.7, end: 0.95 },
+					{ word: 'test', start: 1.2, end: 1.8 },
+				],
+			})
+		}
+		let body = await (await transcribeRoute.POST(audioRequest())).json()
+
+		check('Groq is called first', seen[0].url.includes('api.groq.com'), seen[0].url)
+		check('and answers alone - NVIDIA is never reached', seen.length === 1, seen.length)
+		check('the response names the provider', body.provider === 'groq', body.provider)
+		check('word timings come back in milliseconds', body.words[0].endMs === 600, body.words[0])
+		check('and are not flagged as estimated', body.estimatedTimings === false)
+		check('Devanagari survives', body.words[0].text === 'नमस्ते', body.words[0])
+
+		// The bug that made every Groq request fail: setting Content-Type by hand
+		// replaces the generated multipart boundary with nothing.
+		const headers = seen[0].init.headers ?? {}
+		const headerNames = Object.keys(headers).map((name) => name.toLowerCase())
+		check('no Content-Type header is set, so the multipart boundary survives', !headerNames.includes('content-type'), headerNames)
+		check('the key is sent as a bearer token', /^Bearer /.test(headers.Authorization ?? ''))
+
+		const sent = seen[0].init.body
+		const fields = Object.fromEntries([...sent.entries()].filter(([, v]) => typeof v === 'string'))
+		check('whisper-large-v3 is the model', fields.model === 'whisper-large-v3', fields.model)
+		check('verbose_json is requested', fields.response_format === 'verbose_json')
+		check('temperature is pinned to 0', fields.temperature === '0')
+		check('word timestamps are asked for', [...sent.getAll('timestamp_granularities[]')].includes('word'))
+		check('segment timestamps too', [...sent.getAll('timestamp_granularities[]')].includes('segment'))
+		check('the language is sent as ISO-639-1', fields.language === 'ne', fields.language)
+		check('a prompt is attached', typeof fields.prompt === 'string' && fields.prompt.length > 0)
+
+		/* -- fallback --------------------------------------------------- */
+
+		const calls = []
+		global.fetch = async (url) => {
+			calls.push(String(url))
+			if (String(url).includes('groq')) return nvidiaReply({ error: { message: 'service unavailable' } }, 503)
+			return nvidiaReply({ text: 'hello', words: [{ word: 'hello', start_time: 0, end_time: 500 }] })
+		}
+		body = await (await transcribeRoute.POST(audioRequest())).json()
+		check('a Groq outage falls through to NVIDIA', body.words.length === 1, body)
+		check('Groq was still tried first', calls[0].includes('groq'), calls[0])
+		check('and NVIDIA answered second', calls.length > 1 && !calls[1].includes('groq'), calls)
+
+		// One request, not one per language candidate: Whisper takes one code.
+		const groqOnly = calls.filter((url) => url.includes('groq'))
+		check('Groq is attempted exactly once, not once per locale', groqOnly.length === 1, groqOnly)
+
+		/* -- Groq alone, with no NVIDIA key ------------------------------ */
+
+		delete process.env.NVIDIA_API_KEY
+		global.fetch = async (url) => {
+			if (String(url).includes('groq')) return nvidiaReply({ error: { message: 'rate limited' } }, 429)
+			throw new Error('NVIDIA must not be called without a key')
+		}
+		const response = await transcribeRoute.POST(audioRequest())
+		body = await response.json()
+		check('without an NVIDIA key the failure is reported as Groq\'s', /Groq/.test(body.error), body.error)
+		check('and NVIDIA is not dialled at all', !/nvidia/i.test(body.error ?? ''), body.error)
+
+		const status = await transcribeRoute.GET().json()
+		check('a Groq-only server still reports the cloud as configured', status.configured === true, status)
+		check('and names Groq as the primary', status.primary === 'groq', status.primary)
+		check('the fallback is listed as unavailable', status.providers.find((p) => p.id === 'nvidia').available === false)
+	} finally {
+		delete process.env.GROQ_API_KEY
+		process.env.NVIDIA_API_KEY = 'nvapi-check'
+	}
+
+	const noCloud = (() => {
+		delete process.env.NVIDIA_API_KEY
+		const out = transcribeRoute.GET()
+		process.env.NVIDIA_API_KEY = 'nvapi-check'
+		return out
+	})()
+	const noCloudBody = await noCloud.json()
+	check('with neither key the cloud reports itself off', noCloudBody.configured === false)
+	check('and the reason names the free Groq key first', /GROQ_API_KEY/.test(noCloudBody.reason ?? ''), noCloudBody.reason)
+}
+
 async function main() {
 	checkScript()
 	checkLoanwords()
@@ -1306,6 +1464,7 @@ async function main() {
 	checkTools()
 	checkAss()
 	await checkSubtitleImport()
+	await checkGroqPrimary()
 
 	if (failures > 0) {
 		console.error(`\n${failures} of ${checks} checks failed.`)

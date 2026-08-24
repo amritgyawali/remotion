@@ -124,6 +124,9 @@ renders match frame for frame.
    secret normally starts with `nvapi-`; the credential ID shown in the account
    table is not the API key.
 2. Copy `.env.example` to `.env.local`, set `NVIDIA_API_KEY`, and restart `npm run dev`.
+   For automatic captions, set `GROQ_API_KEY` as well (or instead) - a free key
+   from <https://console.groq.com> is the primary speech recogniser, and either
+   key alone is enough to caption a video.
 3. **Auto** starts with the fastest planner and falls back automatically when a
    model is slow, rate limited or returns something unusable.
 
@@ -169,15 +172,30 @@ Open **Subtitle a video** in the top bar, or go straight to
 2. **Get the transcript**, three ways:
    * **Auto** - speech recognition, with two engines behind one button.
 
-     **NVIDIA cloud** (used first whenever the server has an `NVIDIA_API_KEY`)
-     decodes the audio in the browser, resamples it to 16 kHz mono, conditions
-     it (DC removal, an 85 Hz high-pass under the voice, and a level pass
-     measured over speech only), cuts it in the longest pause near each boundary
-     and uploads those chunks to `/api/captions/transcribe`, which calls
-     NVIDIA's hosted recognisers - Whisper large-v3 for Nepali and the other 98
-     languages, Parakeet and Canary for English and the major European ones. The
-     video never leaves the device, there is nothing to download, and a chunk
-     that fails is retried and then skipped rather than losing the whole
+     **Cloud** (used first whenever the server has any speech key) decodes the
+     audio in the browser, resamples it to 16 kHz mono, conditions it (DC
+     removal, an 85 Hz high-pass under the voice, and a level pass measured over
+     speech only), cuts it in the longest pause near each boundary and uploads
+     those chunks to `/api/captions/transcribe`.
+
+     That route tries **Groq's hosted Whisper large-v3 first** - it is free at
+     <https://console.groq.com>, needs no download, covers 99 languages, writes
+     Devanagari, and returns a measured timestamp for every individual word,
+     which is what the karaoke styles ride on. Each chunk is sent with
+     `temperature=0` (greedy decoding, so the model cannot re-roll a
+     low-confidence segment into an invented one) and a 224-token prompt that
+     *demonstrates* the wanted output rather than instructing it - Whisper has no
+     instruction tuning, and conditions on the prompt as if it were the
+     transcript so far, so an imperative prompt gets transcribed instead of
+     obeyed. See `lib/captions/asr-prompt.ts`. The tail of the previous chunk's
+     transcript rides along too, which keeps a name spelled the same way on both
+     sides of a chunk boundary.
+
+     **NVIDIA** is the automatic fallback when `GROQ_API_KEY` is unset or Groq
+     fails - Whisper large-v3 for Nepali and the other 98 languages, Parakeet and
+     Canary for English and the major European ones. The video never leaves the
+     device, there is nothing to download, and a chunk that fails is retried and
+     then skipped rather than losing the whole
      transcript. When a boundary genuinely cannot be placed in a pause, the next
      chunk carries a second and a half of overlap so the word sitting on the cut
      is transcribed whole by somebody, and the two copies are stitched back into
@@ -468,7 +486,8 @@ your deployment retention policy.
 | --- | --- | --- |
 | `ENABLE_SERVER_RENDER` | unset | Set to `1` to turn on protected Node/Vercel Sandbox rendering. |
 | `RENDER_ACCESS_KEY` | unset | Shared render key. **Required** for both Node and Vercel server rendering. |
-| `NVIDIA_API_KEY` | unset | Server-only `nvapi-…` key for Chat → Remotion generation and for cloud speech recognition in the Subtitle Studio. |
+| `GROQ_API_KEY` | unset | Server-only `gsk_…` key from <https://console.groq.com> (free tier). The **primary** recogniser for Subtitle Studio automatic captions: `whisper-large-v3`, word-level timestamps, 99 languages. |
+| `NVIDIA_API_KEY` | unset | Server-only `nvapi-…` key for Chat → Remotion generation, for the transcript polish pass, and as the **fallback** recogniser when Groq is unset or fails. |
 | `NVIDIA_ASR_GRPC` | `grpc.nvcf.nvidia.com:443` | Riva ASR target. Point it at a self-hosted NIM (`localhost:50051`) to keep audio on your own hardware. |
 | `NVIDIA_ASR_GRPC_INSECURE` | unset | `1` for a plaintext Riva server, `0` to force TLS. Unset means TLS everywhere except loopback. |
 | `NVIDIA_ASR_DISABLE_GRPC` | unset | `1` skips gRPC and uses the HTTP transports only. |

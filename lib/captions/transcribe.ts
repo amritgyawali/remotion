@@ -494,7 +494,7 @@ export async function transcribeToCues(args: TranscribeArgs): Promise<CaptionCue
 export type TranscriptionOutcome = {
 	cues: CaptionCue[]
 	origin: TranscriptOrigin
-	engine: 'nvidia' | 'device'
+	engine: 'cloud' | 'device'
 	/** the recogniser that produced the words, for the UI and the .tsx header */
 	model: string
 	/** anything the user should know that is not an outright failure */
@@ -593,14 +593,14 @@ export async function runTranscription(args: RunTranscriptionArgs): Promise<Tran
 	const status = engine === 'device' ? null : await cloudAsrStatus()
 	assertLive(signal)
 
-	const order: Array<'nvidia' | 'device'> =
-		engine === 'nvidia'
-			? ['nvidia']
+	const order: Array<'cloud' | 'device'> =
+		engine === 'cloud'
+			? ['cloud']
 			: engine === 'device'
 				? ['device']
 				: status?.configured
-					? ['nvidia', 'device']
-					: ['device', 'nvidia']
+					? ['cloud', 'device']
+					: ['device', 'cloud']
 
 	const blob = await sourceBlob(video)
 	assertLive(signal)
@@ -609,8 +609,8 @@ export async function runTranscription(args: RunTranscriptionArgs): Promise<Tran
 
 	for (const attempt of order) {
 		try {
-			if (attempt === 'nvidia') {
-				if (status && !status.configured && engine !== 'nvidia') {
+			if (attempt === 'cloud') {
+				if (status && !status.configured && engine !== 'cloud') {
 					throw new Error(status.reason ?? 'Cloud transcription is not configured on this server.')
 				}
 				const result = await transcribeInCloud({
@@ -668,7 +668,7 @@ export async function runTranscription(args: RunTranscriptionArgs): Promise<Tran
 					onProgress({
 						stage: 'polishing',
 						progress: 0.99,
-						message: 'Tidying punctuation with NVIDIA',
+						message: 'Tidying punctuation',
 					})
 					const refined = await refineCues(cues, { language, signal })
 					cues = refined.cues
@@ -679,9 +679,9 @@ export async function runTranscription(args: RunTranscriptionArgs): Promise<Tran
 				onProgress({ stage: 'done', progress: 1, message: `${result.words.length} words transcribed` })
 				return {
 					cues,
-					origin: 'nvidia',
-					engine: 'nvidia',
-					model: result.model || 'NVIDIA',
+					origin: 'cloud',
+					engine: 'cloud',
+					model: result.model || (result.provider === 'groq' ? 'Groq Whisper' : 'NVIDIA'),
 					notice: notices.length > 0 ? notices.join(' ') : undefined,
 					speech: result.speech,
 					onSpeech: result.alignment.onSpeech,
@@ -739,16 +739,16 @@ export async function runTranscription(args: RunTranscriptionArgs): Promise<Tran
 			}
 		} catch (error) {
 			if (error instanceof TranscriptionCancelled || signal.aborted) throw new TranscriptionCancelled()
-			const label = attempt === 'nvidia' ? 'NVIDIA cloud transcription' : 'On-device transcription'
+			const label = attempt === 'cloud' ? 'Cloud transcription' : 'On-device transcription'
 			failures.push(`${label} failed: ${describeError(error)}`)
 			// A single-engine run has nowhere to fall back to, so the error says
 			// which other engine is still worth trying rather than dead-ending.
 			if (order.length === 1 || attempt === order[order.length - 1]) {
 				const hint =
 					order.length === 1
-						? attempt === 'nvidia'
-							? ' Set the speech engine to Auto or On this device to transcribe without NVIDIA.'
-							: ' Set the speech engine to Auto or NVIDIA cloud to transcribe without a model download.'
+						? attempt === 'cloud'
+							? ' Set the speech engine to Auto or On this device to transcribe without the cloud.'
+							: ' Set the speech engine to Auto or Cloud to transcribe without a model download.'
 						: ''
 				throw new Error(`${failures.join(' Then ')}${hint}`)
 			}

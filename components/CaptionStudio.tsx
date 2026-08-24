@@ -168,7 +168,7 @@ export default function CaptionStudio() {
 	// On by default: a Nepali transcript with कम्प्युटर in it is wrong for every
 	// viewer, and the pass never touches a word that is genuinely Nepali.
 	const [restoreEnglish, setRestoreEnglish] = useState(true)
-	const [engineUsed, setEngineUsed] = useState<'nvidia' | 'device' | null>(null)
+	const [engineUsed, setEngineUsed] = useState<'cloud' | 'device' | null>(null)
 	const [transcribing, setTranscribing] = useState(false)
 	const [transcribeProgress, setTranscribeProgress] = useState<TranscribeProgress>(IDLE_TRANSCRIBE)
 	const [transcribeError, setTranscribeError] = useState<string | null>(null)

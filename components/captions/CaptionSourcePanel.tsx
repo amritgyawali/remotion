@@ -92,7 +92,7 @@ const STAGE_LABEL: Record<TranscribeProgress['stage'], string> = {
 
 const ORIGIN_LABEL: Record<TranscriptOrigin, string> = {
 	whisper: 'transcribed on-device',
-	nvidia: 'transcribed with NVIDIA',
+	cloud: 'transcribed in the cloud',
 	srt: 'imported subtitles',
 	text: 'auto-timed script',
 	none: 'no transcript',
@@ -102,12 +102,12 @@ const ENGINE_OPTIONS: { id: TranscribeEngine; label: string; note: string }[] = 
 	{
 		id: 'auto',
 		label: 'Auto',
-		note: 'Uses NVIDIA when the server has a key, and falls back to this device automatically if anything goes wrong.',
+		note: 'Groq Whisper first, then NVIDIA if Groq is unset or fails, then this device. The right choice unless you have a reason not to be.',
 	},
 	{
-		id: 'nvidia',
-		label: 'NVIDIA cloud',
-		note: 'Only the audio is uploaded, as 16 kHz mono - never the video. Nothing to download, works on any machine, and the strongest option for Nepali.',
+		id: 'cloud',
+		label: 'Cloud (Groq)',
+		note: "Groq's hosted Whisper large-v3 leads - it is free, needs no download, writes Devanagari, and returns a real per-word clock. NVIDIA is the automatic fallback. Only the audio is uploaded, as 16 kHz mono, never the video.",
 	},
 	{
 		id: 'device',
@@ -183,7 +183,7 @@ export default function CaptionSourcePanel({
 	transcribeProgress: TranscribeProgress
 	transcribeError: string | null
 	transcribeNotice: string | null
-	engineUsed: 'nvidia' | 'device' | null
+	engineUsed: 'cloud' | 'device' | null
 	videoError: string | null
 	onVideoFiles: (files: File[]) => void
 	onVideoUrl: (url: string) => void
@@ -265,8 +265,8 @@ export default function CaptionSourcePanel({
 	const cloudReady = cloudStatus?.configured === true
 	// What "Auto" would actually do right now, so every hint below is about the
 	// engine that will really run rather than about the one that was picked.
-	const resolvedEngine: 'nvidia' | 'device' =
-		engine === 'auto' ? (cloudReady ? 'nvidia' : 'device') : engine
+	const resolvedEngine: 'cloud' | 'device' =
+		engine === 'auto' ? (cloudReady ? 'cloud' : 'device') : engine
 	const engineNote = ENGINE_OPTIONS.find((option) => option.id === engine)?.note ?? ''
 	// English-only Whisper builds pin the language; no cloud model does.
 	const englishPinned = resolvedEngine === 'device' && model.englishOnly
@@ -278,7 +278,7 @@ export default function CaptionSourcePanel({
 	const deviceUnavailable = whisperSupport !== null && !whisperSupport.supported
 	const blockedEngine =
 		(resolvedEngine === 'device' && deviceUnavailable && engine === 'device') ||
-		(resolvedEngine === 'nvidia' && engine === 'nvidia' && cloudStatus !== null && !cloudReady)
+		(resolvedEngine === 'cloud' && engine === 'cloud' && cloudStatus !== null && !cloudReady)
 
 	return (
 		<aside className="panel panel--left">
@@ -453,11 +453,11 @@ export default function CaptionSourcePanel({
 									Speech engine
 									<span className="field-value">
 										{engine === 'auto'
-											? resolvedEngine === 'nvidia'
-												? 'auto - NVIDIA'
+											? resolvedEngine === 'cloud'
+												? 'auto - cloud'
 												: 'auto - this device'
-											: resolvedEngine === 'nvidia'
-												? 'NVIDIA'
+											: resolvedEngine === 'cloud'
+												? 'cloud'
 												: 'this device'}
 									</span>
 								</span>
@@ -478,10 +478,10 @@ export default function CaptionSourcePanel({
 								</span>
 							</div>
 
-							{resolvedEngine === 'nvidia' ? (
+							{resolvedEngine === 'cloud' ? (
 								<div className="field">
 									<label className="field-label" htmlFor="cloud-model">
-										NVIDIA model
+										Fallback model
 										<span className="badge badge--muted">
 											{cloudStatus === null
 												? 'checking'
@@ -644,16 +644,16 @@ export default function CaptionSourcePanel({
 											: (whisperSupport?.reason ??
 												'On-device speech recognition is not available in this browser.')}{' '}
 										{engine === 'device'
-											? 'Switch the engine to NVIDIA cloud, or write the transcript by hand.'
-											: 'NVIDIA cloud transcription is used instead - it needs nothing from the browser.'}
+											? 'Switch the engine to Cloud (Groq), or write the transcript by hand.'
+											: 'Cloud transcription is used instead - it needs nothing from the browser.'}
 									</span>
 								</div>
 							) : null}
 
 							{cloudStatus !== null && !cloudReady && engine !== 'device' ? (
-								<div className={`notice ${engine === 'nvidia' ? 'notice--warn' : 'notice--info'}`}>
+								<div className={`notice ${engine === 'cloud' ? 'notice--warn' : 'notice--info'}`}>
 									<span className="notice-icon">
-										{engine === 'nvidia' ? <IconAlert size={14} /> : <IconInfo size={14} />}
+										{engine === 'cloud' ? <IconAlert size={14} /> : <IconInfo size={14} />}
 									</span>
 									<span>
 										{cloudStatus.reason ??
@@ -733,12 +733,12 @@ export default function CaptionSourcePanel({
 									<IconInfo size={14} />
 								</span>
 								<span>
-									{engineUsed === 'nvidia'
-										? 'Transcribed by NVIDIA speech recognition: the studio decoded the audio here, sent it as 16 kHz mono, and every word came back with its own timestamp for karaoke styles.'
+									{engineUsed === 'cloud'
+										? 'Transcribed in the cloud - Groq\'s Whisper large-v3 unless it was unavailable, in which case NVIDIA answered. The studio decoded the audio here and sent it as 16 kHz mono; every word came back on its own measured timestamp, which is what the karaoke styles ride on.'
 										: engineUsed === 'device'
 											? 'Transcribed inside this tab with WebAssembly - the audio never left the machine, and every word carries its own timestamp.'
-											: resolvedEngine === 'nvidia'
-												? 'The studio decodes the audio here and uploads it as 16 kHz mono - the video itself never leaves this device. Every word comes back with its own timestamp for karaoke styles.'
+											: resolvedEngine === 'cloud'
+												? "The studio decodes the audio here and uploads it as 16 kHz mono - the video itself never leaves this device. Groq's Whisper large-v3 goes first and returns a measured timestamp per word, which is what the karaoke styles ride on."
 												: 'Whisper runs inside this tab with WebAssembly. The audio never leaves the machine, and every word gets its own timestamp for karaoke styles.'}
 								</span>
 							</div>
