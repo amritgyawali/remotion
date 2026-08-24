@@ -1,0 +1,349 @@
+@font-face {
+  font-family: 'Mukta';
+  src: url('https://fonts.gstatic.com/s/mukta/v22/UcCO3FwrB3iLTeXxYpFvL8c.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Tiro Devanagari Nepali';
+  src: url('https://fonts.gstatic.com/s/tiro/devanagari/v16/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Noto Sans Devanagari';
+  src: url('https://fonts.gstatic.com/s/notosansdevangari/v27/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Noto Serif Devanagari';
+  src: url('https://fonts.gstatic.com/s/notoserifdevanagari/v27/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Hind';
+  src: url('https://fonts.gstatic.com/s/hind/v15/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Khand';
+  src: url('https://fonts.gstatic.com/s/khand/v15/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Kalam';
+  src: url('https://fonts.gstatic.com/s/kalam/v18/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Yatra One';
+  src: url('https://fonts.gstatic.com/s/yatraone/v13/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Rozha One';
+  src: url('https://fonts.gstatic.com/s/rozhaone/v13/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Martel';
+  src: url('https://fonts.gstatic.com/s/martel/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Martel Sans';
+  src: url('https://fonts.gstatic.com/s/martelsans/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Poppins Devanagari';
+  src: url('https://fonts.gstatic.com/s/poppinsdevanagari/v13/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Baloo 2';
+  src: url('https://fonts.gstatic.com/s/baloo2/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Amita';
+  src: url('https://fonts.gstatic.com/s/amitavimana/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Arya';
+  src: url('https://fonts.gstatic.com/s/arya/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Asar';
+  src: url('https://fonts.gstatic.com/s/asar/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Eczar';
+  src: url('https://fonts.gstatic.com/s/eczar/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Gotu';
+  src: url('https://fonts.gstatic.com/s/gotu/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Glegoo';
+  src: url('https://fonts.gstatic.com/s/glegoo/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Jaini';
+  src: url('https://fonts.gstatic.com/s/jaini/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Jaini Purva';
+  src: url('https://fonts.gstatic.com/s/jainipurya/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Kadwa';
+  src: url('https://fonts.gstatic.com/s/kadwa/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Karma';
+  src: url('https://fonts.gstatic.com/s/karma/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Khula';
+  src: url('https://fonts.gstatic.com/s/khula/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Kurale';
+  src: url('https://fonts.gstatic.com/s/kurale/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Laila';
+  src: url('https://fonts.gstatic.com/s/laila/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Modak';
+  src: url('https://fonts.gstatic.com/s/modak/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Noto Sans Devanagari Condensed';
+  src: url('https://fonts.gstatic.com/s/notosansdevangaricondensed/v27/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Noto Serif Devanagari Condensed';
+  src: url('https://fonts.gstatic.com/s/notoserifdevanagaricondensed/v27/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Rhodium Libre';
+  src: url('https://fonts.gstatic.com/s/rhodiolibre/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Sahitya';
+  src: url('https://fonts.gstatic.com/s/sahitya/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Sarpanch';
+  src: url('https://fonts.gstatic.com/s/sarpanch/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Sumana';
+  src: url('https://fonts.gstatic.com/s/sumana/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Tillana';
+  src: url('https://fonts.gstatic.com/s/tillana/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Vesper Libre';
+  src: url('https://fonts.gstatic.com/s/vesperlibre/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Yantramanav';
+  src: url('https://fonts.gstatic.com/s/yantramanav/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Rajdhani';
+  src: url('https://fonts.gstatic.com/s/rajdhani/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Anek Devanagari';
+  src: url('https://fonts.gstatic.com/s/anekdevanagari/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Teko';
+  src: url('https://fonts.gstatic.com/s/teko/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Ek Mukta';
+  src: url('https://fonts.gstatic.com/s/ekmukta/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Chivo Devanagari';
+  src: url('https://fonts.gstatic.com/s/chivodevanagari/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'IBM Plex Sans Devanagari';
+  src: url('https://fonts.gstatic.com/s/ibmpixelsansdevanagari/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Mangal';
+  src: url('https://fonts.gstatic.com/s/mangal/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Aparajita';
+  src: url('https://fonts.gstatic.com/s/aparajita/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Kokila';
+  src: url('https://fonts.gstatic.com/s/kokila/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Utsaah';
+  src: url('https://fonts.gstatic.com/s/utsaha/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Preeti';
+  src: url('https://fonts.gstatic.com/s/preeti/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Kantipur';
+  src: url('https://fonts.gstatic.com/s/kantipur/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Sagarmatha';
+  src: url('https://fonts.gstatic.com/s/sagarmatha/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Himali';
+  src: url('https://fonts.gstatic.com/s/himali/v12/...') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
