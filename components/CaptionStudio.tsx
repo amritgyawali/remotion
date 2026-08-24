@@ -37,7 +37,16 @@ import {
 	stretchTiming,
 	transformCase,
 } from '../lib/captions/tools'
-import { DEFAULT_CAPTION_STYLE, DEFAULT_LAYOUT, presetById } from '../lib/captions/style-presets'
+import {
+	DEFAULT_CAPTION_SOUND,
+	DEFAULT_CAPTION_STYLE,
+	DEFAULT_LAYOUT,
+	presetById,
+	soundForPreset,
+} from '../lib/captions/style-presets'
+import { buildSoundtrack } from '../lib/captions/sfx'
+import { prefetchWebRenderer } from '../lib/lazy-chunk'
+import { deviceProfile } from '../lib/device'
 import {
 	checkWhisperSupport,
 	loadedWhisperModels,
@@ -63,6 +72,7 @@ import {
 import type {
 	CaptionCue,
 	CaptionLayoutOptions,
+	CaptionSound,
 	CaptionStyle,
 	CaptionStylePresetId,
 	CaptionVideoSource,
@@ -75,6 +85,7 @@ import type {
 import type { CompileResult, RenderSettings, VirtualProject } from '../lib/types'
 import CaptionDesignPanel from './captions/CaptionDesignPanel'
 import CaptionExportPanel from './captions/CaptionExportPanel'
+import CaptionSoundPanel from './captions/CaptionSoundPanel'
 import CaptionToolsPanel, { type ToolsActions } from './captions/CaptionToolsPanel'
 import CaptionSourcePanel, { type TranscriptMode } from './captions/CaptionSourcePanel'
 import CaptionTopBar from './captions/CaptionTopBar'
@@ -145,6 +156,9 @@ export default function CaptionStudio() {
 	const [cues, setCues] = useState<CaptionCue[]>([])
 	const [origin, setOrigin] = useState<TranscriptOrigin>('none')
 	const [style, setStyle] = useState<CaptionStyle>(DEFAULT_CAPTION_STYLE)
+	// The sound layer is its own state rather than part of the style: it belongs
+	// to this clip's mix, not to a look that gets copied between projects.
+	const [sound, setSound] = useState<CaptionSound>(DEFAULT_CAPTION_SOUND)
 	const [layout, setLayout] = useState<CaptionLayoutOptions>(DEFAULT_LAYOUT)
 	const [handEdited, setHandEdited] = useState(false)
 
@@ -181,7 +195,7 @@ export default function CaptionStudio() {
 	)
 	const [compiling, setCompiling] = useState(false)
 	const [compileError, setCompileError] = useState<string | null>(null)
-	const [tab, setTab] = useState<'design' | 'tools' | 'export'>('design')
+	const [tab, setTab] = useState<'design' | 'sound' | 'tools' | 'export'>('design')
 	const [toolNote, setToolNote] = useState<string | null>(null)
 	const [currentFrame, setCurrentFrame] = useState(0)
 	const [isolated, setIsolated] = useState(false)
@@ -260,10 +274,23 @@ export default function CaptionStudio() {
 	const durationMs = video ? Math.round(video.durationInSeconds * 1000) : 0
 	const plan = useMemo(() => (video ? planComposition(video, fps) : null), [video, fps])
 
+	/**
+	 * Where every caption sound lands, computed once from the cues and reused by
+	 * the preview, the export and the .tsx download - so all three are the same
+	 * mix rather than three that happen to agree.
+	 */
+	const soundtrack = useMemo(
+		() =>
+			buildSoundtrack(cues, sound, style, {
+				durationMs: durationMs || undefined,
+			}),
+		[cues, durationMs, sound, style],
+	)
+
 	const source = useMemo(() => {
 		if (!video || !plan) return ''
-		return captionSourceFor({ video, cues, style, plan, origin })
-	}, [cues, origin, plan, style, video])
+		return captionSourceFor({ video, cues, style, sound, plan, origin })
+	}, [cues, origin, plan, sound, style, video])
 
 	// The compiler only re-runs when the timeline itself changes; cue and style
 	// edits are pushed through defaultProps so the preview never reloads the video.
@@ -286,6 +313,34 @@ export default function CaptionStudio() {
 
 	useEffect(() => {
 		setIsolated(typeof window !== 'undefined' && window.crossOriginIsolated === true)
+	}, [])
+
+	/**
+	 * Warm the encoder while the video is being transcribed and styled.
+	 *
+	 * It is a multi-megabyte chunk that used to be fetched at the moment Render
+	 * was pressed - on a phone that download could time out and end the render at
+	 * 0% before a single frame existed. Starting it here means the bytes are
+	 * usually already cached, and a failure now costs nothing because the render
+	 * path fetches it again with retries.
+	 */
+	useEffect(() => {
+		if (!video) return
+		prefetchWebRenderer()
+	}, [video])
+
+	/**
+	 * Phones get settings a phone can finish.
+	 *
+	 * 2x on a 1080p clip is a 4K encode in one browser tab, which is the single
+	 * most reliable way to have the tab killed mid-render. The ceiling is applied
+	 * once, on mount, and the controls stay free afterwards.
+	 */
+	useEffect(() => {
+		const device = deviceProfile()
+		if (!device.mobile) return
+		render.updateSettings({ scale: Math.min(render.settings.scale, device.maxScale), format: 'mp4' })
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [])
 
 	useEffect(() => {
@@ -346,9 +401,17 @@ export default function CaptionStudio() {
 		if (!base || !video) return null
 		return {
 			...base,
-			defaultProps: { src: video.url, captions: cues, captionStyle: style },
+			// Cues, look and the whole sound schedule ride through defaultProps, so
+			// none of them needs a recompile to show up in the preview.
+			defaultProps: {
+				src: video.url,
+				captions: cues,
+				captionStyle: style,
+				captionSound: sound,
+				soundtrack,
+			},
 		}
-	}, [compiled, cues, style, video])
+	}, [compiled, cues, sound, soundtrack, style, video])
 
 	// What the transcript is actually made of, measured rather than assumed -
 	// drives both the font-stack warning and the auto-enable below.
@@ -771,6 +834,10 @@ export default function CaptionStudio() {
 		setStyle((current) => ({ ...current, ...patch }))
 	}, [])
 
+	const handleSound = useCallback((patch: Partial<CaptionSound>) => {
+		setSound((current) => ({ ...current, ...patch }))
+	}, [])
+
 	/* -------------------------------------------------------------- tools */
 
 	/**
@@ -1014,6 +1081,9 @@ export default function CaptionStudio() {
 		(id: CaptionStylePresetId) => {
 			const preset = presetById(id)
 			setStyle(preset.style)
+			// Each look also has a sound it was designed with. It is applied, but
+			// never switched on: a preset must not start making noise by itself.
+			setSound((current) => soundForPreset(id, current))
 			// A preset also carries the line length it was designed for, but never
 			// at the cost of cues that were split or rewritten by hand.
 			if (!handEdited) {
@@ -1066,6 +1136,7 @@ export default function CaptionStudio() {
 	const handleReset = useCallback(() => {
 		handleClearVideo()
 		setStyle(DEFAULT_CAPTION_STYLE)
+		setSound(DEFAULT_CAPTION_SOUND)
 		setLayout(DEFAULT_LAYOUT)
 		setMode('auto')
 	}, [handleClearVideo])
@@ -1277,9 +1348,13 @@ export default function CaptionStudio() {
 
 				<aside className="panel panel--right">
 					<div className="panel-tabs">
-						<div className="segmented">
+						<div className="segmented segmented--wrap">
 							<button data-active={tab === 'design'} onClick={() => setTab('design')}>
 								3 - Design
+							</button>
+							<button data-active={tab === 'sound'} onClick={() => setTab('sound')}>
+								Sound
+								{sound.enabled ? <span className="tab-dot" aria-label="on" /> : null}
 							</button>
 							<button data-active={tab === 'tools'} onClick={() => setTab('tools')}>
 								Tools
@@ -1297,6 +1372,15 @@ export default function CaptionStudio() {
 								scriptMix={scriptMix}
 								onStyle={handleStyle}
 								onPreset={handlePreset}
+							/>
+						) : tab === 'sound' ? (
+							<CaptionSoundPanel
+								sound={sound}
+								style={style}
+								cueCount={cues.length}
+								soundtrack={soundtrack}
+								disabled={render.rendering}
+								onSound={handleSound}
 							/>
 						) : tab === 'tools' ? (
 							<CaptionToolsPanel

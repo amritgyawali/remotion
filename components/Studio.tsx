@@ -5,6 +5,7 @@ import { composeVideoSource } from '../lib/ai/compose'
 import { planStoryboard, promptRequestsThreeDimensional } from '../lib/ai/planner'
 import type { TemplateId } from '../lib/ai/variation'
 import { compileProject } from '../lib/compiler'
+import { prefetchWebRenderer } from '../lib/lazy-chunk'
 import { loadSampleProject, projectFromFiles, projectFromZip } from '../lib/project'
 import { useRenderController } from '../lib/use-render-controller'
 import type { SampleDefinition } from '../lib/samples'
@@ -48,6 +49,18 @@ export default function Studio() {
 
 	const render = useRenderController(INITIAL_SETTINGS)
 	const { reset: resetRender, startRender } = render
+
+	/**
+	 * Warm the encoder chunk as soon as there is something to render.
+	 *
+	 * It is fetched once per visit and is the largest thing the render path
+	 * needs. Downloading it now - while the project is still being edited -
+	 * keeps a slow connection from timing the fetch out at the moment Render is
+	 * pressed, which is how a phone ends up failing at 0%.
+	 */
+	useEffect(() => {
+		if (project) prefetchWebRenderer()
+	}, [project])
 
 	/** Compile whenever the project or its entry file changes. */
 	useEffect(() => {

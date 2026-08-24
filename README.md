@@ -285,7 +285,13 @@ Open **Subtitle a video** in the top bar, or go straight to
      punctuation. The Tools tab ranks the candidates for you.
    * **Reveal**: word by word, whole line, or a typewriter that types each word
      across its own timestamp without the line ever reflowing.
-5. **Work in bulk** in the Tools tab: **align every line to the speech** (reads
+   * **Entrance**: pop, fade, slide, rise, blur, cut - plus three loud ones,
+     **stamp** (lands from oversize and settles with a decaying shake),
+     **whoosh** (flies in from the side it is aligned to, under motion blur) and
+     **glitch** (two frames of RGB tearing before the line resolves). All three
+     work with the word-by-word reveal, and each has a matching sound.
+5. **Give every sentence a sound** in the Sound tab - see below.
+6. **Work in bulk** in the Tools tab: **align every line to the speech** (reads
    the audio, finds where the voice is, and moves each word onto it without
    touching a single line break - the fix for an imported `.srt` cut for a
    different edit, or a hand-typed script), find and replace (word timings
@@ -295,7 +301,7 @@ Open **Subtitle a video** in the top bar, or go straight to
    snapping, splitting long cues, folding short flashes into their neighbour,
    restoring English loanwords on demand, and copy/paste of the whole look as
    JSON.
-6. **Render** with the same browser or server engine the code studio uses. The
+7. **Render** with the same browser or server engine the code studio uses. The
    output carries the original audio unless you mute it. Subtitles also export
    as `.srt`, `.vtt` and a fully styled `.ass` with per-word karaoke tags.
 
@@ -304,6 +310,43 @@ clip and compiled in the tab. **Download the .tsx** to keep it: it is a
 self-contained file with your cues and style baked in, ready for Remotion Studio,
 CI, or a re-upload into the code studio. Captions also export as `.srt` and
 `.vtt`.
+
+### Sound effects for every sentence
+
+A caption that appears in silence reads as a caption. The same caption with a
+90 ms tick under it reads as an edit. The **Sound** tab puts that layer on the
+subtitle track, and it is burned into the rendered video along with the
+captions - no separate audio pass, no editor.
+
+* **Off until you turn it on.** A subtitle tool that quietly adds noise to
+  someone's video is a subtitle tool nobody trusts.
+* **35 effects, all from the studio's own CC0 kit** (`public/assets/audio`), so
+  an export owes no attribution to anyone. Interface, impacts, motion,
+  transitions, accents and foley - each one auditions at the level it will
+  actually be mixed at when you tap it.
+* **Auto matches the entrance.** A stamped line gets an impact, a whoosh gets
+  air, a glitch gets digital stutter, a typewriter gets key strikes. Change the
+  entrance in Design and the sound follows it.
+* **36 takes per family, so sentence 11 does not sound like sentence 10.**
+  Shuffle draws a take per sentence, In order walks them, Same take repeats one
+  - useful when the sound *is* the brand. A pitch drift of a few percent per hit
+  stops a repeated one-shot from sounding looped. All of it is derived from the
+  sentence number, never rolled, so two renders of the same project are
+  identical to the byte.
+* **Levelled per effect.** Every option carries the loudness trim the asset kit
+  measured for it, so 60% is 60% whether you pick a tick or a boom.
+* **Ducking.** The video's own audio dips under each effect - down over 60 ms,
+  held, back up over 220 ms, the shape a broadcast desk would use - so the sound
+  sits with the speech instead of on top of it.
+* **Placement.** Fire on every sentence, on every word (the typewriter texture)
+  or only on the words marked as emphasis. Nudge the timing a few frames early,
+  which is what makes the sound and the caption read as one event, and set a
+  minimum gap so fast speech cannot turn the track into a machine gun.
+
+The whole schedule is written into the downloaded `.tsx` as data - one row per
+hit, with its file, time, level and pitch - so the file you export sounds
+exactly like the preview on any machine that renders it, and silencing one
+sentence is a matter of deleting one line.
 
 ### Nepali + English (code-switched) subtitles
 
@@ -650,11 +693,15 @@ components/
   RenderPanel.tsx       audio, engine, quality preset, format, scale, progress, output
   PlayerCanvas.tsx      dynamic({ ssr: false }) wrapper around @remotion/player
   CaptionStudio.tsx     subtitle state machine: video -> transcript -> cues -> render
-  captions/             source, design and export panels, cue track, preview player
+  captions/             source, design, sound and export panels, cue track, player
+  captions/controls.tsx the sliders, switches and segmented controls both panels use
 lib/
   compiler.ts           sucrase + a tiny CommonJS module graph, runs in the tab
+  source-audit.ts       static warnings about what a browser export cannot do
   module-registry.ts    the modules an upload may import
   browser-render.ts     high-fidelity visual path + audio-aware Remotion web renderer
+  lazy-chunk.ts         retried, prefetched dynamic imports for the heavy chunks
+  device.ts             what this device can encode; the render-time screen wake lock
   use-render-controller.ts  the render pipeline both studios drive
   server-render-client.ts  SSE client for /api/render
   presets.ts            bitrate maths, crf table, H.264 level picker, formats
@@ -663,6 +710,7 @@ lib/
     transcribe.ts       on-device Whisper: model download, resample, word timings
     cues.ts             grouping, retiming, editing, .srt/.vtt in and out
     composition-source.ts  writes the captioned-video .tsx the studio compiles
+    sfx.ts              the sound-effect catalogue and the per-sentence scheduler
     video-source.ts     duration, display size, fps and audio-track probing
     style-presets.ts    the six caption looks and the studio font kit
 samples/                the uploadable examples
@@ -741,6 +789,35 @@ warning when an uploaded file forgets it.
 * **A downloaded caption `.tsx` renders a black video elsewhere** - its
   `VIDEO_SRC` is the `blob:` address from your session. Replace it with a public
   URL or a `staticFile()` path before rendering the file outside the studio.
+* **A downloaded caption `.tsx` renders silently elsewhere** - its `SOUNDTRACK`
+  points at `assets/audio/...` inside this app's `public/` folder. Copy that
+  folder next to the file, or swap the paths for your own.
+* **"Loading chunk N failed (timeout)" when a render starts** - the encoder is a
+  multi-megabyte chunk fetched once per visit, and a weak mobile connection can
+  exceed the fetch timeout. The studio now raises that timeout to ten minutes,
+  starts the download while you are still editing, retries a failed fetch with
+  backoff and waits for the connection to come back before each retry. If it
+  still fails, the network dropped for good - stay on the tab and press Render
+  again.
+
+### Rendering on a phone
+
+Browser rendering happens inside one tab, with that tab's memory. The studio
+measures the device on load and lowers its own ceilings to match, because a
+phone that runs out of room does not report an error - the tab is killed and the
+render simply stops.
+
+* Compositions are planned at up to 1080p or 1440p on a phone rather than 4K,
+  from the form factor and `navigator.deviceMemory`.
+* 1x is the proposed resolution; 2x is still selectable, and marked, because
+  2x on a 1080p clip is a 4K encode in a browser tab.
+* The encoder queue is held to three frames instead of eight, which trades a
+  little throughput for a much smaller memory peak.
+* A **screen wake lock** is taken for the duration of the render and re-taken
+  when you come back to the tab: a phone that locks its screen suspends the tab,
+  which stalls the encoder and then kills the render.
+* Out-of-memory and codec failures are reported with the setting that fixes
+  them rather than the internal message.
 
 ## License
 

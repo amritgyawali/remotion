@@ -14,6 +14,8 @@ import type { TranscriptionItemWithTimestamp, WhisperWebLanguage } from '@remoti
 import { groupWordsIntoCues, type WordTiming } from './cues'
 import { alignmentReport, snapWordsToSpeech } from './align'
 import { detectSpeech, type SpeechSegment } from './vad'
+// One definition of "the chunk never arrived", shared with the render path.
+import { isChunkLoadError } from '../lazy-chunk'
 import type {
 	CaptionCue,
 	CaptionLayoutOptions,
@@ -191,16 +193,6 @@ export class WhisperBundleError extends Error {
 type WhisperWebModule = typeof import('@remotion/whisper-web')
 
 let whisperModule: Promise<WhisperWebModule> | null = null
-
-function isChunkLoadError(error: unknown): boolean {
-	if (!(error instanceof Error)) return false
-	return (
-		error.name === 'ChunkLoadError' ||
-		/loading chunk|failed to fetch dynamically imported module|error loading dynamically imported module|importing a module script failed/i.test(
-			error.message,
-		)
-	)
-}
 
 /**
  * Loads the WebAssembly speech bundle, and survives the one failure mode users
