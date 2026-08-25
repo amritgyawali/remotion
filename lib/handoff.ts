@@ -20,7 +20,7 @@ import { useEffect, useState } from 'react'
 import { readBlob, readSnapshot, removeBlob, removeSnapshot, writeBlob, writeSnapshot } from './persist/idb'
 import type { CaptionCue } from './captions/types'
 
-export type StudioKey = 'captions' | 'silence'
+export type StudioKey = 'captions' | 'silence' | 'tools'
 
 export const HANDOFF_KEY = 'studio:handoff'
 export const HANDOFF_VERSION = 1
@@ -60,8 +60,10 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 
 function normalize(value: unknown): StudioHandoff | null {
 	if (!isObject(value)) return null
-	const from = value.from === 'silence' ? 'silence' : value.from === 'captions' ? 'captions' : null
-	const to = value.to === 'silence' ? 'silence' : value.to === 'captions' ? 'captions' : null
+	const asKey = (input: unknown): StudioKey | null =>
+		input === 'silence' || input === 'captions' || input === 'tools' ? input : null
+	const from = asKey(value.from)
+	const to = asKey(value.to)
 	if (!from || !to) return null
 
 	const number = (input: unknown, fallback: number) =>
