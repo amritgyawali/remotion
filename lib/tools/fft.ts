@@ -84,7 +84,13 @@ export function hannWindow(size: number): Float64Array {
 	return window
 }
 
-export type StftFrame = { magnitude: Float64Array; phase: Float64Array }
+/**
+ * The buffer parameter is bound because these arrays are carried straight
+ * back out to `AudioBuffer.copyToChannel`, which takes only views onto a plain
+ * `ArrayBuffer`. Both `stft` and the phase vocoder build them with
+ * `new Float64Array(n)`, so this states what they already are.
+ */
+export type StftFrame = { magnitude: Float64Array<ArrayBuffer>; phase: Float64Array<ArrayBuffer> }
 
 /**
  * Splits `signal` into overlapping, windowed frames and FFTs each one.
@@ -122,7 +128,13 @@ export function stft(signal: Float32Array, frameSize: number, hopSize: number, f
 }
 
 /** Rebuilds a real signal from STFT frames via inverse FFT and overlap-add. */
-export function istft(frames: StftFrame[], frameSize: number, hopSize: number, fftSize: number, outputLength: number): Float32Array {
+export function istft(
+	frames: StftFrame[],
+	frameSize: number,
+	hopSize: number,
+	fftSize: number,
+	outputLength: number,
+): Float32Array<ArrayBuffer> {
 	const window = hannWindow(frameSize)
 	const output = new Float64Array(outputLength + fftSize)
 	const windowSum = new Float64Array(outputLength + fftSize)

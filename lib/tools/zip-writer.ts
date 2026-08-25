@@ -33,13 +33,20 @@ function dosDateTime(date: Date): { time: number; date: number } {
 	return { time, date: dosValue }
 }
 
-export type ZipEntry = { name: string; data: Uint8Array }
+/**
+ * The buffer parameter is spelled out rather than left as a bare `Uint8Array`,
+ * which would default it to `ArrayBufferLike`. `Blob` only accepts views onto a
+ * plain `ArrayBuffer` - a `SharedArrayBuffer` cannot be handed to it - so
+ * binding the parameter here is what lets the finished parts go straight into
+ * the `Blob` below without a defensive copy.
+ */
+export type ZipEntry = { name: string; data: Uint8Array<ArrayBuffer> }
 
 /** Builds a complete `.zip` file, uncompressed, from a list of named byte arrays. */
 export function buildZip(entries: ZipEntry[]): Blob {
 	const { time, date } = dosDateTime(new Date())
-	const localParts: Uint8Array[] = []
-	const centralParts: Uint8Array[] = []
+	const localParts: Uint8Array<ArrayBuffer>[] = []
+	const centralParts: Uint8Array<ArrayBuffer>[] = []
 	let offset = 0
 
 	for (const entry of entries) {

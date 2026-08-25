@@ -5,7 +5,7 @@ import type { CaptionVideoSource } from '../../lib/captions/types'
 import type { ParamSpec, ToolDef } from '../../lib/tools/registry'
 import type { RunParams } from '../../lib/tools/runners'
 import { formatBytes } from '../../lib/format'
-import { IconUpload } from '../Icons'
+import { IconClose, IconLayers, IconPlus, IconUpload } from '../Icons'
 
 export function resolveMax(spec: Extract<ParamSpec, { type: 'slider' }>, probe: CaptionVideoSource | null): number {
 	if (spec.maxFrom === 'durationSeconds') return probe ? Math.max(spec.step, probe.durationInSeconds) : spec.max
@@ -72,20 +72,25 @@ export default function ToolParamForm({
 	probe,
 	disabled,
 	secondaryFile,
+	batchFiles,
 	onChange,
 	onSecondaryFile,
+	onBatchFiles,
 }: {
 	tool: ToolDef
 	params: RunParams
 	probe: CaptionVideoSource | null
 	disabled: boolean
 	secondaryFile: File | null
+	batchFiles: File[]
 	onChange: (key: string, value: string | number | boolean) => void
 	onSecondaryFile: (file: File | null) => void
+	onBatchFiles: (files: File[]) => void
 }) {
 	const fileRef = useRef<HTMLInputElement>(null)
+	const batchRef = useRef<HTMLInputElement>(null)
 
-	if ((!tool.params || tool.params.length === 0) && !tool.secondaryFile) return null
+	if ((!tool.params || tool.params.length === 0) && !tool.secondaryFile && !tool.multiFile) return null
 
 	return (
 		<div className="stack" style={{ marginTop: 4 }}>
@@ -126,6 +131,77 @@ export default function ToolParamForm({
 						}}
 					/>
 					<span className="field-hint">{tool.secondaryFile.hint}</span>
+				</div>
+			) : null}
+
+			{tool.multiFile ? (
+				<div className="field">
+					<label className="field-label">
+						<span>{tool.multiFile.label}</span>
+						{batchFiles.length > 0 ? (
+							<span className="field-value">
+								{batchFiles.length} {batchFiles.length === 1 ? 'file' : 'files'} -{' '}
+								{formatBytes(batchFiles.reduce((sum, file) => sum + file.size, 0))}
+							</span>
+						) : null}
+					</label>
+
+					{batchFiles.length > 0 ? (
+						<div className="stack" style={{ gap: 4, marginTop: 2 }}>
+							{batchFiles.map((file, index) => (
+								<div className="media-card-head" key={`${file.name}-${file.size}-${file.lastModified}`}>
+									<span className="media-card-icon">
+										<IconLayers size={14} />
+									</span>
+									<div style={{ minWidth: 0 }}>
+										<strong className="media-card-title" title={file.name}>
+											{index + 1}. {file.name}
+										</strong>
+										<span className="media-card-sub">{formatBytes(file.size)}</span>
+									</div>
+									<button
+										className="btn btn--ghost btn--sm"
+										disabled={disabled}
+										aria-label={`Remove ${file.name} from the batch`}
+										onClick={() => onBatchFiles(batchFiles.filter((_, other) => other !== index))}
+									>
+										<IconClose size={12} />
+									</button>
+								</div>
+							))}
+						</div>
+					) : null}
+
+					<div style={{ display: 'flex', gap: 6, marginTop: batchFiles.length > 0 ? 8 : 2 }}>
+						<button className="btn btn--sm" disabled={disabled} onClick={() => batchRef.current?.click()}>
+							<IconPlus size={12} /> {batchFiles.length > 0 ? 'Add more' : 'Add files'}
+						</button>
+						{batchFiles.length > 0 ? (
+							<button className="btn btn--ghost btn--sm" disabled={disabled} onClick={() => onBatchFiles([])}>
+								Clear
+							</button>
+						) : null}
+					</div>
+
+					<input
+						ref={batchRef}
+						type="file"
+						multiple
+						className="sr-only"
+						accept={tool.multiFile.accept}
+						onChange={(event) => {
+							const picked = Array.from(event.target.files ?? [])
+							if (picked.length > 0) {
+								// Re-picking the same file should not queue it twice - the identity
+								// that matters is the file itself, not the order it arrived in.
+								const seen = new Set(batchFiles.map((file) => `${file.name}:${file.size}:${file.lastModified}`))
+								const fresh = picked.filter((file) => !seen.has(`${file.name}:${file.size}:${file.lastModified}`))
+								if (fresh.length > 0) onBatchFiles([...batchFiles, ...fresh])
+							}
+							event.target.value = ''
+						}}
+					/>
+					<span className="field-hint">{tool.multiFile.hint}</span>
 				</div>
 			) : null}
 

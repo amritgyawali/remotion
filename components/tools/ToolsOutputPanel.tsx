@@ -16,6 +16,7 @@ const PHASE_LABEL: Record<string, string> = {
 export default function ToolsOutputPanel({
 	tool,
 	hasVideo,
+	batchCount,
 	webCodecs,
 	output,
 	onOutput,
@@ -31,6 +32,7 @@ export default function ToolsOutputPanel({
 }: {
 	tool: ToolDef | null
 	hasVideo: boolean
+	batchCount: number
 	webCodecs: boolean
 	output: OutputSettings
 	onOutput: (patch: Partial<OutputSettings>) => void
@@ -46,7 +48,11 @@ export default function ToolsOutputPanel({
 }) {
 	const runnable = tool !== null && tool.status === 'ready' && !tool.link
 	const showOutputSettings = runnable && tool.outputKind === 'video'
-	const ready = runnable && hasVideo && webCodecs
+	// A batch tool is gated on its queue instead of the loaded clip, because it
+	// never touches the clip - it runs over the files queued against it.
+	const isBatch = runnable && Boolean(tool.multiFile)
+	const hasInput = isBatch ? batchCount > 0 : hasVideo
+	const ready = runnable && hasInput && webCodecs
 
 	return (
 		<aside className="panel panel--right">
@@ -152,9 +158,17 @@ export default function ToolsOutputPanel({
 						</button>
 					</>
 				) : (
-					<button className="btn btn--primary btn--block btn--lg" disabled={!ready} onClick={onRun}>
-						{tool ? <tool.icon size={14} /> : <IconBolt size={14} />} Run
-					</button>
+					<>
+						<button className="btn btn--primary btn--block btn--lg" disabled={!ready} onClick={onRun}>
+							{tool ? <tool.icon size={14} /> : <IconBolt size={14} />}{' '}
+							{isBatch && batchCount > 0 ? `Run over ${batchCount} ${batchCount === 1 ? 'file' : 'files'}` : 'Run'}
+						</button>
+						{isBatch && batchCount === 0 ? (
+							<div className="notice notice--info" style={{ marginTop: 10 }}>
+								<span>Add the files you want processed on the left, then run them all in one go.</span>
+							</div>
+						) : null}
+					</>
 				)}
 
 				{outputs.length > 0 ? (
