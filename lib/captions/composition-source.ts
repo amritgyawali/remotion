@@ -14,7 +14,8 @@
  */
 
 import { DEVANAGARI_FONTS, fontById, resolveFontWeight } from './fonts'
-import type { CaptionCue, CaptionStyle } from './types'
+import { buildSoundtrack, describeSoundtrack, resolveSfxId, sfxById } from './sfx'
+import type { CaptionCue, CaptionSound, CaptionStyle } from './types'
 
 export const CAPTION_ENTRY_FILE = 'captioned-video.tsx'
 
@@ -31,6 +32,7 @@ export type CaptionSourceInput = {
 	videoName: string
 	cues: CaptionCue[]
 	style: CaptionStyle
+	sound: CaptionSound
 	plan: CompositionPlan
 	/** how the transcript was produced, written into the file header */
 	origin: string
@@ -54,8 +56,24 @@ function cueLiterals(cues: CaptionCue[]): string {
 }
 
 /** Builds the complete, self-contained .tsx for the captioned video. */
+/** One row per sound event - readable in the exported file, not a JSON blob. */
+function soundLiterals(events: ReturnType<typeof buildSoundtrack>): string {
+	if (events.length === 0) return '[]'
+	const rows = events.map(
+		(event) =>
+			`\t{ src: ${JSON.stringify(event.src)}, atMs: ${event.atMs}, durationMs: ${
+				event.durationMs
+			}, volume: ${event.volume}, playbackRate: ${event.playbackRate} },`,
+	)
+	return `[\n${rows.join('\n')}\n]`
+}
+
 export function buildCaptionSource(input: CaptionSourceInput): string {
-	const { videoSrc, videoName, cues, style, plan, origin } = input
+	const { videoSrc, videoName, cues, style, sound, plan, origin } = input
+	const soundtrack = buildSoundtrack(cues, sound, style, {
+		durationMs: (plan.durationInFrames / plan.fps) * 1000,
+	})
+	const sfx = sfxById(resolveSfxId(sound, style))
 	// fontById falls back to Inter rather than throwing: a style pasted from an
 	// older studio version must still produce a renderable file.
 	const font = fontById(style.fontId)
@@ -100,6 +118,7 @@ loadFont({
  * Captions     : ${cues.length} cues, ${words} words
  * Timeline     : ${plan.width}x${plan.height}, ${plan.fps} fps, ${seconds}s
  * Type         : ${font.family}${devanagari ? ` + ${devanagari.family} for Devanagari` : ''}
+ * Sound        : ${sound.enabled ? `${sfx.label} - ${describeSoundtrack(soundtrack, sound)}` : 'off'}
  *
  * How it renders
  *   - every word carries its own timestamp, so the word being spoken can be
@@ -110,6 +129,13 @@ loadFont({
  *     from the frame number, so nothing drifts between preview and render
  *   - an optional gradient scrim fades in under the caption zone, which is what
  *     keeps white type legible over bright or busy footage
+ *   - the sound layer is a plain list of timed events below: each one is a
+ *     <Sequence> holding an <Audio>, and the video's own track ducks under them,
+ *     so the mix is reproducible rather than recorded
+ *
+ * The sound effects come from the studio's CC0 asset kit under
+ * public/assets/audio. Rendering this file outside the studio needs that folder
+ * next to it, or the staticFile() paths in SOUNDTRACK swapped for your own.
  *
  * The video address below is the one the studio used. A blob: address only
  * lives as long as the browser tab that created it, so replace VIDEO_SRC with a
@@ -129,7 +155,7 @@ import {
 	useVideoConfig,
 } from 'remotion'
 import { useMemo } from 'react'
-import { Video } from '@remotion/media'
+import { Audio, Video } from '@remotion/media'
 import { loadFont } from '@remotion/fonts'
 
 /* ------------------------------------------------------------------ data */
@@ -160,6 +186,32 @@ export const CAPTIONS: CaptionCue[] = ${cueLiterals(cues)}
 export const CAPTION_STYLE = ${jsonLiteral(style)}
 
 export type CaptionStyle = typeof CAPTION_STYLE
+
+/** The sound layer, exactly as the studio's panel had it. */
+export const CAPTION_SOUND = ${jsonLiteral(sound)}
+
+export type CaptionSound = typeof CAPTION_SOUND
+
+export type CaptionSoundEvent = {
+	/** path inside public/, resolved with staticFile() at render time */
+	src: string
+	/** when the effect fires, milliseconds on the video's own timeline */
+	atMs: number
+	durationMs: number
+	/** final linear gain: the fader and the effect's loudness trim, combined */
+	volume: number
+	playbackRate: number
+}
+
+/**
+ * Every sound this video plays, already resolved.
+ *
+ * Kept as data rather than computed at render time on purpose: the take each
+ * sentence uses, its pitch and its level were decided once, so this file sounds
+ * the same on every machine that renders it - and you can delete a row here to
+ * silence one sentence without touching anything else.
+ */
+export const SOUNDTRACK: CaptionSoundEvent[] = ${soundLiterals(soundtrack)}
 
 /* ------------------------------------------------------------ typography */
 
@@ -284,6 +336,79 @@ const balanceLines = (tokens: CaptionToken[], maxLines: number): CaptionToken[][
 		}
 	}
 	return best
+}
+
+/* ----------------------------------------------------------------- sound */
+
+/**
+ * The caption sound layer.
+ *
+ * One <Sequence> per event, each holding a single <Audio>. Remotion only mounts
+ * a sequence while it is on screen, so a two minute video with 300 hits still
+ * only ever has a handful of decoders alive - and because every event carries
+ * its own timestamp, seeking backwards replays exactly what was heard before.
+ *
+ * A failed fetch falls back to plain HTML5 audio instead of ending the render:
+ * a missing sound effect is worth a silent moment, never a lost export.
+ */
+const CaptionSoundtrack = ({ events }: { events: CaptionSoundEvent[] }) => {
+	const { fps } = useVideoConfig()
+	if (events.length === 0) return null
+
+	return (
+		<>
+			{events.map((event, index) => {
+				const from = Math.max(0, Math.round((event.atMs / 1000) * fps))
+				const durationInFrames = Math.max(1, Math.ceil((event.durationMs / 1000) * fps))
+				return (
+					<Sequence
+						key={\`sfx-\${index}-\${event.atMs}\`}
+						from={from}
+						durationInFrames={durationInFrames}
+						name={\`sfx \${index + 1}\`}
+						layout="none"
+					>
+						<Audio
+							src={staticFile(event.src)}
+							volume={event.volume}
+							playbackRate={event.playbackRate}
+							onError={() => 'fallback'}
+						/>
+					</Sequence>
+				)
+			})}
+		</>
+	)
+}
+
+/**
+ * How far the video's own audio is pulled down around each effect.
+ *
+ * Down over 60ms, held for the length of the effect, back up over 220ms - the
+ * shape a broadcast desk would use, so speech makes room for the sound instead
+ * of fighting it. It is a pure function of the frame, which is why the preview
+ * and the render duck identically.
+ */
+const duckingGainAt = (timeMs: number, events: CaptionSoundEvent[], duck: number): number => {
+	if (duck <= 0 || events.length === 0) return 1
+	const attackMs = 60
+	const releaseMs = 220
+	let deepest = 0
+
+	for (const event of events) {
+		const start = event.atMs - attackMs
+		const end = event.atMs + event.durationMs + releaseMs
+		if (timeMs < start || timeMs > end) continue
+		const amount =
+			timeMs < event.atMs
+				? (timeMs - start) / attackMs
+				: timeMs <= event.atMs + event.durationMs
+					? 1
+					: 1 - (timeMs - event.atMs - event.durationMs) / releaseMs
+		if (amount > deepest) deepest = amount
+	}
+
+	return 1 - clamp01(deepest) * clamp01(duck)
 }
 
 /* ----------------------------------------------------------------- scrim */
@@ -506,7 +631,7 @@ const CaptionWord = ({
 
 const CueLayer = ({ cue, captionStyle }: { cue: CaptionCue; captionStyle: CaptionStyle }) => {
 	const frame = useCurrentFrame()
-	const { fps, height } = useVideoConfig()
+	const { fps, height, width } = useVideoConfig()
 
 	// Inside a <Sequence> the frame is cue-relative, so the absolute media time
 	// is the cue start plus however far we are into the cue.
@@ -543,16 +668,61 @@ const CueLayer = ({ cue, captionStyle }: { cue: CaptionCue; captionStyle: Captio
 		extrapolateLeft: 'clamp',
 		extrapolateRight: 'clamp',
 	})
-	const opacity = byWord ? exit : animated ? Math.min(fadeIn, exit) : 1
-	const scale = !byWord && captionStyle.animation === 'pop' ? 0.82 + entrance * 0.18 : 1
+	/**
+	 * Entrances.
+	 *
+	 * The original five (pop, fade, slide, rise, blur) are block moves that a
+	 * word-by-word reveal would fight, so they stay off when the words carry
+	 * their own entrance. The three loud ones below - stamp, whoosh, glitch -
+	 * are deliberately allowed in both modes: they read as the line landing,
+	 * which is exactly what a per-word pop layers on top of, and each has a
+	 * matching sound in the effects catalogue.
+	 */
+	const stamped = captionStyle.animation === 'stamp'
+	const whooshed = captionStyle.animation === 'whoosh'
+	const glitched = captionStyle.animation === 'glitch'
+	const loud = stamped || whooshed || glitched
+
+	const opacity =
+		byWord && !loud ? exit : animated ? Math.min(fadeIn, exit) : 1
+	const popScale = !byWord && captionStyle.animation === 'pop' ? 0.82 + entrance * 0.18 : 1
+	// A stamp lands from oversize rather than growing into place, and the shake
+	// decays over the six frames after it hits - a spring alone reads as a bounce,
+	// not as weight.
+	const stampScale = stamped ? 1 + (1 - entrance) * 0.62 : 1
+	const scale = popScale * stampScale
+	const stampShake = stamped
+		? Math.sin(frame * 2.3) * Math.max(0, 1 - frame / 7) * height * 0.007
+		: 0
 	const translateY =
-		!byWord && captionStyle.animation === 'slide'
+		(!byWord && captionStyle.animation === 'slide'
 			? (1 - entrance) * height * 0.045
 			: !byWord && captionStyle.animation === 'rise'
 				? (1 - entrance) * height * 0.02
-				: 0
+				: 0) + stampShake
+	// The whoosh enters from the side it will settle towards, so a left-aligned
+	// caption flies in from the left and never crosses the frame it lands in.
+	const whooshFrom = captionStyle.align === 'right' ? 1 : captionStyle.align === 'left' ? -1 : -1
+	const translateX = whooshed ? (1 - entrance) * width * 0.42 * whooshFrom : 0
+	const skew = whooshed ? (1 - entrance) * -14 * whooshFrom : 0
+
+	/**
+	 * The glitch: two frames of RGB fringing and horizontal tearing before the
+	 * line settles. noise() keeps it deterministic - a glitch that rolled dice
+	 * would differ between the preview and every render of the same frame.
+	 */
+	const glitchPhase = glitched ? clamp01(1 - frame / 6) : 0
+	const glitchX = glitchPhase > 0 ? (noise(frame, 11) - 0.5) * width * 0.035 * glitchPhase : 0
+	const glitchDrop = glitchPhase > 0.02
+		? \`drop-shadow(\${(glitchPhase * height * 0.009).toFixed(1)}px 0 rgba(255, 32, 96, 0.85)) drop-shadow(-\${(
+				glitchPhase * height * 0.009
+			).toFixed(1)}px 0 rgba(0, 224, 255, 0.85))\`
+		: ''
+	const glitchOpacity = glitchPhase > 0 && noise(frame, 29) > 0.78 ? 0.4 : 1
+
 	const blurPx =
-		!byWord && captionStyle.animation === 'blur' ? (1 - entrance) * height * 0.012 : 0
+		(!byWord && captionStyle.animation === 'blur' ? (1 - entrance) * height * 0.012 : 0) +
+		(whooshed ? (1 - entrance) * height * 0.02 : 0)
 
 	const fontSize = (height * captionStyle.fontSizePercent) / 100
 	const shadowColor = captionStyle.shadowColor || '#000000'
@@ -653,11 +823,16 @@ const CueLayer = ({ cue, captionStyle }: { cue: CaptionCue; captionStyle: Captio
 						captionStyle.backdropBlur > 0 ? \`blur(\${captionStyle.backdropBlur}px)\` : undefined,
 					WebkitBackdropFilter:
 						captionStyle.backdropBlur > 0 ? \`blur(\${captionStyle.backdropBlur}px)\` : undefined,
-					opacity,
-					filter: blurPx > 0 ? \`blur(\${blurPx.toFixed(2)}px)\` : undefined,
-					transform: \`translateY(\${translateY.toFixed(2)}px) scale(\${scale.toFixed(
-						3,
-					)}) rotate(\${captionStyle.tilt}deg)\`,
+					opacity: opacity * glitchOpacity,
+					filter:
+						[blurPx > 0 ? \`blur(\${blurPx.toFixed(2)}px)\` : '', glitchDrop]
+							.filter(Boolean)
+							.join(' ') || undefined,
+					transform: \`translate(\${(translateX + glitchX).toFixed(2)}px, \${translateY.toFixed(
+						2,
+					)}px) scale(\${scale.toFixed(3)}) rotate(\${captionStyle.tilt}deg) skewX(\${skew.toFixed(
+						2,
+					)}deg)\`,
 					fontFamily: FONT_STACK,
 					fontWeight: FONT_STATIC_WEIGHT ?? captionStyle.fontWeight,
 					fontSize,
@@ -745,18 +920,40 @@ export const CaptionedVideo = ({
 	src = VIDEO_SRC,
 	captions = CAPTIONS,
 	captionStyle = CAPTION_STYLE,
+	captionSound = CAPTION_SOUND,
+	soundtrack = SOUNDTRACK,
 	showSafeArea = false,
 }: {
 	src?: string
 	captions?: CaptionCue[]
 	captionStyle?: CaptionStyle
+	captionSound?: CaptionSound
+	soundtrack?: CaptionSoundEvent[]
 	showSafeArea?: boolean
 }) => {
 	const { fps } = useVideoConfig()
 
+	// The video's own audio ducks under each caption sound. A plain number when
+	// there is nothing to duck under, so Remotion can skip the per-frame call.
+	const sounds = useMemo(
+		() => (captionSound.enabled ? soundtrack : []),
+		[captionSound.enabled, soundtrack],
+	)
+	const videoVolume = useMemo(() => {
+		if (sounds.length === 0 || captionSound.duck <= 0) return 1
+		return (frame: number) => duckingGainAt((frame / fps) * 1000, sounds, captionSound.duck)
+	}, [captionSound.duck, fps, sounds])
+
 	return (
 		<AbsoluteFill style={{ backgroundColor: '#000000' }}>
-			<Video src={src} objectFit="cover" style={{ width: '100%', height: '100%' }} />
+			<Video
+				src={src}
+				objectFit="cover"
+				style={{ width: '100%', height: '100%' }}
+				volume={videoVolume}
+			/>
+
+			<CaptionSoundtrack events={sounds} />
 
 			{captionStyle.scrim > 0 && captions.length > 0 ? (
 				<CaptionScrim captions={captions} captionStyle={captionStyle} />
@@ -792,7 +989,13 @@ const Root = () => (
 			height={TIMELINE.height}
 			fps={TIMELINE.fps}
 			durationInFrames={TIMELINE.durationInFrames}
-			defaultProps={{ src: VIDEO_SRC, captions: CAPTIONS, captionStyle: CAPTION_STYLE }}
+			defaultProps={{
+				src: VIDEO_SRC,
+				captions: CAPTIONS,
+				captionStyle: CAPTION_STYLE,
+				captionSound: CAPTION_SOUND,
+				soundtrack: SOUNDTRACK,
+			}}
 		/>
 	</>
 )

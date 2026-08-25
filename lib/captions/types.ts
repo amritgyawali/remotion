@@ -67,7 +67,24 @@ export type CaptionHighlight = 'color' | 'box' | 'scale' | 'none'
 
 export type CaptionBackground = 'none' | 'pill' | 'block'
 
-export type CaptionAnimation = 'pop' | 'fade' | 'slide' | 'rise' | 'blur' | 'none'
+/**
+ * How the caption block arrives.
+ *
+ * `stamp`, `whoosh` and `glitch` are the newer, louder three: a stamp lands
+ * from oversize with a shake, a whoosh flies in with motion blur and a glitch
+ * tears the line into RGB before it settles. Each has a sound in the effects
+ * catalogue that was picked to match it, which is what the `auto` sound does.
+ */
+export type CaptionAnimation =
+	| 'pop'
+	| 'fade'
+	| 'slide'
+	| 'rise'
+	| 'blur'
+	| 'stamp'
+	| 'whoosh'
+	| 'glitch'
+	| 'none'
 
 /**
  * `line` brings the whole caption in at once - the readable, broadcast way.
@@ -180,6 +197,52 @@ export type CaptionStyle = {
 	/** words that always get the emphasis colour, matched case-insensitively */
 	emphasisWords: string[]
 	emphasisColor: string
+}
+
+/* --------------------------------------------------------------- sound */
+
+/**
+ * What a caption sounds like as it appears.
+ *
+ * Deliberately kept out of `CaptionStyle`: the look travels between projects as
+ * copied JSON, while the sound layer is tied to the video's own mix - its
+ * volume, its ducking and whether it should exist at all are decisions about
+ * this clip, not about the typography.
+ */
+
+/** `auto` follows the entrance animation; anything else is an id from the kit. */
+export type CaptionSoundEffectId = 'auto' | (string & {})
+
+/**
+ * How consecutive sentences differ from each other.
+ *
+ * `fixed` plays one take every time - correct when a brand sound is the point.
+ * `cycle` walks the family's 36 takes in order, `shuffle` hashes the sentence
+ * index into one of them. Both are pure functions of the index, so a render is
+ * reproducible frame for frame.
+ */
+export type CaptionSoundVariation = 'fixed' | 'cycle' | 'shuffle'
+
+/** What the sound lands on. */
+export type CaptionSoundTrigger = 'sentence' | 'word' | 'emphasis'
+
+export type CaptionSound = {
+	enabled: boolean
+	effectId: CaptionSoundEffectId
+	/** user-facing fader, 0 - 1; the per-effect loudness trim is applied on top */
+	volume: number
+	trigger: CaptionSoundTrigger
+	variation: CaptionSoundVariation
+	/** +/- pitch drift per hit, 0 - 0.2, so a repeated one-shot stops sounding looped */
+	pitchVariation: number
+	/** how far the video's own audio dips under each effect, 0 - 1 */
+	duck: number
+	/** nudge relative to the caption, milliseconds; negative fires early */
+	offsetMs: number
+	/** never fire two effects closer together than this, milliseconds */
+	minGapMs: number
+	/** seed for `shuffle`, so a clip can be re-rolled without touching anything else */
+	seed: string
 }
 
 /** Controls how the word stream is cut into on-screen lines. */

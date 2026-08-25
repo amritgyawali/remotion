@@ -1,5 +1,13 @@
 'use client'
 
+/*
+ * The Devanagari faces are self-hosted and declared in
+ * public/assets/fonts/v1/fonts.css, which app/layout.tsx links once for the
+ * whole app. This file used to import a second, Google-hosted sheet as well;
+ * that sheet was deleted when the faces were brought in-house, and the import
+ * it left behind failed the production build outright.
+ */
+
 import { useMemo, useState } from 'react'
 import {
 	CAPTION_FONT_CATEGORIES,
@@ -28,170 +36,7 @@ import type {
 	ScriptMix,
 } from '../../lib/captions/types'
 import { IconInfo, IconSearch, IconSparkle, IconType } from '../Icons'
-
-/** <input type="color"> only speaks hex, so rgb()/rgba() values are converted. */
-function toHexColor(value: string): string {
-	const trimmed = value.trim()
-	if (trimmed.startsWith('#')) {
-		if (trimmed.length === 4) {
-			return `#${trimmed
-				.slice(1)
-				.split('')
-				.map((char) => char + char)
-				.join('')}`
-		}
-		return trimmed.slice(0, 7)
-	}
-	const match = trimmed.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i)
-	if (!match) return '#ffffff'
-	const hex = match
-		.slice(1, 4)
-		.map((channel) => Number(channel).toString(16).padStart(2, '0'))
-		.join('')
-	return `#${hex}`
-}
-
-function Slider({
-	id,
-	label,
-	value,
-	min,
-	max,
-	step,
-	suffix,
-	disabled,
-	onChange,
-}: {
-	id: string
-	label: string
-	value: number
-	min: number
-	max: number
-	step: number
-	suffix?: string
-	disabled?: boolean
-	onChange: (value: number) => void
-}) {
-	return (
-		<div className="field">
-			<label className="field-label" htmlFor={id}>
-				{label}
-				<span className="field-value">
-					{Number.isInteger(value) ? value : value.toFixed(1)}
-					{suffix ?? ''}
-				</span>
-			</label>
-			<input
-				id={id}
-				className="range"
-				type="range"
-				min={min}
-				max={max}
-				step={step}
-				value={value}
-				disabled={disabled}
-				onChange={(event) => onChange(Number(event.target.value))}
-			/>
-		</div>
-	)
-}
-
-function ColorField({
-	id,
-	label,
-	value,
-	disabled,
-	onChange,
-}: {
-	id: string
-	label: string
-	value: string
-	disabled?: boolean
-	onChange: (value: string) => void
-}) {
-	return (
-		<label className="color-field" htmlFor={id}>
-			<input
-				id={id}
-				type="color"
-				className="color-input"
-				value={toHexColor(value)}
-				disabled={disabled}
-				onChange={(event) => onChange(event.target.value)}
-			/>
-			<span>{label}</span>
-		</label>
-	)
-}
-
-function Segmented<Value extends string>({
-	label,
-	value,
-	options,
-	disabled,
-	wrap,
-	onChange,
-}: {
-	label: string
-	value: Value
-	options: { value: Value; label: string }[]
-	disabled?: boolean
-	wrap?: boolean
-	onChange: (value: Value) => void
-}) {
-	return (
-		<div className="field">
-			<span className="field-label">{label}</span>
-			<div
-				className={`segmented${wrap ? ' segmented--wrap' : ''}`}
-				role="group"
-				aria-label={label}
-			>
-				{options.map((option) => (
-					<button
-						key={option.value}
-						data-active={value === option.value}
-						disabled={disabled}
-						onClick={() => onChange(option.value)}
-					>
-						{option.label}
-					</button>
-				))}
-			</div>
-		</div>
-	)
-}
-
-function Toggle({
-	label,
-	hint,
-	checked,
-	disabled,
-	onChange,
-}: {
-	label: string
-	hint?: string
-	checked: boolean
-	disabled?: boolean
-	onChange: (checked: boolean) => void
-}) {
-	return (
-		<label className="switch-field">
-			<input
-				type="checkbox"
-				checked={checked}
-				disabled={disabled}
-				onChange={(event) => onChange(event.target.checked)}
-			/>
-			<span>
-				<span className="field-label" style={{ display: 'block' }}>
-					{label}
-				</span>
-				{hint ? <span className="switch-hint">{hint}</span> : null}
-			</span>
-		</label>
-	)
-}
+import { ColorField, Segmented, Slider, Toggle } from './controls'
 
 /** The weight slider must not promise a weight a static file cannot draw. */
 function weightRange(fontId: CaptionFontId): { min: number; max: number; variable: boolean } {
@@ -873,6 +718,9 @@ export default function CaptionDesignPanel({
 						value={style.animation}
 						options={[
 							{ value: 'pop' as CaptionAnimation, label: 'Pop' },
+							{ value: 'stamp' as CaptionAnimation, label: 'Stamp' },
+							{ value: 'whoosh' as CaptionAnimation, label: 'Whoosh' },
+							{ value: 'glitch' as CaptionAnimation, label: 'Glitch' },
 							{ value: 'fade' as CaptionAnimation, label: 'Fade' },
 							{ value: 'slide' as CaptionAnimation, label: 'Slide' },
 							{ value: 'rise' as CaptionAnimation, label: 'Rise' },
@@ -883,6 +731,15 @@ export default function CaptionDesignPanel({
 						wrap
 						onChange={(value) => onStyle({ animation: value })}
 					/>
+					<p className="hint-text" style={{ margin: 0 }}>
+						{style.animation === 'stamp'
+							? 'The line lands from oversize and settles with a shake - the loudest of the nine.'
+							: style.animation === 'whoosh'
+								? 'The line flies in from the side under motion blur, in the direction it is aligned.'
+								: style.animation === 'glitch'
+									? 'Two frames of RGB tearing before the line resolves. Deterministic, so every render tears identically.'
+									: 'Stamp, Whoosh and Glitch also work with the word-by-word reveal - and the Sound tab can match an effect to whichever one you pick.'}
+					</p>
 
 					<div className="segmented" role="group" aria-label="Placement">
 						{(['top', 'center', 'bottom'] as CaptionPlacement[]).map((option) => (

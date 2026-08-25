@@ -13,11 +13,14 @@
  * `blobId`; only the id and the measured facts travel in here.
  */
 
-import { DEFAULT_CAPTION_STYLE, DEFAULT_LAYOUT } from './style-presets'
+import { DEFAULT_CAPTION_SOUND, DEFAULT_CAPTION_STYLE, DEFAULT_LAYOUT } from './style-presets'
 import { isCaptionFontId } from './fonts'
 import type {
 	CaptionCue,
 	CaptionLayoutOptions,
+	CaptionSound,
+	CaptionSoundTrigger,
+	CaptionSoundVariation,
 	CaptionStyle,
 	CaptionToken,
 	CaptionVideoSource,
@@ -34,6 +37,9 @@ export const CAPTION_SESSION_VERSION = 1
 export const CAPTION_VIDEO_BLOB_ID = 'captions:video'
 
 export type TranscriptMode = 'auto' | 'write' | 'import'
+
+/** the right-hand panel that was open, so a refresh lands back on it */
+export type CaptionPanelTab = 'design' | 'sound' | 'tools' | 'export'
 
 export type StoredVideoFacts = {
 	/** set for an upload; null when the source was a pasted address */
@@ -56,6 +62,7 @@ export type CaptionSession = {
 	cues: CaptionCue[]
 	origin: TranscriptOrigin
 	style: CaptionStyle
+	sound: CaptionSound
 	layout: CaptionLayoutOptions
 	handEdited: boolean
 	mode: TranscriptMode
@@ -67,7 +74,7 @@ export type CaptionSession = {
 	cloudModel: string | null
 	polish: boolean
 	restoreEnglish: boolean
-	tab: 'design' | 'tools' | 'export'
+	tab: CaptionPanelTab
 	render: RenderSettings
 	/** where speech sits in the audio, so re-cutting lines still breaks on pauses */
 	speech: SpeechSegment[]
@@ -104,7 +111,9 @@ const ORIGINS = ['whisper', 'cloud', 'srt', 'text', 'none'] as const
 const ENGINES = ['auto', 'cloud', 'device'] as const
 const LEGACY_CLOUD = 'nvidia'
 const MODES = ['auto', 'write', 'import'] as const
-const TABS = ['design', 'tools', 'export'] as const
+const TABS = ['design', 'sound', 'tools', 'export'] as const
+const SOUND_TRIGGERS: readonly CaptionSoundTrigger[] = ['sentence', 'word', 'emphasis']
+const SOUND_VARIATIONS: readonly CaptionSoundVariation[] = ['fixed', 'cycle', 'shuffle']
 const WHISPER_MODELS = ['tiny', 'tiny.en', 'base', 'base.en', 'small', 'small.en'] as const
 const RENDER_ENGINES = ['browser', 'server'] as const
 const PRESETS = ['draft', 'high', 'max'] as const
@@ -233,6 +242,29 @@ function normalizeStoredVideo(value: unknown): StoredVideoFacts | null {
 	}
 }
 
+/**
+ * The caption sound mix.
+ *
+ * Every field is clamped to the range the mixer actually accepts, because a
+ * snapshot is user-editable storage: a volume of 40 or a negative gap must come
+ * back as something playable, not as a render that blows the ears off.
+ */
+function normalizeStoredSound(value: unknown): CaptionSound {
+	if (!isObject(value)) return DEFAULT_CAPTION_SOUND
+	return {
+		enabled: bool(value.enabled, DEFAULT_CAPTION_SOUND.enabled),
+		effectId: str(value.effectId, DEFAULT_CAPTION_SOUND.effectId),
+		volume: num(value.volume, DEFAULT_CAPTION_SOUND.volume, 0, 1),
+		trigger: oneOf(value.trigger, SOUND_TRIGGERS, DEFAULT_CAPTION_SOUND.trigger),
+		variation: oneOf(value.variation, SOUND_VARIATIONS, DEFAULT_CAPTION_SOUND.variation),
+		pitchVariation: num(value.pitchVariation, DEFAULT_CAPTION_SOUND.pitchVariation, 0, 0.2),
+		duck: num(value.duck, DEFAULT_CAPTION_SOUND.duck, 0, 1),
+		offsetMs: Math.round(num(value.offsetMs, DEFAULT_CAPTION_SOUND.offsetMs, -2000, 2000)),
+		minGapMs: Math.round(num(value.minGapMs, DEFAULT_CAPTION_SOUND.minGapMs, 0, 10_000)),
+		seed: str(value.seed, DEFAULT_CAPTION_SOUND.seed),
+	}
+}
+
 function normalizeSpeech(value: unknown): SpeechSegment[] {
 	if (!Array.isArray(value)) return []
 	return value
@@ -256,6 +288,7 @@ export function normalizeCaptionSession(
 		cues: normalizeStoredCues(value.cues),
 		origin: oneOf(value.origin === LEGACY_CLOUD ? 'cloud' : value.origin, ORIGINS, 'none'),
 		style: normalizeStoredStyle(value.style),
+		sound: normalizeStoredSound(value.sound),
 		layout: normalizeStoredLayout(value.layout),
 		handEdited: bool(value.handEdited, false),
 		mode: oneOf(value.mode, MODES, 'auto'),

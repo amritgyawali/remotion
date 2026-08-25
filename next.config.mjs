@@ -50,6 +50,20 @@ const nextConfig = {
 				...config.optimization,
 				realContentHash: false,
 			}
+
+			/**
+			 * The render path code-splits its encoder into a chunk of several
+			 * megabytes, and webpack gives every chunk 120 seconds before it
+			 * rejects with "Loading chunk 4882 failed. (timeout: ...)". On a phone
+			 * that is a normal fetch on a weak signal, not a broken deployment, and
+			 * a render that has not encoded a single frame yet would die at 0%.
+			 * Ten minutes lets a slow connection finish; lib/lazy-chunk.ts still
+			 * retries and reports properly if it genuinely cannot be downloaded.
+			 */
+			config.output = {
+				...config.output,
+				chunkLoadTimeout: 600_000,
+			}
 		}
 		return config
 	},

@@ -30,6 +30,7 @@ import * as RemotionMedia from '@remotion/media'
 import * as RemotionGif from '@remotion/gif'
 import * as RemotionFonts from '@remotion/fonts'
 import * as RemotionCaptions from '@remotion/captions'
+import { loadChunk } from './lazy-chunk'
 
 export const MODULE_REGISTRY: Record<string, unknown> = {
 	react: React,
@@ -79,11 +80,13 @@ export async function moduleRegistryForSource(source: string): Promise<Record<st
 	if (!/(?:@remotion\/three|@react-three\/fiber|['"]three(?:\/addons\/[^'"]+)?['"])/.test(source)) {
 		return MODULE_REGISTRY
 	}
+	// three.js is the largest optional chunk in the app, so a slow connection
+	// times its fetch out before anything else. Retried rather than failed.
 	const [RemotionThree, ReactThreeFiber, Three, ThreeGltfLoader] = await Promise.all([
-		import('@remotion/three'),
-		import('@react-three/fiber'),
-		import('three'),
-		import('three/addons/loaders/GLTFLoader.js'),
+		loadChunk(() => import('@remotion/three'), { label: '3D runtime' }),
+		loadChunk(() => import('@react-three/fiber'), { label: '3D renderer' }),
+		loadChunk(() => import('three'), { label: 'three.js' }),
+		loadChunk(() => import('three/addons/loaders/GLTFLoader.js'), { label: 'GLB loader' }),
 	])
 	return {
 		...MODULE_REGISTRY,

@@ -1,5 +1,6 @@
 'use client'
 
+import { useDeviceProfile } from '../../lib/device'
 import { formatBytes, formatSeconds } from '../../lib/format'
 import { computeBitrate, evenDimension, FORMAT_INFO, QUALITY_PRESETS, SCALE_OPTIONS } from '../../lib/presets'
 import type { RenderController } from '../../lib/use-render-controller'
@@ -52,6 +53,7 @@ export default function CaptionExportPanel({
 	onDownloadSource: () => void
 }) {
 	const { settings, capabilities, progress, output, rendering } = render
+	const device = useDeviceProfile()
 	const fps = composition?.fps ?? 30
 	const totalSeconds = composition ? composition.durationInFrames / fps : 0
 	const renderSeconds =
@@ -229,9 +231,33 @@ export default function CaptionExportPanel({
 								disabled={rendering}
 							>
 								{option.label}
+								{option.value > device.maxScale ? ' !' : ''}
 							</button>
 						))}
 					</div>
+					{/*
+					  * Phones do not report that they ran out of room - the tab is simply
+					  * killed mid-render. So the ceiling this device can actually finish
+					  * is stated up front, and the setting above it is marked rather than
+					  * removed: it is still someone's choice to make.
+					  */}
+					{settings.engine === 'browser' && settings.scale > device.maxScale ? (
+						<div className="notice notice--warn" style={{ marginTop: 8 }}>
+							<span className="notice-icon">
+								<IconAlert size={14} />
+							</span>
+							<span>
+								{settings.scale}x on this device encodes {width} x {height} inside one browser tab,
+								which is more than it is likely to finish. 1x is the setting that completes here -
+								or render on the server engine.
+							</span>
+						</div>
+					) : device.constrained && composition ? (
+						<span style={{ fontSize: 11.5, color: 'var(--text-tertiary)' }}>
+							This device renders comfortably up to {device.maxScale}x. Long clips encode fastest
+							with the screen on and this tab in front.
+						</span>
+					) : null}
 				</div>
 
 				<div className="field">

@@ -10,6 +10,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { renderInBrowser, renderStillInBrowser, RenderCancelled, isWebCodecsSupported } from './browser-render'
+import { deviceProfile, keepScreenAwake } from './device'
+import { isChunkLoadError } from './lazy-chunk'
 import { DEFAULT_CAPABILITIES, fetchServerCapabilities, renderOnServer } from './server-render-client'
 import { safeFileName } from './format'
 import { FORMAT_INFO } from './presets'
@@ -23,6 +25,40 @@ import type {
 } from './types'
 
 const IDLE: RenderProgress = { phase: 'idle', progress: 0 }
+
+/**
+ * Turns a raw failure into something a person can act on.
+ *
+ * The browser encoder reports its two most common failures - a chunk that never
+ * arrived and a tab that ran out of memory - in wording that describes webpack
+ * and WebCodecs internals rather than what the person should do next. Phones hit
+ * both far more often than laptops, so each one is translated into the setting
+ * that actually fixes it.
+ */
+function explainRenderFailure(error: unknown, settings: RenderSettings): string {
+	const message = error instanceof Error ? error.message : String(error)
+	const device = deviceProfile()
+
+	if (isChunkLoadError(error)) {
+		return (
+			`${message} The video encoder is downloaded once per visit - stay on this tab while it loads, ` +
+			'then press Render again.'
+		)
+	}
+	if (/out of memory|allocation failed|Array buffer allocation|QuotaExceeded/i.test(message)) {
+		const advice =
+			settings.scale > 1
+				? 'Set the resolution back to 1x'
+				: settings.previewSeconds === 0
+					? 'Render a shorter slice first, or use the Balanced quality preset'
+					: 'Try the Balanced quality preset'
+		return `${message} This device ran out of room for the render. ${advice}.`
+	}
+	if (device.mobile && /decode|codec|encoder|configuration/i.test(message)) {
+		return `${message} On a phone, 1x resolution and the MP4 format are the combination most likely to finish.`
+	}
+	return message
+}
 
 export type StartRenderArgs = {
 	project: VirtualProject
@@ -131,6 +167,11 @@ export function useRenderController(initialSettings: RenderSettings): RenderCont
 				}
 			}
 
+			// A phone that locks its screen suspends this tab, which stalls the
+			// encoder and then kills the render. The lock is released in `finally`.
+			const releaseWakeLock =
+				settings.engine === 'browser' ? await keepScreenAwake() : () => undefined
+
 			try {
 				const result =
 					settings.engine === 'server'
@@ -173,10 +214,11 @@ export function useRenderController(initialSettings: RenderSettings): RenderCont
 				if (renderError instanceof RenderCancelled || controller.signal.aborted) {
 					setProgress({ phase: 'cancelled', progress: 0, message: 'Cancelled' })
 				} else {
-					setError(renderError instanceof Error ? renderError.message : String(renderError))
+					setError(explainRenderFailure(renderError, settings))
 					setProgress({ phase: 'error', progress: 0 })
 				}
 			} finally {
+				releaseWakeLock()
 				abortRef.current = null
 				setRendering(false)
 			}
