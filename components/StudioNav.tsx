@@ -1,6 +1,6 @@
-import { IconCaptions, IconFile, IconFilm } from './Icons'
+import { IconCaptions, IconFile, IconFilm, IconScissors } from './Icons'
 
-export type StudioId = 'video' | 'captions' | 'resume'
+export type StudioId = 'video' | 'captions' | 'silence' | 'resume'
 
 const STUDIOS: Array<{
 	id: StudioId
@@ -22,6 +22,13 @@ const STUDIOS: Array<{
 		label: 'Subtitles',
 		title: 'Transcribe a video and burn in styled captions',
 		icon: IconCaptions,
+	},
+	{
+		id: 'silence',
+		href: '/silence',
+		label: 'Silence',
+		title: 'Find the dead air in a video and cut it or run it fast',
+		icon: IconScissors,
 	},
 	{
 		id: 'resume',
