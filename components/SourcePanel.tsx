@@ -54,6 +54,8 @@ export default function SourcePanel({
 	variant = 'panel',
 	messages,
 	onMessages,
+	prompt,
+	onPrompt,
 	onFiles,
 	onSample,
 	onEntryChange,
@@ -66,6 +68,8 @@ export default function SourcePanel({
 	variant?: 'hero' | 'panel'
 	messages: AiChatMessage[]
 	onMessages: Dispatch<SetStateAction<AiChatMessage[]>>
+	prompt: string
+	onPrompt: Dispatch<SetStateAction<string>>
 	onFiles: (files: File[]) => void
 	onSample: (sample: SampleDefinition) => void
 	onEntryChange: (path: string) => void
@@ -208,6 +212,8 @@ export default function SourcePanel({
 						variant="hero"
 						messages={messages}
 						onMessages={onMessages}
+						prompt={prompt}
+						onPrompt={onPrompt}
 						onGenerate={onAiGenerate}
 					/>
 
@@ -300,6 +306,8 @@ export default function SourcePanel({
 						variant="dock"
 						messages={messages}
 						onMessages={onMessages}
+						prompt={prompt}
+						onPrompt={onPrompt}
 						onGenerate={onAiGenerate}
 					/>
 				</div>

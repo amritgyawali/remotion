@@ -1,7 +1,5 @@
 'use client'
 
-import '/public/assets/fonts/v1/google-deva.css'
-
 import { useMemo, useState } from 'react'
 import {
 	CAPTION_FONT_CATEGORIES,

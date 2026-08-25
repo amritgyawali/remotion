@@ -2,7 +2,14 @@
 
 import dynamic from 'next/dynamic'
 import type { PlayerRef } from '@remotion/player'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	type DragEvent as ReactDragEvent,
+} from 'react'
 import { compileProject } from '../lib/compiler'
 import { downloadBlobUrl, formatSeconds } from '../lib/format'
 import { useRenderController } from '../lib/use-render-controller'
@@ -73,13 +80,42 @@ import type {
 	WhisperModelId,
 } from '../lib/captions/types'
 import type { CompileResult, RenderSettings, VirtualProject } from '../lib/types'
+import {
+	CAPTION_SESSION_KEY,
+	CAPTION_SESSION_VERSION,
+	CAPTION_VIDEO_BLOB_ID,
+	normalizeCaptionSession,
+	videoFactsOf,
+	videoFromFacts,
+	type CaptionSession,
+} from '../lib/captions/session'
+import {
+	readBlob,
+	removeBlob,
+	requestPersistentStorage,
+	writeBlob,
+} from '../lib/persist/idb'
+import { useAutosave, useRestoredSnapshot } from '../lib/persist/use-vault'
 import CaptionDesignPanel from './captions/CaptionDesignPanel'
 import CaptionExportPanel from './captions/CaptionExportPanel'
 import CaptionToolsPanel, { type ToolsActions } from './captions/CaptionToolsPanel'
 import CaptionSourcePanel, { type TranscriptMode } from './captions/CaptionSourcePanel'
 import CaptionTopBar from './captions/CaptionTopBar'
 import CueTrack from './captions/CueTrack'
-import { IconAlert, IconCaptions, IconSpinner } from './Icons'
+import ShortcutSheet from './captions/ShortcutSheet'
+import { RestoreNotice } from './SaveState'
+import {
+	IconAlert,
+	IconCaptions,
+	IconDownload,
+	IconFilm,
+	IconKeyboard,
+	IconSliders,
+	IconSpinner,
+	IconTools,
+	IconType,
+	IconUpload,
+} from './Icons'
 
 const CaptionPlayer = dynamic(() => import('./captions/CaptionPlayer'), {
 	ssr: false,
@@ -99,9 +135,47 @@ const INITIAL_SETTINGS: RenderSettings = {
 	previewSeconds: 0,
 }
 
+const DEFAULT_PROFILE = profileById('nepali-english')
+const DEFAULT_STYLE_SIGNATURE = JSON.stringify(DEFAULT_CAPTION_STYLE)
+const DEFAULT_LAYOUT_SIGNATURE = JSON.stringify(DEFAULT_LAYOUT)
+const DEFAULT_RENDER_SIGNATURE = JSON.stringify(INITIAL_SETTINGS)
+
+function hasCaptionSessionWork(session: CaptionSession): boolean {
+	return Boolean(
+		session.video ||
+			session.cues.length > 0 ||
+			session.transcriptText.trim() ||
+			session.handEdited ||
+			session.fps !== 30 ||
+			session.mode !== 'auto' ||
+			session.speechProfile !== 'nepali-english' ||
+			session.whisperModel !== DEFAULT_PROFILE.model ||
+			session.whisperLanguage !== DEFAULT_PROFILE.language ||
+			session.engine !== 'auto' ||
+			session.cloudModel ||
+			!session.polish ||
+			!session.restoreEnglish ||
+			session.tab !== 'design' ||
+			JSON.stringify(session.style) !== DEFAULT_STYLE_SIGNATURE ||
+			JSON.stringify(session.layout) !== DEFAULT_LAYOUT_SIGNATURE ||
+			JSON.stringify(session.render) !== DEFAULT_RENDER_SIGNATURE,
+	)
+}
+
 const IDLE_TRANSCRIBE: TranscribeProgress = { stage: 'idle', progress: 0 }
 
 const FPS_CHOICES = [24, 25, 30, 50, 60]
+
+/** Checked against a restored snapshot so an unknown profile id cannot stick. */
+const PROFILE_IDS: SpeechProfile['id'][] = ['nepali-english', 'nepali', 'english', 'other']
+
+/**
+ * How coarsely the playhead is remembered.
+ *
+ * Fine enough to come back to the same moment of the edit, coarse enough that
+ * simply watching the preview does not rewrite the whole snapshot every frame.
+ */
+const POSITION_GRAIN_MS = 10_000
 
 /**
  * Container metadata often reports a measured average like 30.66 fps. Snapping
@@ -122,6 +196,22 @@ function downloadText(text: string, fileName: string, mimeType: string): void {
 	downloadBlobUrl(url, fileName)
 	setTimeout(() => URL.revokeObjectURL(url), 4000)
 }
+
+/** A shortcut must never eat a keystroke meant for a caption being typed. */
+function isTypingTarget(target: EventTarget | null): boolean {
+	if (!(target instanceof HTMLElement)) return false
+	if (target.isContentEditable) return true
+	const tag = target.tagName
+	return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+}
+
+type CaptionPane = 'source' | 'preview' | 'design'
+
+const CAPTION_PANES: Array<{ id: CaptionPane; label: string; icon: typeof IconFilm }> = [
+	{ id: 'source', label: 'Source', icon: IconUpload },
+	{ id: 'preview', label: 'Preview', icon: IconFilm },
+	{ id: 'design', label: 'Design', icon: IconSliders },
+]
 
 function cueListsEqual(left: CaptionCue[], right: CaptionCue[]): boolean {
 	return (
@@ -154,8 +244,8 @@ export default function CaptionStudio() {
 	// multilingual small model - the one that actually holds up on Nepali - is
 	// the default rather than something the user has to discover.
 	const [speechProfile, setSpeechProfile] = useState<SpeechProfile['id']>('nepali-english')
-	const [whisperModel, setWhisperModel] = useState<WhisperModelId>(profileById('nepali-english').model)
-	const [whisperLanguage, setWhisperLanguage] = useState(profileById('nepali-english').language)
+	const [whisperModel, setWhisperModel] = useState<WhisperModelId>(DEFAULT_PROFILE.model)
+	const [whisperLanguage, setWhisperLanguage] = useState(DEFAULT_PROFILE.language)
 	const [whisperSupport, setWhisperSupport] = useState<WhisperSupport | null>(null)
 	const [loadedModels, setLoadedModels] = useState<WhisperModelId[]>([])
 	// The cloud engine leads by default: it needs no download, no
@@ -188,6 +278,23 @@ export default function CaptionStudio() {
 	const [placingCaption, setPlacingCaption] = useState(false)
 	const [aligning, setAligning] = useState(false)
 	const [cueHistory, setCueHistory] = useState({ canUndo: false, canRedo: false })
+	const [shortcutsOpen, setShortcutsOpen] = useState(false)
+	/** Which single pane a phone shows; ignored above the tablet break. */
+	const [pane, setPane] = useState<CaptionPane>('source')
+	/** true while a file is being dragged over the preview */
+	const [dragOverStage, setDragOverStage] = useState(false)
+
+	/* --------------------------------------------------------- persistence */
+
+	/** what came back from the vault on this load, for the one-off notice */
+	const [restoredAt, setRestoredAt] = useState<number | null>(null)
+	const [restoreSummary, setRestoreSummary] = useState<string | null>(null)
+	const [restoreWarning, setRestoreWarning] = useState<string | null>(null)
+	/** false when only the settings could be kept - the clip must be re-picked */
+	const [videoBanked, setVideoBanked] = useState(false)
+	const [videoBlobId, setVideoBlobId] = useState<string | null>(null)
+	/** playhead read out of a snapshot, applied once the composition exists */
+	const pendingSeekRef = useRef<number | null>(null)
 
 	/**
 	 * Where speech is in the current video, as measured during transcription.
@@ -213,8 +320,174 @@ export default function CaptionStudio() {
 	// handler on each colour tweak would remount the whole tools panel.
 	const styleRef = useRef(style)
 	styleRef.current = style
+	// Shortcuts read the playhead and the add-cue action through refs so the
+	// key handler is bound once instead of on every frame of playback.
+	const currentMsRef = useRef(0)
+	const handleCueAddRef = useRef<(atMs?: number) => void>(() => {})
+	const handleVideoFilesRef = useRef<(files: File[]) => void>(() => {})
+	const closeShortcuts = useCallback(() => setShortcutsOpen(false), [])
 	const render = useRenderController(INITIAL_SETTINGS)
 	const { reset: resetRender, startRender } = render
+	const { updateSettings: updateRenderSettings } = render
+
+	/**
+	 * Brings the last session back.
+	 *
+	 * Runs once, before anything else is allowed to save, so the empty initial
+	 * state can never overwrite a good snapshot. The clip's bytes are fetched
+	 * from the blob store and handed back as a real File - transcription needs
+	 * to decode the original data, not a re-encoded copy.
+	 */
+	const restore = useRestoredSnapshot<CaptionSession>({
+		key: CAPTION_SESSION_KEY,
+		version: CAPTION_SESSION_VERSION,
+		apply: async (raw, updatedAt) => {
+			const session = normalizeCaptionSession(raw, { render: INITIAL_SETTINGS })
+			if (!session || !hasCaptionSessionWork(session)) return
+
+			setFps(session.fps)
+			cuesRef.current = session.cues
+			setCues(session.cues)
+			setOrigin(session.origin)
+			setStyle(session.style)
+			setLayout(session.layout)
+			setHandEdited(session.handEdited)
+			setMode(session.mode)
+			setTranscriptText(session.transcriptText)
+			if (PROFILE_IDS.includes(session.speechProfile as SpeechProfile['id'])) {
+				setSpeechProfile(session.speechProfile as SpeechProfile['id'])
+			}
+			setWhisperModel(session.whisperModel)
+			setWhisperLanguage(session.whisperLanguage)
+			setEngine(session.engine)
+			setCloudModel(session.cloudModel)
+			setPolish(session.polish)
+			setRestoreEnglish(session.restoreEnglish)
+			setTab(session.tab)
+			updateRenderSettings(session.render)
+			speechRef.current = session.speech
+			pendingSeekRef.current = session.positionMs > 0 ? session.positionMs : null
+
+			let restoredVideo: CaptionVideoSource | null = null
+			if (session.video) {
+				if (session.video.kind === 'file' && session.video.blobId) {
+					const stored = await readBlob(session.video.blobId)
+					const file = stored
+						? new File([stored.blob], stored.name, {
+								type: stored.type,
+								lastModified: stored.lastModified,
+							})
+						: null
+					restoredVideo = videoFromFacts(session.video, file)
+					if (!restoredVideo) {
+						setVideoBlobId(null)
+						setRestoreWarning(
+							`Your captions, timings and design are back, but "${session.video.name}" is no longer in this browser's storage. Drop the same file in again and everything reconnects.`,
+						)
+					}
+				} else {
+					restoredVideo = videoFromFacts(session.video, null)
+				}
+			}
+
+			if (restoredVideo) {
+				setVideoBlobId(session.video?.blobId ?? null)
+				videoRef.current = restoredVideo
+				setVideo(restoredVideo)
+				setVideoBanked(restoredVideo.kind === 'url' || Boolean(session.video?.blobId))
+			}
+
+			setRestoredAt(updatedAt)
+			setRestoreSummary(
+				session.cues.length > 0
+					? `${session.cues.length} caption${session.cues.length === 1 ? '' : 's'}, your timings and the ${session.style.preset} look are exactly where you left them.`
+					: session.video
+						? 'Your video and caption settings are exactly where you left them.'
+						: session.transcriptText.trim()
+							? 'Your script and caption settings are back. Add a video whenever you are ready.'
+							: 'Your caption design and workspace settings are exactly where you left them.',
+			)
+		},
+	})
+
+	const restoring = restore.phase === 'loading'
+
+	/**
+	 * The snapshot, rebuilt whenever anything in it moves.
+	 *
+	 * Kept deliberately flat and JSON-only: the File and the object URL are not
+	 * in here, because bytes belong in the blob store and a blob: URL is dead
+	 * the moment the document that minted it goes away.
+	 */
+	const coarsePositionMs =
+		Math.round((currentFrame / Math.max(1, fps)) * 1000 / POSITION_GRAIN_MS) * POSITION_GRAIN_MS
+
+	const session = useMemo<CaptionSession | null>(() => {
+		if (restoring) return null
+		const next: CaptionSession = {
+			video: video ? videoFactsOf(video, videoBlobId) : null,
+			fps,
+			cues,
+			origin,
+			style,
+			layout,
+			handEdited,
+			mode,
+			transcriptText,
+			speechProfile,
+			whisperModel,
+			whisperLanguage,
+			engine,
+			cloudModel,
+			polish,
+			restoreEnglish,
+			tab,
+			render: render.settings,
+			speech: speechRef.current,
+			positionMs: coarsePositionMs,
+		}
+		return hasCaptionSessionWork(next) ? next : null
+	}, [
+		cloudModel,
+		coarsePositionMs,
+		cues,
+		engine,
+		fps,
+		handEdited,
+		layout,
+		mode,
+		origin,
+		polish,
+		render.settings,
+		restoreEnglish,
+		restoring,
+		speechProfile,
+		style,
+		tab,
+		transcriptText,
+		video,
+		videoBlobId,
+		whisperLanguage,
+		whisperModel,
+	])
+
+	const vault = useAutosave<CaptionSession>({
+		key: CAPTION_SESSION_KEY,
+		version: CAPTION_SESSION_VERSION,
+		data: session,
+		enabled: !restoring,
+	})
+	const { forget: forgetSession, saveNow: saveSessionNow } = vault
+
+	/** Long-running work that must not be interrupted by an editing shortcut. */
+	const busy = transcribing || render.rendering
+
+	// Asked once, and only after there is something worth keeping: an origin with
+	// a gigabyte of video in it is exactly what browsers evict first under
+	// pressure, and the permission is silent in Chrome for a site in regular use.
+	useEffect(() => {
+		if (video) void requestPersistentStorage()
+	}, [video])
 
 	const clearCueHistory = useCallback(() => {
 		cueHistoryRef.current = { past: [], future: [] }
@@ -355,6 +628,7 @@ export default function CaptionStudio() {
 	const scriptMix = useMemo<ScriptMix>(() => scriptMixOf(cues), [cues])
 
 	const currentMs = composition ? (currentFrame / composition.fps) * 1000 : 0
+	currentMsRef.current = currentMs
 
 	const seekToMsRef = useRef<(ms: number) => void>(() => {})
 
@@ -371,6 +645,16 @@ export default function CaptionStudio() {
 		[composition],
 	)
 	seekToMsRef.current = seekToMs
+
+	// A restored playhead is applied the moment there is a player to move, and
+	// then forgotten - otherwise every later recompile would yank the preview
+	// back to where the previous session happened to stop.
+	useEffect(() => {
+		const target = pendingSeekRef.current
+		if (target === null || !composition) return
+		pendingSeekRef.current = null
+		seekToMs(target)
+	}, [composition, seekToMs])
 
 	/**
 	 * Every transcript path lands here, so a fresh set of cues always leaves the
@@ -434,7 +718,30 @@ export default function CaptionStudio() {
 				setTranscribeNotice(null)
 				setEngineUsed(null)
 				setCurrentFrame(0)
+				setRestoreWarning(null)
+				pendingSeekRef.current = null
 				resetRender()
+				// A phone shows one pane at a time: land on the clip, not the form.
+				setPane('preview')
+
+				// Bank the bytes so the clip is still here after a refresh. A pasted
+				// address needs no copy - the address itself is the whole source.
+				if (next.kind === 'url' || !next.file) {
+					setVideoBlobId(null)
+					setVideoBanked(next.kind === 'url')
+					void removeBlob(CAPTION_VIDEO_BLOB_ID)
+					return
+				}
+
+				setVideoBanked(false)
+				const stored = await writeBlob(CAPTION_VIDEO_BLOB_ID, next.file, next.name)
+				setVideoBlobId(stored ? CAPTION_VIDEO_BLOB_ID : null)
+				setVideoBanked(stored)
+				if (!stored) {
+					setVideoError(
+						`Your captions and settings will be saved, but "${next.name}" is too large for this browser to keep (${(next.sizeInBytes / 1024 / 1024).toFixed(0)} MB). After a refresh you would need to pick the file again.`,
+					)
+				}
 			} catch (error) {
 				setVideoError(error instanceof Error ? error.message : String(error))
 			}
@@ -524,6 +831,40 @@ export default function CaptionStudio() {
 		[adoptVideo, handleImportSubtitles],
 	)
 
+	/**
+	 * The whole preview is a drop target, not just the panel tile.
+	 *
+	 * Dragging a clip at the big empty rectangle in the middle is what people
+	 * try first; making that work removes the one step where the tool used to
+	 * say no for no reason.
+	 */
+	const handleStageDragOver = useCallback((event: ReactDragEvent<HTMLElement>) => {
+		if (!event.dataTransfer.types.includes('Files')) return
+		event.preventDefault()
+		event.dataTransfer.dropEffect = 'copy'
+		setDragOverStage(true)
+	}, [])
+
+	const handleStageDragLeave = useCallback((event: ReactDragEvent<HTMLElement>) => {
+		// Only the crossing that actually leaves the stage counts; moving between
+		// children fires dragleave too, and would flicker the overlay.
+		if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+		setDragOverStage(false)
+	}, [])
+
+	const handleStageDrop = useCallback(
+		(event: ReactDragEvent<HTMLElement>) => {
+			const files = Array.from(event.dataTransfer.files)
+			if (files.length === 0) return
+			event.preventDefault()
+			setDragOverStage(false)
+			handleVideoFilesRef.current(files)
+		},
+		[],
+	)
+
+	handleVideoFilesRef.current = handleVideoFiles
+
 	const handleVideoUrl = useCallback(
 		(url: string) => {
 			void adoptVideo({ url })
@@ -551,6 +892,16 @@ export default function CaptionStudio() {
 		setCompiled(null)
 		resetRender()
 		setPlacingCaption(false)
+		setRestoreWarning(null)
+		setCurrentFrame(0)
+		// The timeline rate belongs to the clip that just left, so it goes back to
+		// the default too - otherwise an emptied studio still looks like work in
+		// progress and keeps announcing a session there is nothing left to restore.
+		setFps(30)
+		pendingSeekRef.current = null
+		setVideoBlobId(null)
+		setVideoBanked(false)
+		void removeBlob(CAPTION_VIDEO_BLOB_ID)
 	}, [clearCueHistory, resetRender])
 
 	useEffect(() => {
@@ -756,6 +1107,8 @@ export default function CaptionStudio() {
 		},
 		[commitCues, durationMs, fps],
 	)
+
+	handleCueAddRef.current = handleCueAdd
 
 	const handleShiftAll = useCallback(
 		(deltaMs: number) => {
@@ -1063,14 +1416,75 @@ export default function CaptionStudio() {
 		downloadText(source, downloadFileName(video, 'tsx'), 'text/plain')
 	}, [source, video])
 
+	/**
+	 * Studio-level keys.
+	 *
+	 * The timeline owns the ones that act on the selected caption (nudge, split,
+	 * delete, undo) because only it knows what is selected; these are the ones
+	 * that move the playhead, switch panels, or belong to the document itself.
+	 */
+	useEffect(() => {
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.altKey) return
+			const command = event.ctrlKey || event.metaKey
+
+			if (command && event.key.toLowerCase() === 's') {
+				// Saving a web page is never what someone means in an editor.
+				event.preventDefault()
+				void saveSessionNow()
+				return
+			}
+			if (isTypingTarget(event.target) || command) return
+
+			if (event.key === '?' || (event.key === '/' && event.shiftKey)) {
+				event.preventDefault()
+				setShortcutsOpen((open) => !open)
+				return
+			}
+			if (event.key === 'Escape') {
+				setShortcutsOpen(false)
+				setPlacingCaption(false)
+				return
+			}
+			if (event.key === '1' || event.key === '2' || event.key === '3') {
+				event.preventDefault()
+				setTab(event.key === '1' ? 'design' : event.key === '2' ? 'tools' : 'export')
+				return
+			}
+			if (busy || cuesRef.current.length === 0) return
+
+			const key = event.key.toLowerCase()
+			if (key === 'j' || key === 'l') {
+				event.preventDefault()
+				const here = currentMsRef.current
+				const target =
+					key === 'j'
+						? [...cuesRef.current].reverse().find((cue) => cue.startMs < here - 120)
+						: cuesRef.current.find((cue) => cue.startMs > here + 120)
+				if (target) seekToMsRef.current(target.startMs + 20)
+				return
+			}
+			if (key === 'n') {
+				event.preventDefault()
+				handleCueAddRef.current(currentMsRef.current)
+			}
+		}
+
+		window.addEventListener('keydown', onKeyDown)
+		return () => window.removeEventListener('keydown', onKeyDown)
+	}, [busy, saveSessionNow])
+
 	const handleReset = useCallback(() => {
 		handleClearVideo()
 		setStyle(DEFAULT_CAPTION_STYLE)
 		setLayout(DEFAULT_LAYOUT)
 		setMode('auto')
-	}, [handleClearVideo])
-
-	const busy = transcribing || render.rendering
+		setTab('design')
+		setToolNote(null)
+		setRestoredAt(null)
+		setRestoreSummary(null)
+		void forgetSession()
+	}, [forgetSession, handleClearVideo])
 
 	return (
 		<div className="app">
@@ -1085,13 +1499,24 @@ export default function CaptionStudio() {
 				capabilities={render.capabilities}
 				webCodecs={render.webCodecs}
 				crossOriginIsolated={isolated}
+				save={{ status: vault.status, savedAt: vault.savedAt, error: vault.error }}
 				onReset={handleReset}
-				canReset={video !== null}
+				canReset={video !== null || cues.length > 0 || transcriptText.trim().length > 0}
 			/>
 
-			<div className="workspace workspace--captions">
+			{restore.phase === 'restored' && (restoreSummary || restoreWarning) ? (
+				<RestoreNotice
+					updatedAt={restoredAt}
+					summary={restoreSummary ?? ''}
+					warning={restoreWarning}
+					onDiscard={handleReset}
+				/>
+			) : null}
+
+			<div className="workspace workspace--captions" data-tab={pane}>
 				<CaptionSourcePanel
 					video={video}
+					videoBanked={videoBanked}
 					busy={busy}
 					cues={cues}
 					origin={origin}
@@ -1136,54 +1561,75 @@ export default function CaptionStudio() {
 					onRegroup={handleRegroup}
 				/>
 
-				<section className="panel panel--stage">
+				<section
+					className="panel panel--stage"
+					data-dragging={dragOverStage}
+					onDragOver={handleStageDragOver}
+					onDragLeave={handleStageDragLeave}
+					onDrop={handleStageDrop}
+				>
 					<div className="stage-bar">
-						<span className="chip chip--static">
-							<IconCaptions size={12} /> {cues.length} captions
-						</span>
-						{composition ? (
-							<>
-								<span className="chip chip--static">
-									{composition.width} x {composition.height}
-								</span>
-								<span className="chip chip--static">
-									{formatSeconds(composition.durationInFrames / composition.fps)}
-								</span>
-							</>
-						) : null}
-						<button
-							className="btn btn--sm caption-place-button"
-							data-active={placingCaption}
-							disabled={!composition || busy}
-							onClick={() => setPlacingCaption((value) => !value)}
-							title="Click directly on the video to position every caption"
-						>
-							<IconCaptions size={12} />
-							{placingCaption ? 'Cancel placement' : 'Place on video'}
-						</button>
-						<label className="stage-fps">
-							fps
-							<select
-								className="select"
-								value={fps}
-								disabled={!video || busy}
-								onChange={(event) => setFps(Number(event.target.value))}
-								aria-label="Frames per second"
-							>
-								{Array.from(new Set([...FPS_CHOICES, fps]))
-									.sort((a, b) => a - b)
-									.map((option) => (
-										<option key={option} value={option}>
-											{option}
-										</option>
-									))}
-							</select>
-						</label>
-						{compiling ? (
-							<span className="badge badge--accent">
-								<IconSpinner size={11} /> building preview
+						<div className="stage-bar-group">
+							<span className="chip chip--static">
+								<IconCaptions size={12} /> {cues.length} caption{cues.length === 1 ? '' : 's'}
 							</span>
-						) : null}
+							{composition ? (
+								<>
+									<span className="chip chip--static">
+										{composition.width} x {composition.height}
+									</span>
+									<span className="chip chip--static">
+										{formatSeconds(composition.durationInFrames / composition.fps)}
+									</span>
+								</>
+							) : null}
+							{compiling ? (
+								<span className="badge badge--accent">
+									<IconSpinner size={11} /> building preview
+								</span>
+							) : null}
+						</div>
+
+						<div className="stage-bar-group stage-bar-group--end">
+							<button
+								className="btn btn--sm caption-place-button"
+								data-active={placingCaption}
+								disabled={!composition || busy}
+								onClick={() => setPlacingCaption((value) => !value)}
+								title="Click directly on the video to position every caption"
+							>
+								<IconCaptions size={12} />
+								<span className="btn-label">
+									{placingCaption ? 'Cancel placement' : 'Place on video'}
+								</span>
+							</button>
+							<label className="stage-fps">
+								fps
+								<select
+									className="select"
+									value={fps}
+									disabled={!video || busy}
+									onChange={(event) => setFps(Number(event.target.value))}
+									aria-label="Frames per second"
+								>
+									{Array.from(new Set([...FPS_CHOICES, fps]))
+										.sort((a, b) => a - b)
+										.map((option) => (
+											<option key={option} value={option}>
+												{option}
+											</option>
+										))}
+								</select>
+							</label>
+							<button
+								className="icon-btn"
+								onClick={() => setShortcutsOpen(true)}
+								title="Keyboard shortcuts (?)"
+								aria-label="Keyboard shortcuts"
+							>
+								<IconKeyboard size={14} />
+							</button>
+						</div>
 					</div>
 
 					<div className="stage stage--captions">
@@ -1238,19 +1684,51 @@ export default function CaptionStudio() {
 								) : null}
 							</div>
 						) : (
-							<div className="stage-empty">
+							<div className="stage-empty stage-empty--captions">
 								<span className="stage-empty-mark">
 									<IconCaptions size={24} />
 								</span>
 								<h2>Drop in a video to subtitle</h2>
 								<p>
-									Your clip is read on this device. Generate the transcript with the on-device
-									speech model, or paste your own script, then style the captions and render a
-									finished video with the subtitles burned in.
+									Your clip never leaves this device, and everything you do here is saved to
+									this browser as you work - a refresh mid-edit costs you nothing.
 								</p>
+								<ol className="stage-steps">
+									<li>
+										<b>1</b>
+										<span>
+											<strong>Add the video</strong>
+											MP4, MOV or WebM, or paste a link
+										</span>
+									</li>
+									<li>
+										<b>2</b>
+										<span>
+											<strong>Get the words</strong>
+											Transcribe it, paste a script, or import an .srt
+										</span>
+									</li>
+									<li>
+										<b>3</b>
+										<span>
+											<strong>Style and render</strong>
+											18 presets, then burn the subtitles in
+										</span>
+									</li>
+								</ol>
 							</div>
 						)}
 					</div>
+
+					{dragOverStage ? (
+						<div className="stage-drop" aria-hidden="true">
+							<span className="stage-drop-mark">
+								<IconUpload size={26} />
+							</span>
+							<strong>Drop to subtitle this clip</strong>
+							<small>MP4, MOV or WebM - it is read here and kept in this browser</small>
+						</div>
+					) : null}
 
 					{video ? (
 						<CueTrack
@@ -1277,15 +1755,27 @@ export default function CaptionStudio() {
 
 				<aside className="panel panel--right">
 					<div className="panel-tabs">
-						<div className="segmented">
-							<button data-active={tab === 'design'} onClick={() => setTab('design')}>
-								3 - Design
+						<div className="segmented segmented--icons">
+							<button
+								data-active={tab === 'design'}
+								onClick={() => setTab('design')}
+								title="Design the captions (1)"
+							>
+								<IconType size={13} /> Design
 							</button>
-							<button data-active={tab === 'tools'} onClick={() => setTab('tools')}>
-								Tools
+							<button
+								data-active={tab === 'tools'}
+								onClick={() => setTab('tools')}
+								title="Bulk edit the transcript (2)"
+							>
+								<IconTools size={13} /> Tools
 							</button>
-							<button data-active={tab === 'export'} onClick={() => setTab('export')}>
-								4 - Render
+							<button
+								data-active={tab === 'export'}
+								onClick={() => setTab('export')}
+								title="Render and download (3)"
+							>
+								<IconDownload size={13} /> Render
 							</button>
 						</div>
 					</div>
@@ -1323,6 +1813,26 @@ export default function CaptionStudio() {
 					</div>
 				</aside>
 			</div>
+
+			<nav className="mobile-tabs" aria-label="Subtitle studio sections">
+				{CAPTION_PANES.map((item) => {
+					const Icon = item.icon
+					return (
+						<button
+							key={item.id}
+							className="mobile-tab"
+							data-active={pane === item.id}
+							aria-current={pane === item.id}
+							onClick={() => setPane(item.id)}
+						>
+							<Icon size={17} />
+							{item.label}
+						</button>
+					)
+				})}
+			</nav>
+
+			{shortcutsOpen ? <ShortcutSheet onClose={closeShortcuts} /> : null}
 		</div>
 	)
 }

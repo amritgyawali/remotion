@@ -107,6 +107,8 @@ export default function AiCreator({
 	variant = 'dock',
 	messages,
 	onMessages,
+	prompt,
+	onPrompt,
 	onGenerate,
 }: {
 	busy: boolean
@@ -118,9 +120,16 @@ export default function AiCreator({
 	 */
 	messages: AiChatMessage[]
 	onMessages: Dispatch<SetStateAction<AiChatMessage[]>>
+	/**
+	 * The unsent draft, for the same reason - and one more: a half-written brief
+	 * is often the most valuable thing on screen, so the studio owns it and
+	 * writes it to the local vault as it is typed.
+	 */
+	prompt: string
+	onPrompt: Dispatch<SetStateAction<string>>
 	onGenerate: (request: AiGenerationRequest) => Promise<AiGenerationResult>
 }) {
-	const [prompt, setPrompt] = useState('')
+	const setPrompt = onPrompt
 	const [generating, setGenerating] = useState(false)
 	const [stage, setStage] = useState(0)
 	const chatRef = useRef<HTMLDivElement>(null)
