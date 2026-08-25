@@ -10,15 +10,21 @@ import { loadSampleProject, projectFromFiles, projectFromZip } from '../lib/proj
 import { useRenderController } from '../lib/use-render-controller'
 import type { SampleDefinition } from '../lib/samples'
 import type { CompileResult, RenderSettings, VirtualProject } from '../lib/types'
+import {
+	normalizeStudioSession,
+	STUDIO_SESSION_KEY,
+	STUDIO_SESSION_VERSION,
+	type MobileTab,
+	type StudioSession,
+} from '../lib/studio-session'
+import { useAutosave, useRestoredSnapshot } from '../lib/persist/use-vault'
+import { RestoreNotice } from './SaveState'
 import RenderPanel from './RenderPanel'
 import SourcePanel from './SourcePanel'
 import StagePanel from './StagePanel'
 import TopBar from './TopBar'
 import { IconFilm, IconSliders, IconSparkle } from './Icons'
 import type { AiChatMessage, AiGenerationRequest, AiGenerationResult } from './AiCreator'
-
-/** Which single pane a phone shows; the tab bar under the workspace switches it. */
-type MobileTab = 'create' | 'preview' | 'export'
 
 const MOBILE_TABS: Array<{ id: MobileTab; label: string; icon: typeof IconFilm }> = [
 	{ id: 'create', label: 'Create', icon: IconSparkle },
@@ -46,9 +52,74 @@ export default function Studio() {
 	// Held here, not in the composer: the composer is remounted when the opening
 	// screen gives way to the three-pane studio, and the transcript must survive it.
 	const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([])
+	// The unsent brief, for the same reason - and so a refresh mid-sentence
+	// costs nothing, which is the whole point of the vault below.
+	const [aiPrompt, setAiPrompt] = useState('')
 
 	const render = useRenderController(INITIAL_SETTINGS)
-	const { reset: resetRender, startRender } = render
+	const { reset: resetRender, startRender, updateSettings: updateRenderSettings } = render
+
+	/* --------------------------------------------------------- persistence */
+
+	const [restoredAt, setRestoredAt] = useState<number | null>(null)
+	const [restoreSummary, setRestoreSummary] = useState<string | null>(null)
+
+	/**
+	 * Brings the last session back before anything is allowed to save over it.
+	 *
+	 * A composition is only ever a few files of text, so the project travels in
+	 * the snapshot itself - and the compile effect below picks it up and rebuilds
+	 * the preview exactly as if it had just been generated.
+	 */
+	const restore = useRestoredSnapshot<StudioSession>({
+		key: STUDIO_SESSION_KEY,
+		version: STUDIO_SESSION_VERSION,
+		apply: (raw, updatedAt) => {
+			const session = normalizeStudioSession(raw, { render: INITIAL_SETTINGS })
+			if (!session) return
+
+			if (session.project) setProject(session.project)
+			setSelectedId(session.selectedId)
+			setAiMessages(session.messages)
+			setAiPrompt(session.prompt)
+			updateRenderSettings(session.render)
+			setMobileTab(session.mobileTab)
+
+			if (!session.project && session.messages.length === 0 && !session.prompt.trim()) return
+			setRestoredAt(updatedAt)
+			setRestoreSummary(
+				session.project
+					? `"${session.project.name}" is loaded again, with your prompt history and export settings.`
+					: session.messages.length > 0
+						? 'Your prompt history and export settings are back.'
+						: 'The brief you were writing is back, exactly as you left it.',
+			)
+		},
+	})
+
+	const restoring = restore.phase === 'loading'
+
+	const session = useMemo<StudioSession | null>(() => {
+		// Do not turn a first visit (or Start over) into a phantom workspace.
+		// Passing null also removes any blank snapshot left by an older build.
+		if (restoring || (!project && aiMessages.length === 0 && aiPrompt.trim().length === 0)) return null
+		return {
+			project,
+			selectedId,
+			messages: aiMessages,
+			prompt: aiPrompt,
+			render: render.settings,
+			mobileTab,
+		}
+	}, [aiMessages, aiPrompt, mobileTab, project, render.settings, restoring, selectedId])
+
+	const vault = useAutosave<StudioSession>({
+		key: STUDIO_SESSION_KEY,
+		version: STUDIO_SESSION_VERSION,
+		data: session,
+		enabled: !restoring,
+	})
+	const { forget: forgetSession } = vault
 
 	/**
 	 * Warm the encoder chunk as soon as there is something to render.
@@ -301,7 +372,13 @@ export default function Studio() {
 		setAutoRenderEntry(null)
 		setProject(null)
 		setAiMessages([])
-	}, [resetRender])
+		setAiPrompt('')
+		setSelectedId(null)
+		setCompileError(null)
+		setRestoredAt(null)
+		setRestoreSummary(null)
+		void forgetSession()
+	}, [forgetSession, resetRender])
 
 	const handleRender = useCallback(() => {
 		if (!composition || !project) return
@@ -334,8 +411,16 @@ export default function Studio() {
 				engine={render.settings.engine}
 				capabilities={render.capabilities}
 				webCodecs={render.webCodecs}
+				save={{ status: vault.status, savedAt: vault.savedAt, error: vault.error }}
 				onReset={handleReset}
 			/>
+			{restore.phase === 'restored' && restoreSummary ? (
+				<RestoreNotice
+					updatedAt={restoredAt}
+					summary={restoreSummary}
+					onDiscard={handleReset}
+				/>
+			) : null}
 			{!project ? (
 				/* Nothing loaded yet: one prompt box, full width, no panels to read first. */
 				<SourcePanel
@@ -346,6 +431,8 @@ export default function Studio() {
 					variant="hero"
 					messages={aiMessages}
 					onMessages={setAiMessages}
+					prompt={aiPrompt}
+					onPrompt={setAiPrompt}
 					onFiles={handleFiles}
 					onSample={handleSample}
 					onEntryChange={handleEntryChange}
@@ -361,6 +448,8 @@ export default function Studio() {
 						variant="panel"
 						messages={aiMessages}
 						onMessages={setAiMessages}
+						prompt={aiPrompt}
+						onPrompt={setAiPrompt}
 						onFiles={handleFiles}
 						onSample={handleSample}
 						onEntryChange={handleEntryChange}

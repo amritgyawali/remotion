@@ -271,3 +271,48 @@ export const IconTools = (props: IconProps) => (
 		<path d="M6.5 4.5l2.6 2.6-2 2-2.6-2.6z" />
 	</Base>
 )
+
+export const IconHistory = (props: IconProps) => (
+	<Base {...props}>
+		<path d="M3.5 9A9 9 0 1 1 3 12" />
+		<path d="M3 4v5h5" />
+		<path d="M12 7.5V12l3 1.8" />
+	</Base>
+)
+
+export const IconVault = (props: IconProps) => (
+	<Base {...props}>
+		<ellipse cx="12" cy="6" rx="7.5" ry="3" />
+		<path d="M4.5 6v12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6" />
+		<path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3" />
+	</Base>
+)
+
+export const IconClose = (props: IconProps) => (
+	<Base {...props} strokeWidth={2.1}>
+		<path d="M6 6l12 12M18 6L6 18" />
+	</Base>
+)
+
+export const IconCloudOff = (props: IconProps) => (
+	<Base {...props}>
+		<path d="M6.6 10a5 5 0 0 0 .4 10h9" />
+		<path d="M9.5 5.6A5.5 5.5 0 0 1 18 9.5a4.2 4.2 0 0 1 2.4 7" />
+		<path d="M3 3l18 18" />
+	</Base>
+)
+
+export const IconLayers = (props: IconProps) => (
+	<Base {...props}>
+		<path d="M12 3 3 7.5l9 4.5 9-4.5L12 3Z" />
+		<path d="m3 12.5 9 4.5 9-4.5" />
+		<path d="m3 17 9 4.5 9-4.5" />
+	</Base>
+)
+
+export const IconKeyboard = (props: IconProps) => (
+	<Base {...props}>
+		<rect x="2.5" y="6" width="19" height="12" rx="2" />
+		<path d="M6.5 9.5h.01M10 9.5h.01M13.5 9.5h.01M17 9.5h.01M6.5 12.8h.01M10 12.8h.01M13.5 12.8h.01M17 12.8h.01M8.5 15.6h7" />
+	</Base>
+)

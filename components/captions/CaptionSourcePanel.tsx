@@ -38,6 +38,7 @@ import {
 	IconAlert,
 	IconCheck,
 	IconClock,
+	IconCloudOff,
 	IconCopy,
 	IconDownload,
 	IconFilm,
@@ -51,6 +52,7 @@ import {
 	IconTrash,
 	IconType,
 	IconUpload,
+	IconVault,
 	IconWand,
 } from '../Icons'
 
@@ -118,6 +120,7 @@ const ENGINE_OPTIONS: { id: TranscribeEngine; label: string; note: string }[] = 
 
 export default function CaptionSourcePanel({
 	video,
+	videoBanked,
 	busy,
 	cues,
 	origin,
@@ -162,6 +165,8 @@ export default function CaptionSourcePanel({
 	onRegroup,
 }: {
 	video: CaptionVideoSource | null
+	/** true once the clip's bytes are safely in this browser's local vault */
+	videoBanked: boolean
 	busy: boolean
 	cues: CaptionCue[]
 	origin: TranscriptOrigin
@@ -312,6 +317,17 @@ export default function CaptionSourcePanel({
 								</span>
 								<span className="badge badge--muted">
 									{video.kind === 'file' ? 'on this device' : 'remote URL'}
+								</span>
+								<span
+									className={`badge ${videoBanked ? 'badge--accent' : 'badge--orange'}`}
+									title={
+										videoBanked
+											? 'This clip is kept in your browser, so a refresh brings it straight back'
+											: 'This clip is not kept in your browser - after a refresh you would pick the file again'
+									}
+								>
+									{videoBanked ? <IconVault size={11} /> : <IconCloudOff size={11} />}
+									{videoBanked ? 'kept for next time' : 'not kept'}
 								</span>
 							</div>
 							<div style={{ display: 'flex', gap: 6, marginTop: 12 }}>

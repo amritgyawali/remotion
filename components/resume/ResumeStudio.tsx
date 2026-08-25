@@ -9,7 +9,6 @@ import {
 	normalizeResume,
 	normalizeResumeDesign,
 	resumeToPlainText,
-	type AtsReport,
 	type CareerArtifact,
 	type CareerToolId,
 	type ResumeChatMessage,
@@ -17,6 +16,20 @@ import {
 	type ResumeDesign,
 	type ResumeVersion,
 } from '../../lib/resume/types'
+import {
+	dropLegacyDraft,
+	importLegacyDraft,
+	normalizeResumeSession,
+	RESUME_SESSION_KEY,
+	RESUME_SESSION_VERSION,
+	RESUME_UPLOAD_BLOB_ID,
+	type ResumeSession,
+	type StoredAnalysis,
+	type WorkspaceMode,
+} from '../../lib/resume/session'
+import { readBlob, removeBlob, writeBlob } from '../../lib/persist/idb'
+import { useAutosave, useRestoredSnapshot } from '../../lib/persist/use-vault'
+import { RestoreNotice, SaveBadge } from '../SaveState'
 import { IconAlert, IconCheck, IconFile, IconSparkle, IconSpinner, IconUpload, IconWand } from '../Icons'
 import AtsPanel from './AtsPanel'
 import CareerArtifactPreview from './CareerArtifactPreview'
@@ -26,17 +39,7 @@ import ResumeHeader from './ResumeHeader'
 import ResumePreview from './ResumePreview'
 import ResumeTargetPanel from './ResumeTargetPanel'
 
-type WorkspaceMode = 'create' | 'tailor' | 'toolkit' | 'analyze'
-
-type AnalyzeResult = {
-	fileName: string
-	extractedText: string
-	report: AtsReport
-	recommendations: string[]
-	strengths: string[]
-	model: string | null
-	notice: string | null
-}
+type AnalyzeResult = StoredAnalysis
 
 const STARTERS = [
 	{ label: 'Software engineer', value: 'Create a software engineer resume. I will paste my contact details, experience, education, skills, and verified results below:\n\n' },
@@ -61,6 +64,34 @@ const MODE_COPY: Record<WorkspaceMode, { kicker: string; title: string; descript
 const hasResumeContent = (resume: ResumeData) =>
 	Boolean(resume.contact.name || resume.summary || resume.experience.length || resume.education.length)
 
+const DEFAULT_DESIGN_SIGNATURE = JSON.stringify(DEFAULT_RESUME_DESIGN)
+
+function hasResumeSessionWork(session: ResumeSession): boolean {
+	const { workspace } = session
+	const conversationChanged =
+		session.messages.length !== 1 ||
+		session.messages[0]?.id !== INITIAL_MESSAGE.id ||
+		session.messages[0]?.text !== INITIAL_MESSAGE.text
+
+	return Boolean(
+		hasResumeContent(workspace.resume) ||
+			workspace.jobDescription.trim() ||
+			workspace.targetRole.trim() ||
+			workspace.targetCompany.trim() ||
+			workspace.evidenceNotes.trim() ||
+			workspace.versions.length > 0 ||
+			workspace.artifacts.length > 0 ||
+			JSON.stringify(workspace.design) !== DEFAULT_DESIGN_SIGNATURE ||
+			session.mode !== 'create' ||
+			conversationChanged ||
+			session.prompt.trim() ||
+			session.textView ||
+			session.analysis ||
+			session.uploadBlobId ||
+			session.uploadName,
+	)
+}
+
 export default function ResumeStudio() {
 	const [mode, setMode] = useState<WorkspaceMode>('create')
 	const [resume, setResume] = useState<ResumeData>(EMPTY_RESUME)
@@ -83,11 +114,15 @@ export default function ResumeStudio() {
 	const [analyzing, setAnalyzing] = useState(false)
 	const [analysis, setAnalysis] = useState<AnalyzeResult | null>(null)
 	const [uploadError, setUploadError] = useState('')
-	const [restored, setRestored] = useState(false)
 	const [historyRevision, setHistoryRevision] = useState(0)
+	const [restoredAt, setRestoredAt] = useState<number | null>(null)
+	const [restoreSummary, setRestoreSummary] = useState<string | null>(null)
 	const chatRef = useRef<HTMLDivElement>(null)
 	const undoStack = useRef<ResumeData[]>([])
 	const redoStack = useRef<ResumeData[]>([])
+	/** set while the uploaded document's bytes are banked in the vault */
+	const [uploadBlobId, setUploadBlobId] = useState<string | null>(null)
+	const legacyCheckedRef = useRef(false)
 
 	const deferredJobDescription = useDeferredValue(jobDescription)
 	const report = useMemo(() => scoreResume(resume, deferredJobDescription), [resume, deferredJobDescription])
@@ -106,44 +141,129 @@ export default function ResumeStudio() {
 		setHistoryRevision((value) => value + 1)
 	}
 
-	useEffect(() => {
-		try {
-			const saved = window.localStorage.getItem('rvs-resume-draft')
-			if (saved) {
-				const parsed = JSON.parse(saved) as unknown
-				const workspace = normalizeStoredWorkspace(parsed)
-				if (workspace) {
-					setResume(workspace.resume)
-					setDesign(workspace.design)
-					setJobDescription(workspace.jobDescription)
-					setTargetRole(workspace.targetRole)
-					setTargetCompany(workspace.targetCompany)
-					setEvidenceNotes(workspace.evidenceNotes)
-					setVersions(workspace.versions)
-					setArtifacts(workspace.artifacts)
-					setSelectedArtifactId(workspace.artifacts[0]?.id ?? null)
-				} else if (parsed && typeof parsed === 'object' && (parsed as { version?: unknown }).version === 1) {
-					const legacy = parsed as { resume?: unknown; jobDescription?: unknown }
-					setResume(normalizeResume(legacy.resume))
-					if (typeof legacy.jobDescription === 'string') setJobDescription(legacy.jobDescription.slice(0, 14_000))
+	/* --------------------------------------------------------- persistence */
+
+	const applyWorkspace = (workspace: StoredResumeWorkspace, selectFirstArtifact = true) => {
+		setResume(workspace.resume)
+		setDesign(workspace.design)
+		setJobDescription(workspace.jobDescription)
+		setTargetRole(workspace.targetRole)
+		setTargetCompany(workspace.targetCompany)
+		setEvidenceNotes(workspace.evidenceNotes)
+		setVersions(workspace.versions)
+		setArtifacts(workspace.artifacts)
+		if (selectFirstArtifact) setSelectedArtifactId(workspace.artifacts[0]?.id ?? null)
+	}
+
+	/**
+	 * Brings the last session back - the document, the conversation, the
+	 * half-typed prompt, the uploaded file and its audit.
+	 *
+	 * A draft written by the pre-vault build is imported on the way past, so an
+	 * application in progress survives the upgrade rather than the upgrade.
+	 */
+	const restore = useRestoredSnapshot<ResumeSession>({
+		key: RESUME_SESSION_KEY,
+		version: RESUME_SESSION_VERSION,
+		apply: async (raw, updatedAt) => {
+			const session = normalizeResumeSession(raw)
+			if (!session) return
+
+			applyWorkspace(session.workspace, session.selectedArtifactId === null)
+			if (session.selectedArtifactId) setSelectedArtifactId(session.selectedArtifactId)
+			setMode(session.mode)
+			if (session.messages.length > 0) setMessages(session.messages)
+			setPrompt(session.prompt)
+			setTextView(session.textView)
+			setAnalysis(session.analysis)
+
+			if (session.uploadBlobId) {
+				const stored = await readBlob(session.uploadBlobId)
+				if (stored) {
+					setUploadBlobId(session.uploadBlobId)
+					setSelectedFile(
+						new File([stored.blob], stored.name, {
+							type: stored.type,
+							lastModified: stored.lastModified,
+						}),
+					)
+				} else if (session.uploadName) {
+					setUploadError(
+						`"${session.uploadName}" is no longer stored in this browser. Choose the file again to re-run the check.`,
+					)
 				}
 			}
-		} catch {
-			// A malformed or blocked local draft should never stop the editor.
-		} finally {
-			setRestored(true)
-		}
-	}, [])
 
+			setRestoredAt(updatedAt)
+			const named = session.workspace.resume.contact.name
+			setRestoreSummary(
+				named
+					? `${named}'s resume, ${session.workspace.versions.length} saved version${session.workspace.versions.length === 1 ? '' : 's'} and your conversation are back.`
+					: 'Your draft, target job and conversation are back.',
+			)
+		},
+	})
+
+	const restoring = restore.phase === 'loading'
+
+	// The pre-vault key is read exactly once, and only when the vault came back
+	// empty - otherwise a stale localStorage draft would overwrite newer work.
 	useEffect(() => {
-		if (!restored) return
-		try {
-			const workspace: StoredResumeWorkspace = { version: 2, resume, jobDescription, targetRole, targetCompany, evidenceNotes, design, versions, artifacts }
-			window.localStorage.setItem('rvs-resume-draft', JSON.stringify(workspace))
-		} catch {
-			// Private browsing can deny storage; the live editor remains functional.
+		if (restore.phase !== 'empty' || legacyCheckedRef.current) return
+		legacyCheckedRef.current = true
+		const legacy = importLegacyDraft()
+		if (legacy) {
+			applyWorkspace(legacy)
+			setRestoredAt(Date.now())
+			setRestoreSummary('Your earlier resume draft has been moved into this browser’s new local vault.')
 		}
-	}, [artifacts, design, evidenceNotes, jobDescription, restored, resume, targetCompany, targetRole, versions])
+		dropLegacyDraft()
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [restore.phase])
+
+	const workspace = useMemo<StoredResumeWorkspace>(
+		() => ({ version: 2, resume, jobDescription, targetRole, targetCompany, evidenceNotes, design, versions, artifacts }),
+		[artifacts, design, evidenceNotes, jobDescription, resume, targetCompany, targetRole, versions],
+	)
+
+	const session = useMemo<ResumeSession | null>(() => {
+		if (restoring) return null
+		const next: ResumeSession = {
+			workspace,
+			mode,
+			messages,
+			prompt,
+			textView,
+			selectedArtifactId,
+			analysis,
+			uploadBlobId,
+			uploadName: selectedFile?.name ?? null,
+		}
+		return hasResumeSessionWork(next) ? next : null
+	}, [analysis, messages, mode, prompt, restoring, selectedArtifactId, selectedFile, textView, uploadBlobId, workspace])
+
+	const vault = useAutosave<ResumeSession>({
+		key: RESUME_SESSION_KEY,
+		version: RESUME_SESSION_VERSION,
+		data: session,
+		enabled: !restoring,
+	})
+
+	/** Keeps the chosen document's bytes so an ATS check survives a refresh. */
+	const adoptUpload = (file: File | null) => {
+		setSelectedFile(file)
+		setAnalysis(null)
+		setUploadError('')
+		if (!file) {
+			setUploadBlobId(null)
+			void removeBlob(RESUME_UPLOAD_BLOB_ID)
+			return
+		}
+		setUploadBlobId(null)
+		void writeBlob(RESUME_UPLOAD_BLOB_ID, file, file.name).then((stored) => {
+			setUploadBlobId(stored ? RESUME_UPLOAD_BLOB_ID : null)
+		})
+	}
 
 	useEffect(() => {
 		if (!generating) {
@@ -270,7 +390,6 @@ export default function ResumeStudio() {
 	}
 
 	const exportBackup = () => {
-		const workspace: StoredResumeWorkspace = { version: 2, resume, jobDescription, targetRole, targetCompany, evidenceNotes, design, versions, artifacts }
 		downloadTextFile(`${safeDocumentName(resume.contact.name || 'resume-studio')}-backup.json`, JSON.stringify(workspace, null, 2), 'application/json')
 	}
 
@@ -303,10 +422,18 @@ export default function ResumeStudio() {
 		setSelectedArtifactId(null)
 		setAnalysis(null)
 		setSelectedFile(null)
+		setMode('create')
+		setTextView(false)
+		setUploadError('')
+		setRestoredAt(null)
+		setRestoreSummary(null)
 		undoStack.current = []
 		redoStack.current = []
+		setUploadBlobId(null)
 		setHistoryRevision((value) => value + 1)
-		window.localStorage.removeItem('rvs-resume-draft')
+		void vault.forget()
+		void removeBlob(RESUME_UPLOAD_BLOB_ID)
+		dropLegacyDraft()
 	}
 
 	const stages = ['Reading your facts', 'Matching the target role', 'Writing achievement bullets', 'Running ATS checks']
@@ -315,6 +442,9 @@ export default function ResumeStudio() {
 	return (
 		<div className="app resume-app">
 			<ResumeHeader />
+			{restore.phase !== 'loading' && restoreSummary ? (
+				<RestoreNotice updatedAt={restoredAt} summary={restoreSummary} onDiscard={resetDraft} discardLabel="Clear workspace" />
+			) : null}
 			<div className="resume-workspace">
 				<aside className="resume-controls">
 					<div className="resume-mode-tabs resume-mode-tabs--advanced" role="tablist" aria-label="Resume tools">
@@ -358,15 +488,18 @@ export default function ResumeStudio() {
 							<><CareerToolkitPanel activeTool={activeCareerTool} artifacts={artifacts} canGenerate={canDownload} onGenerate={(tool) => void generateCareerArtifact(tool)} />{careerError ? <div className="notice notice--error"><IconAlert className="notice-icon" size={13} /><span>{careerError}</span></div> : null}</>
 						) : (
 							<div className="resume-upload-flow">
-								<label className="resume-dropzone" data-selected={Boolean(selectedFile)}><input type="file" accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" onChange={(event) => { setSelectedFile(event.target.files?.[0] ?? null); setAnalysis(null); setUploadError('') }} /><span className="resume-drop-icon"><IconUpload size={20} /></span><strong>{selectedFile ? selectedFile.name : 'Choose your resume'}</strong><small>{selectedFile ? `${(selectedFile.size / 1024).toFixed(0)} KB · click to replace` : 'PDF, DOCX, or TXT · maximum 6 MB'}</small></label>
+								<label className="resume-dropzone" data-selected={Boolean(selectedFile)}><input type="file" accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" onChange={(event) => adoptUpload(event.target.files?.[0] ?? null)} /><span className="resume-drop-icon"><IconUpload size={20} /></span><strong>{selectedFile ? selectedFile.name : 'Choose your resume'}</strong><small>{selectedFile ? `${(selectedFile.size / 1024).toFixed(0)} KB · click to replace` : 'PDF, DOCX, or TXT · maximum 6 MB'}</small></label>
 								<button className="btn btn--primary btn--lg" disabled={!selectedFile || analyzing} onClick={() => void analyze()}>{analyzing ? <IconSpinner size={14} /> : <IconFile size={14} />}{analyzing ? 'Reading and scoring...' : 'Check ATS score'}</button>
 								{uploadError ? <div className="notice notice--error"><IconAlert className="notice-icon" size={13} /><span>{uploadError}</span></div> : null}
-								<div className="resume-privacy-note">Your document is processed for this request and is not stored by this app. Resume text is sent to NVIDIA only for qualitative recommendations.</div>
+								<div className="resume-privacy-note">Your document stays on this device - kept in this browser so a refresh does not lose it, and never stored on a server. Resume text is sent to NVIDIA only for qualitative recommendations.</div>
 								{analysis ? <button className="btn btn--secondary resume-improve-button" disabled={generating} onClick={improveUploaded}><IconWand size={13} /> Rebuild in editable studio</button> : null}
 							</div>
 						)}
 					</div>
-					<div className="resume-control-footer"><span>Auto-saved locally · free tools</span><button type="button" onClick={resetDraft}>Clear workspace</button></div>
+					<div className="resume-control-footer">
+						<SaveBadge status={vault.status} savedAt={vault.savedAt} error={vault.error} />
+						<button type="button" onClick={resetDraft}>Clear workspace</button>
+					</div>
 				</aside>
 
 				<main className="resume-preview-stage">

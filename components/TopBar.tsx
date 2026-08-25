@@ -3,6 +3,8 @@
 import { IconBrowser, IconLogo, IconServer, IconTrash } from './Icons'
 import StudioNav from './StudioNav'
 import ThemeToggle from './ThemeToggle'
+import { SaveBadge } from './SaveState'
+import type { VaultStatus } from '../lib/persist/use-vault'
 import type { RenderEngine, ServerCapabilities, VirtualProject } from '../lib/types'
 
 export default function TopBar({
@@ -10,12 +12,14 @@ export default function TopBar({
 	engine,
 	capabilities,
 	webCodecs,
+	save,
 	onReset,
 }: {
 	project: VirtualProject | null
 	engine: RenderEngine
 	capabilities: ServerCapabilities
 	webCodecs: boolean
+	save: { status: VaultStatus; savedAt: number | null; error: string | null }
 	onReset: () => void
 }) {
 	const engineLabel =
@@ -44,6 +48,8 @@ export default function TopBar({
 					{project.name}
 				</span>
 			) : null}
+
+			<SaveBadge status={save.status} savedAt={save.savedAt} error={save.error} />
 
 			<span
 				className={`badge ${engine === 'server' ? 'badge--orange' : webCodecs ? 'badge--green' : 'badge--red'}`}
