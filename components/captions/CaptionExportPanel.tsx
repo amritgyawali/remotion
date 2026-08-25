@@ -13,6 +13,7 @@ import {
 	IconDownload,
 	IconFile,
 	IconPlay,
+	IconScissors,
 	IconServer,
 	IconSpinner,
 	IconStop,
@@ -37,19 +38,23 @@ export default function CaptionExportPanel({
 	composition,
 	video,
 	cueCount,
+	sendToSilenceState,
 	onRender,
 	onDownloadSrt,
 	onDownloadVtt,
 	onDownloadSource,
+	onSendToSilence,
 }: {
 	render: RenderController
 	composition: CompiledComposition | null
 	video: CaptionVideoSource | null
 	cueCount: number
+	sendToSilenceState: 'idle' | 'sending' | 'sent' | 'failed'
 	onRender: () => void
 	onDownloadSrt: () => void
 	onDownloadVtt: () => void
 	onDownloadSource: () => void
+	onSendToSilence: () => void
 }) {
 	const { settings, capabilities, progress, output, rendering } = render
 	const fps = composition?.fps ?? 30
@@ -357,6 +362,51 @@ export default function CaptionExportPanel({
 					</a>
 				</div>
 			) : null}
+
+			<div className="card">
+				<div className="card-head">
+					<strong className="card-title">Cut the dead air</strong>
+				</div>
+				<p className="card-text">
+					Send this clip to the Silence Studio - no second upload. Every caption travels with it,
+					already re-timed once the pauses are gone.
+					{video && !video.file
+						? ' A pasted URL has no local bytes to send - download the clip and upload it there instead.'
+						: ''}
+				</p>
+				<div className="card-actions">
+					<button
+						className="btn btn--sm"
+						disabled={!video?.file || sendToSilenceState === 'sending'}
+						onClick={onSendToSilence}
+					>
+						{sendToSilenceState === 'sending' ? (
+							<IconSpinner size={12} className="spin" />
+						) : sendToSilenceState === 'sent' ? (
+							<IconCheck size={12} />
+						) : (
+							<IconScissors size={12} />
+						)}
+						{sendToSilenceState === 'sent' ? 'Waiting in Silence' : 'Send to Silence Studio'}
+					</button>
+					{sendToSilenceState === 'sent' ? (
+						<a className="btn btn--ghost btn--sm" href="/silence">
+							Open it
+						</a>
+					) : null}
+				</div>
+				{sendToSilenceState === 'failed' ? (
+					<div className="notice notice--error" style={{ marginTop: 10 }}>
+						<span className="notice-icon">
+							<IconAlert size={14} />
+						</span>
+						<span>
+							The browser refused to store the hand-off - it may be out of space. Download the file
+							and upload it there instead.
+						</span>
+					</div>
+				) : null}
+			</div>
 
 			<div>
 				<h2 className="section-label">Take the captions with you</h2>

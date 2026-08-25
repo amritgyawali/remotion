@@ -316,3 +316,66 @@ export const IconKeyboard = (props: IconProps) => (
 		<path d="M6.5 9.5h.01M10 9.5h.01M13.5 9.5h.01M17 9.5h.01M6.5 12.8h.01M10 12.8h.01M13.5 12.8h.01M17 12.8h.01M8.5 15.6h7" />
 	</Base>
 )
+
+export const IconPause = (props: IconProps) => (
+	<Base {...props}>
+		<rect x="6.5" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none" />
+		<rect x="13.5" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none" />
+	</Base>
+)
+
+export const IconWaveform = (props: IconProps) => (
+	<Base {...props}>
+		<path d="M3 12h2M8 7v10M12 4v16M16 8.5v7M20 11h1.5" />
+	</Base>
+)
+
+export const IconGauge = (props: IconProps) => (
+	<Base {...props}>
+		<path d="M4 18a8 8 0 1 1 16 0" />
+		<path d="m12 14 4.5-4" />
+		<circle cx="12" cy="18" r="1.4" fill="currentColor" stroke="none" />
+	</Base>
+)
+
+export const IconForward = (props: IconProps) => (
+	<Base {...props}>
+		<path d="m4 6 7 6-7 6V6Z" fill="currentColor" stroke="none" />
+		<path d="m13 6 7 6-7 6V6Z" fill="currentColor" stroke="none" />
+	</Base>
+)
+
+export const IconSkipNext = (props: IconProps) => (
+	<Base {...props}>
+		<path d="m6 6 9 6-9 6V6Z" fill="currentColor" stroke="none" />
+		<path d="M18 5.5v13" />
+	</Base>
+)
+
+export const IconSkipPrev = (props: IconProps) => (
+	<Base {...props}>
+		<path d="m18 6-9 6 9 6V6Z" fill="currentColor" stroke="none" />
+		<path d="M6 5.5v13" />
+	</Base>
+)
+
+export const IconZoomIn = (props: IconProps) => (
+	<Base {...props}>
+		<circle cx="10.5" cy="10.5" r="6.5" />
+		<path d="M20.5 20.5 15.2 15.2M10.5 8v5M8 10.5h5" />
+	</Base>
+)
+
+export const IconZoomOut = (props: IconProps) => (
+	<Base {...props}>
+		<circle cx="10.5" cy="10.5" r="6.5" />
+		<path d="M20.5 20.5 15.2 15.2M8 10.5h5" />
+	</Base>
+)
+
+export const IconEye = (props: IconProps) => (
+	<Base {...props}>
+		<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
+		<circle cx="12" cy="12" r="2.8" />
+	</Base>
+)

@@ -96,6 +96,7 @@ import {
 	writeBlob,
 } from '../lib/persist/idb'
 import { useAutosave, useRestoredSnapshot } from '../lib/persist/use-vault'
+import { sendToStudio, useIncomingHandoff } from '../lib/handoff'
 import CaptionDesignPanel from './captions/CaptionDesignPanel'
 import CaptionExportPanel from './captions/CaptionExportPanel'
 import CaptionToolsPanel, { type ToolsActions } from './captions/CaptionToolsPanel'
@@ -107,9 +108,11 @@ import { RestoreNotice } from './SaveState'
 import {
 	IconAlert,
 	IconCaptions,
+	IconClose,
 	IconDownload,
 	IconFilm,
 	IconKeyboard,
+	IconScissors,
 	IconSliders,
 	IconSpinner,
 	IconTools,
@@ -283,6 +286,11 @@ export default function CaptionStudio() {
 	const [pane, setPane] = useState<CaptionPane>('source')
 	/** true while a file is being dragged over the preview */
 	const [dragOverStage, setDragOverStage] = useState(false)
+
+	/** progress of the "Send to Silence Studio" hand-off */
+	const [sendToSilenceState, setSendToSilenceState] = useState<
+		'idle' | 'sending' | 'sent' | 'failed'
+	>('idle')
 
 	/* --------------------------------------------------------- persistence */
 
@@ -478,6 +486,9 @@ export default function CaptionStudio() {
 		enabled: !restoring,
 	})
 	const { forget: forgetSession, saveNow: saveSessionNow } = vault
+
+	/** watches for a clip waiting from another studio; consumed once accepted */
+	const handoff = useIncomingHandoff('captions', !restoring)
 
 	/** Long-running work that must not be interrupted by an editing shortcut. */
 	const busy = transcribing || render.rendering
@@ -719,6 +730,7 @@ export default function CaptionStudio() {
 				setEngineUsed(null)
 				setCurrentFrame(0)
 				setRestoreWarning(null)
+				setSendToSilenceState('idle')
 				pendingSeekRef.current = null
 				resetRender()
 				// A phone shows one pane at a time: land on the clip, not the form.
@@ -748,6 +760,16 @@ export default function CaptionStudio() {
 		},
 		[clearCueHistory, resetRender],
 	)
+
+	/** Takes the waiting parcel: loads its clip, then its transcript if it has one. */
+	const acceptHandoff = useCallback(() => {
+		void (async () => {
+			const taken = await handoff.accept()
+			if (!taken) return
+			await adoptVideo({ file: taken.file })
+			if (taken.handoff.cues.length > 0) applyCues(taken.handoff.cues, 'srt')
+		})()
+	}, [adoptVideo, applyCues, handoff])
 
 	/**
 	 * What an accepted import says back to the user. The counts matter: the
@@ -893,6 +915,7 @@ export default function CaptionStudio() {
 		resetRender()
 		setPlacingCaption(false)
 		setRestoreWarning(null)
+		setSendToSilenceState('idle')
 		setCurrentFrame(0)
 		// The timeline rate belongs to the clip that just left, so it goes back to
 		// the default too - otherwise an emptied studio still looks like work in
@@ -1417,6 +1440,41 @@ export default function CaptionStudio() {
 	}, [source, video])
 
 	/**
+	 * Files this clip for the Silence Studio, transcript and all.
+	 *
+	 * The cues travel on the clip's own clock - the receiving studio only ever
+	 * re-times them relative to the cuts it makes, so nothing here needs to know
+	 * about silence at all.
+	 */
+	const handleSendToSilence = useCallback(() => {
+		if (!video?.file) return
+		setSendToSilenceState('sending')
+		void (async () => {
+			const ok = await sendToStudio({
+				blob: video.file as File,
+				from: 'captions',
+				to: 'silence',
+				facts: {
+					name: video.name,
+					type: video.file?.type || 'video/mp4',
+					sizeInBytes: video.sizeInBytes,
+					durationInSeconds: video.durationInSeconds,
+					width: video.width,
+					height: video.height,
+					fps: video.fps,
+					hasAudio: video.hasAudio,
+				},
+				note:
+					cues.length > 0
+						? `${cues.length} caption${cues.length === 1 ? '' : 's'} came with this clip - cut the dead air and they land on the tightened cut.`
+						: 'Cut the dead air out of this clip.',
+				cues,
+			})
+			setSendToSilenceState(ok ? 'sent' : 'failed')
+		})()
+	}, [cues, video])
+
+	/**
 	 * Studio-level keys.
 	 *
 	 * The timeline owns the ones that act on the selected caption (nudge, split,
@@ -1511,6 +1569,37 @@ export default function CaptionStudio() {
 					warning={restoreWarning}
 					onDiscard={handleReset}
 				/>
+			) : null}
+
+			{handoff.incoming ? (
+				<div className="restore-notice" data-tone="ok" role="status">
+					<span className="restore-notice-mark">
+						<IconScissors size={15} />
+					</span>
+					<div className="restore-notice-copy">
+						<strong>
+							A clip is waiting from the Silence Studio
+							<em>
+								{handoff.incoming.handoff.name} -{' '}
+								{formatSeconds(handoff.incoming.handoff.durationInSeconds)}
+							</em>
+						</strong>
+						<span>
+							{handoff.incoming.handoff.note || 'Load it here to caption the tightened cut.'}
+						</span>
+					</div>
+					<button type="button" className="restore-notice-action" onClick={acceptHandoff}>
+						Load it
+					</button>
+					<button
+						type="button"
+						className="restore-notice-close"
+						aria-label="Dismiss"
+						onClick={handoff.dismiss}
+					>
+						<IconClose size={13} />
+					</button>
+				</div>
 			) : null}
 
 			<div className="workspace workspace--captions" data-tab={pane}>
@@ -1804,9 +1893,11 @@ export default function CaptionStudio() {
 								composition={composition}
 								video={video}
 								cueCount={cues.length}
+								sendToSilenceState={sendToSilenceState}
 								onRender={handleRender}
 								onDownloadSrt={handleDownloadSrt}
 								onDownloadVtt={handleDownloadVtt}
+								onSendToSilence={handleSendToSilence}
 								onDownloadSource={handleDownloadSource}
 							/>
 						)}

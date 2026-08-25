@@ -248,7 +248,25 @@ export function detectSpeech(samples: Float32Array, options: VadOptions = {}): V
 	const frame = Math.max(1, Math.round((config.frameMs / 1000) * config.sampleRate))
 	const frameMs = (frame / config.sampleRate) * 1000
 	const frameDb = frameEnergies(samples, frame)
-	const totalMs = (samples.length / config.sampleRate) * 1000
+	return detectSpeechFromFrames(frameDb, frameMs, options, (samples.length / config.sampleRate) * 1000)
+}
+
+/**
+ * The detector, run on an energy track that has already been measured.
+ *
+ * Splitting it out this way is what lets a long clip be re-analysed without
+ * being decoded again: the per-frame levels are a thousandth of the size of the
+ * samples they came from, so a tool that re-tunes its sensitivity while the
+ * person watches keeps the track in memory and re-runs only this half.
+ */
+export function detectSpeechFromFrames(
+	frameDb: Float32Array,
+	frameMs: number,
+	options: VadOptions = {},
+	totalMsHint?: number,
+): VadResult {
+	const config = { ...DEFAULTS, ...options }
+	const totalMs = totalMsHint ?? frameDb.length * frameMs
 
 	if (frameDb.length === 0) {
 		return { segments: [], speechRatio: 0, peakDb: -100, noiseFloorDb: -100, frameDb, frameMs }
