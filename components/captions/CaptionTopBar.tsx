@@ -3,6 +3,8 @@
 import { IconBrowser, IconCaptions, IconCheck, IconServer, IconTrash } from '../Icons'
 import StudioNav from '../StudioNav'
 import ThemeToggle from '../ThemeToggle'
+import { SaveBadge } from '../SaveState'
+import type { VaultStatus } from '../../lib/persist/use-vault'
 import type { RenderEngine, ServerCapabilities } from '../../lib/types'
 
 export type StudioStep = {
@@ -17,6 +19,7 @@ export default function CaptionTopBar({
 	capabilities,
 	webCodecs,
 	crossOriginIsolated,
+	save,
 	onReset,
 	canReset,
 }: {
@@ -25,6 +28,7 @@ export default function CaptionTopBar({
 	capabilities: ServerCapabilities
 	webCodecs: boolean
 	crossOriginIsolated: boolean
+	save: { status: VaultStatus; savedAt: number | null; error: string | null }
 	onReset: () => void
 	canReset: boolean
 }) {
@@ -57,6 +61,8 @@ export default function CaptionTopBar({
 			</ol>
 
 			<div className="topbar-spacer" />
+
+			<SaveBadge status={save.status} savedAt={save.savedAt} error={save.error} />
 
 			<span
 				className={`badge ${crossOriginIsolated ? 'badge--green' : 'badge--muted'}`}
