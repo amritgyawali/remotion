@@ -7,10 +7,15 @@
  */
 
 import { buildCaptionSource, CAPTION_ENTRY_FILE, type CompositionPlan } from './composition-source'
-import type { CaptionCue, CaptionStyle, CaptionVideoSource, TranscriptOrigin } from './types'
+import type {
+	CaptionCue,
+	CaptionSound,
+	CaptionStyle,
+	CaptionVideoSource,
+	TranscriptOrigin,
+} from './types'
+import { deviceProfile } from '../device'
 import type { VirtualProject } from '../types'
-
-const MAX_DIMENSION = 3840
 
 const ORIGIN_LABEL: Record<TranscriptOrigin, string> = {
 	whisper: 'transcribed on-device with Whisper',
@@ -25,9 +30,21 @@ function evenSize(value: number): number {
 	return rounded % 2 === 0 ? rounded : rounded + 1
 }
 
-/** Keeps the source framing but caps absurd sizes so browsers can still encode. */
-export function planComposition(video: CaptionVideoSource, fps: number): CompositionPlan {
-	const scale = Math.min(1, MAX_DIMENSION / Math.max(video.width, video.height))
+/**
+ * Keeps the source framing but caps absurd sizes so browsers can still encode.
+ *
+ * The ceiling comes from the device, not from a constant: a desktop keeps the
+ * full 4K path, while a phone plans at 1080p or 1440p. A 4K clip shot on that
+ * same phone would otherwise be encoded at its native size in one browser tab,
+ * and the tab is killed rather than told it ran out of memory - a render that
+ * "just stops" with no error at all.
+ */
+export function planComposition(
+	video: CaptionVideoSource,
+	fps: number,
+	maxDimension = deviceProfile().maxDimension,
+): CompositionPlan {
+	const scale = Math.min(1, maxDimension / Math.max(video.width, video.height))
 	return {
 		id: 'CaptionedVideo',
 		width: evenSize(video.width * scale),
@@ -41,6 +58,7 @@ export function captionSourceFor(args: {
 	video: CaptionVideoSource
 	cues: CaptionCue[]
 	style: CaptionStyle
+	sound: CaptionSound
 	plan: CompositionPlan
 	origin: TranscriptOrigin
 }): string {
@@ -49,6 +67,7 @@ export function captionSourceFor(args: {
 		videoName: args.video.name,
 		cues: args.cues,
 		style: args.style,
+		sound: args.sound,
 		plan: args.plan,
 		origin: ORIGIN_LABEL[args.origin],
 	})

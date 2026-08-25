@@ -5831,7 +5831,7 @@ textarea::placeholder {
 	letter-spacing: -0.012em;
 }
 
-/* Icons make the three right-hand panels recognisable before they are read;
+/* Icons make the right-hand panels recognisable before they are read;
    below the narrow break the labels go and the icons carry the meaning alone. */
 .segmented--icons button svg {
 	flex: none;
@@ -5841,6 +5841,14 @@ textarea::placeholder {
 .segmented--icons button[data-active='true'] svg {
 	color: var(--accent);
 	opacity: 1;
+}
+
+/* Four panels across a phone leaves each tab too narrow to hit reliably, so the
+   row folds into two by two rather than shrinking every target. */
+@media (max-width: 560px) {
+	.segmented--icons.segmented--wrap {
+		grid-template-columns: repeat(2, 1fr);
+	}
 }
 
 /* ------------------------------------------------------- shortcut sheet */
@@ -6100,7 +6108,6 @@ textarea::placeholder {
 	font-size: 12px;
 	color: var(--text-tertiary);
 }
-
 
 /* =============================================================================
    Silence Studio
@@ -6618,5 +6625,125 @@ textarea::placeholder {
 
 	.stage--cut {
 		padding: 10px 12px 6px;
+	}
+}
+
+/* ------------------------------------------------------- caption sound */
+
+/*
+ * The effect picker. Each row is one tap: it selects the effect and auditions
+ * it, so the list is browsed by ear rather than by name. Rows are 44px tall at
+ * the smallest, which is the minimum comfortable touch target on a phone - this
+ * list is long, and it is scrolled with a thumb more often than with a mouse.
+ */
+.sfx-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-top: 10px;
+	max-height: 340px;
+	overflow-y: auto;
+	padding-right: 2px;
+	-webkit-overflow-scrolling: touch;
+	overscroll-behavior: contain;
+}
+
+.sfx-option {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	width: 100%;
+	min-height: 44px;
+	padding: 8px 10px;
+	text-align: left;
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	background: color-mix(in srgb, var(--surface-2) 60%, transparent);
+	color: var(--text-secondary);
+	cursor: pointer;
+	transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease),
+		color var(--fast) var(--ease);
+}
+
+.sfx-option:hover:not(:disabled) {
+	border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+	background: var(--accent-soft);
+	color: var(--text);
+}
+
+.sfx-option[data-active='true'] {
+	border-color: var(--accent);
+	background: var(--accent-soft);
+	color: var(--text);
+}
+
+.sfx-option:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+.sfx-option--auto {
+	margin-top: 4px;
+	border-style: dashed;
+}
+
+.sfx-option-body {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+	flex: 1;
+}
+
+.sfx-option-name {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 12.5px;
+	font-weight: 620;
+	color: var(--text);
+}
+
+.sfx-option-hint {
+	font-size: 11px;
+	line-height: 1.35;
+	color: var(--text-tertiary);
+}
+
+.sfx-option-play {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 26px;
+	border-radius: 999px;
+	border: 1px solid var(--border);
+	color: var(--text-secondary);
+}
+
+.sfx-option[data-playing='true'] .sfx-option-play {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+/* A caption track that will make noise says so on the tab itself. */
+.tab-dot {
+	display: inline-block;
+	width: 5px;
+	height: 5px;
+	margin-left: 5px;
+	border-radius: 999px;
+	background: var(--accent);
+	vertical-align: middle;
+}
+
+@media (max-width: 560px) {
+	.sfx-list {
+		max-height: 300px;
+	}
+
+	.sfx-option {
+		min-height: 48px;
 	}
 }

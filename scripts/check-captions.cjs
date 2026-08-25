@@ -93,9 +93,13 @@ const {
 	CAPTION_FONTS,
 	DEVANAGARI_FONT_IDS,
 	DEVANAGARI_FONTS,
+	DEFAULT_CAPTION_SOUND,
+	soundForPreset,
 } = require('../lib/captions/style-presets.ts')
 const tools = require('../lib/captions/tools.ts')
 const { cuesToAss } = require('../lib/captions/ass.ts')
+const sourceAudit = require('../lib/source-audit.ts')
+const sfxFile = require('../lib/captions/sfx.ts')
 const subtitleImport = require('../lib/captions/subtitle-import.ts')
 const asrPrompt = require('../lib/captions/asr-prompt.ts')
 const cueFile = require('../lib/captions/cues.ts')
@@ -820,6 +824,9 @@ const stripComments = (code) =>
 	code.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1')
 
 /** The same contract the studio compiler and the render path both rely on. */
+/** The sound layer is off unless a check is specifically about it. */
+const SILENT_SOUND = { ...DEFAULT_CAPTION_SOUND, enabled: false }
+
 function auditSource(code) {
 	const issues = []
 	try {
@@ -853,6 +860,7 @@ function checkComposition() {
 			videoName: 'clip.mp4',
 			cues: CUES,
 			style: { ...preset.style, devanagari: true },
+			sound: SILENT_SOUND,
 			plan: PLAN,
 			origin: 'transcribed with NVIDIA speech recognition',
 		})
@@ -873,6 +881,7 @@ function checkComposition() {
 			videoName: 'clip.mp4',
 			cues: CUES,
 			style: { ...CAPTION_PRESETS[0].style, fontId: id },
+			sound: SILENT_SOUND,
 			plan: PLAN,
 			origin: 'test',
 		})
@@ -902,6 +911,7 @@ function checkComposition() {
 			videoName: 'clip.mp4',
 			cues: CUES,
 			style: { ...CAPTION_PRESETS[0].style, devanagari: true, devanagariFontId: id },
+			sound: SILENT_SOUND,
 			plan: PLAN,
 			origin: 'test',
 		})
@@ -936,6 +946,7 @@ function checkComposition() {
 			reveal: 'typewriter',
 			emphasisWords: ['today'],
 		},
+		sound: SILENT_SOUND,
 		plan: PLAN,
 		origin: 'test',
 	})
@@ -1487,6 +1498,481 @@ async function checkGroqPrimary() {
 	check('and the reason names the free Groq key first', /GROQ_API_KEY/.test(noCloudBody.reason ?? ''), noCloudBody.reason)
 }
 
+
+/* ------------------------------------------------------- caption sound */
+
+/**
+ * The sound layer.
+ *
+ * Three things make this feature either invisible or infuriating, and none of
+ * them throws when it breaks: a sound file that is not where the catalogue says
+ * it is (silence in the export, no error anywhere), a schedule that is not a
+ * pure function of the cues (a render that does not match the preview), and a
+ * guard that lets fast speech fire forty effects a second. All three are
+ * asserted here rather than discovered in an export.
+ */
+function checkCaptionSound() {
+	console.log('\nCaption sound effects')
+
+	const fs = require('node:fs')
+	const path = require('node:path')
+	const publicDir = path.join(__dirname, '..', 'public')
+
+	// 1. every catalogued option points at files that actually ship
+	let missing = []
+	for (const option of sfxFile.CAPTION_SFX) {
+		for (let variant = 1; variant <= option.variants; variant++) {
+			const src = sfxFile.sfxSrc(option, variant)
+			if (!fs.existsSync(path.join(publicDir, src))) missing.push(src)
+		}
+	}
+	check(
+		`all ${sfxFile.CAPTION_SFX.length} effects resolve to files in the kit`,
+		missing.length === 0,
+		missing.slice(0, 3).join(', '),
+	)
+	/**
+	 * The advertised length has to cover the real file.
+	 *
+	 * The sequence that holds an effect is sized from `durationSeconds`. Under-
+	 * state it and Remotion closes the sequence early, which cuts the tail off
+	 * every hit - a defect nobody sees in a waveform and everybody hears. So the
+	 * WAV headers are read and compared rather than trusted.
+	 */
+	const wavSeconds = (file) => {
+		const buffer = fs.readFileSync(file)
+		let offset = 12
+		let byteRate = 0
+		while (offset + 8 <= buffer.length) {
+			const id = buffer.toString('ascii', offset, offset + 4)
+			const size = buffer.readUInt32LE(offset + 4)
+			if (id === 'fmt ') byteRate = buffer.readUInt32LE(offset + 16)
+			if (id === 'data') return byteRate > 0 ? size / byteRate : 0
+			offset += 8 + size + (size % 2)
+		}
+		return 0
+	}
+
+	const short = []
+	for (const option of sfxFile.CAPTION_SFX) {
+		let longest = 0
+		for (let variant = 1; variant <= option.variants; variant++) {
+			const file = path.join(publicDir, sfxFile.sfxSrc(option, variant))
+			if (!fs.existsSync(file)) continue
+			longest = Math.max(longest, wavSeconds(file))
+		}
+		// A hair of tolerance: the sequence also gets 40ms of padding on top.
+		if (longest > option.durationSeconds + 0.02) {
+			short.push(`${option.id} holds ${longest.toFixed(2)}s but claims ${option.durationSeconds}s`)
+		}
+	}
+	check(
+		'no effect is cut short by the sequence that holds it',
+		short.length === 0,
+		short.slice(0, 3).join('; '),
+	)
+
+	check(
+		'the catalogue offers both fixed one-shots and multi-take families',
+		sfxFile.CAPTION_SFX.some((option) => option.variants === 1) &&
+			sfxFile.CAPTION_SFX.some((option) => option.variants > 1),
+	)
+
+	// 2. the auto mapping has an answer for every entrance, and each is real
+	const animations = ['pop', 'fade', 'slide', 'rise', 'blur', 'stamp', 'whoosh', 'glitch', 'none']
+	const unmapped = animations.filter(
+		(animation) =>
+			!sfxFile.isCaptionSfxId(
+				sfxFile.autoSfxIdFor({ animation, reveal: 'word', wordEffect: 'none' }),
+			),
+	)
+	check('every entrance maps to a real effect in auto mode', unmapped.length === 0, unmapped)
+	check(
+		'the typewriter reveal overrides the entrance and picks key strikes',
+		sfxFile.autoSfxIdFor({ animation: 'pop', reveal: 'typewriter', wordEffect: 'none' }) === 'ui-key',
+	)
+	check(
+		'the loud entrances each get a matching sound family',
+		sfxFile.autoSfxIdFor({ animation: 'stamp', reveal: 'line', wordEffect: 'none' }) === 'impact-hit' &&
+			sfxFile.autoSfxIdFor({ animation: 'glitch', reveal: 'line', wordEffect: 'none' }) ===
+				'transition-glitch' &&
+			sfxFile.autoSfxIdFor({ animation: 'whoosh', reveal: 'line', wordEffect: 'none' }) ===
+				'motion-whoosh',
+	)
+
+	const style = { ...CAPTION_PRESETS[0].style, emphasisWords: ['today'] }
+	const on = {
+		...DEFAULT_CAPTION_SOUND,
+		enabled: true,
+		effectId: 'ui-pop',
+		offsetMs: 0,
+		minGapMs: 0,
+		pitchVariation: 0,
+	}
+
+	// 3. the schedule is a pure function of its inputs
+	check('the sound layer is off until it is switched on', sfxFile.buildSoundtrack(CUES, DEFAULT_CAPTION_SOUND, style).length === 0)
+	const first = sfxFile.buildSoundtrack(CUES, on, style)
+	const second = sfxFile.buildSoundtrack(CUES, on, style)
+	check('one sound per sentence', first.length === CUES.length, `${first.length} vs ${CUES.length}`)
+	check(
+		'two runs of the same project schedule byte-identical sound',
+		JSON.stringify(first) === JSON.stringify(second),
+	)
+	check(
+		'every hit lands on its own caption',
+		first.every((event, index) => event.atMs === CUES[index].startMs),
+	)
+	check(
+		'shuffle spreads a family across its takes rather than repeating one',
+		new Set(first.map((event) => event.src)).size > 1,
+	)
+	check(
+		'a fixed take plays the same file every sentence',
+		new Set(
+			sfxFile.buildSoundtrack(CUES, { ...on, variation: 'fixed' }, style).map((e) => e.src),
+		).size === 1,
+	)
+	check(
+		'cycling walks the takes in order',
+		sfxFile
+			.buildSoundtrack(CUES, { ...on, variation: 'cycle' }, style)
+			.every((event, index) => event.src.includes(String(index + 1).padStart(3, '0'))),
+	)
+
+	// 4. level, pitch and timing
+	const option = sfxFile.sfxById('ui-pop')
+	check(
+		'the fader is scaled by the effect loudness trim, so switching effect does not change the mix',
+		Math.abs(first[0].volume - on.volume * option.gain) < 0.001,
+		`${first[0].volume}`,
+	)
+	check('silence at zero volume schedules nothing', sfxFile.buildSoundtrack(CUES, { ...on, volume: 0 }, style).length === 0)
+	check(
+		'pitch drift stays inside the range it advertises',
+		sfxFile
+			.buildSoundtrack(CUES, { ...on, pitchVariation: 0.1 }, style)
+			.every((event) => event.playbackRate >= 0.89 && event.playbackRate <= 1.11),
+	)
+	check(
+		'pitch drift off means every hit plays at its recorded speed',
+		first.every((event) => event.playbackRate === 1),
+	)
+	const early = sfxFile.buildSoundtrack(CUES, { ...on, offsetMs: -120 }, style)
+	check(
+		'a negative offset fires the sound early, never before the video starts',
+		early.every((event, index) => event.atMs === Math.max(0, CUES[index].startMs - 120)),
+	)
+	check(
+		'a hit is never scheduled past the end of the timeline',
+		sfxFile.buildSoundtrack(CUES, on, style, { durationMs: CUES[0].endMs }).length < CUES.length,
+	)
+
+	// 5. triggers and the machine-gun guard
+	const words = CUES.reduce((sum, cue) => sum + cue.tokens.length, 0)
+	check(
+		'per-word firing places one sound per word',
+		sfxFile.buildSoundtrack(CUES, { ...on, trigger: 'word' }, style).length === words,
+	)
+	check(
+		'emphasis firing places sound only on the marked words',
+		sfxFile.buildSoundtrack(CUES, { ...on, trigger: 'emphasis' }, style).length ===
+			CUES.reduce(
+				(sum, cue) =>
+					sum + cue.tokens.filter((token) => /today/i.test(token.text.replace(/[^a-z]/gi, ''))).length,
+				0,
+			),
+	)
+	const guarded = sfxFile.buildSoundtrack(CUES, { ...on, trigger: 'word', minGapMs: 400 }, style)
+	check('the minimum gap thins a per-word track', guarded.length < words, `${guarded.length} of ${words}`)
+	check(
+		'and no two hits are ever closer than that gap',
+		guarded.every((event, index) => index === 0 || event.atMs - guarded[index - 1].atMs >= 400),
+	)
+
+	// 6. ducking
+	check(
+		'ducking is a no-op away from every effect',
+		sfxFile.duckingGainAt(CUES[0].startMs - 5000, first, 0.5) === 1,
+	)
+	check(
+		'and pulls the video down under one',
+		sfxFile.duckingGainAt(first[0].atMs + 10, first, 0.5) < 0.55,
+	)
+	check('ducking set to zero never touches the video', sfxFile.duckingGainAt(first[0].atMs, first, 0) === 1)
+
+	// 7. the generated file carries the whole mix as data
+	const code = buildCaptionSource({
+		videoSrc: 'https://example.com/clip.mp4',
+		videoName: 'clip.mp4',
+		cues: CUES,
+		style,
+		sound: on,
+		plan: PLAN,
+		origin: 'test',
+	})
+	const issues = auditSource(code)
+	check('a composition with sound still compiles', issues.length === 0, issues)
+	check('it imports the media Audio component', /import \{ Audio, Video \} from '@remotion\/media'/.test(code))
+	check('it holds one row per scheduled hit', (code.match(/atMs: \d+, durationMs:/g) ?? []).length === first.length)
+	check('it ducks the video under the effects', /volume=\{videoVolume\}/.test(code))
+	check('and the sound layer is in the props the studio can re-style live', /soundtrack: SOUNDTRACK/.test(code))
+
+	// Every sound path written into the file has to exist in public/, or the
+	// export is silent and the .tsx download is broken for whoever opens it.
+	const referenced = [...code.matchAll(/src: "(assets\/audio\/[^"]+)"/g)].map((match) => match[1])
+	check('every sound path in the file ships in public/', referenced.length > 0 &&
+		referenced.every((src) => fs.existsSync(path.join(publicDir, src))))
+
+	const silent = buildCaptionSource({
+		videoSrc: 'https://example.com/clip.mp4',
+		videoName: 'clip.mp4',
+		cues: CUES,
+		style,
+		sound: SILENT_SOUND,
+		plan: PLAN,
+		origin: 'test',
+	})
+	check('a silent project writes an empty schedule', /SOUNDTRACK: CaptionSoundEvent\[\] = \[\]/.test(silent))
+	check('and still compiles', auditSource(silent).length === 0)
+
+	// 8. presets carry a sound opinion without switching the layer on
+	const loud = CAPTION_PRESETS.filter(
+		(preset) => soundForPreset(preset.id, DEFAULT_CAPTION_SOUND).enabled,
+	)
+	check('no preset turns the sound layer on by itself', loud.length === 0, loud.map((p) => p.id))
+	const badPresetSounds = CAPTION_PRESETS.filter((preset) => {
+		const suggested = soundForPreset(preset.id, DEFAULT_CAPTION_SOUND)
+		return suggested.effectId !== 'auto' && !sfxFile.isCaptionSfxId(suggested.effectId)
+	})
+	check(
+		`all ${CAPTION_PRESETS.length} presets suggest an effect that exists`,
+		badPresetSounds.length === 0,
+		badPresetSounds.map((p) => p.id),
+	)
+}
+
+
+/**
+ * Executes the generated composition instead of only transpiling it.
+ *
+ * A file can be perfectly valid TypeScript and still throw the moment React
+ * calls it - an identifier that only exists in the studio, a prop that is
+ * destructured but never passed, a helper used above where it is defined. None
+ * of that shows up in a transpile, and all of it is a black preview and a
+ * failed export. So the file is evaluated against stand-in Remotion modules and
+ * actually rendered, at several frames, with the sound layer on.
+ */
+function renderGeneratedComposition(code, { frame }) {
+	const React = require('react')
+	const { renderToStaticMarkup } = require('react-dom/server')
+
+	// 'imports' is what turns the ESM file into something a CommonJS shim can
+	// load - the same transform the studio's in-browser compiler applies.
+	const js = transform(code, {
+		transforms: ['typescript', 'jsx', 'imports'],
+		jsxRuntime: 'automatic',
+		filePath: 'captioned-video.tsx',
+	}).code
+
+	const audio = []
+	const video = []
+	const registered = []
+
+	const passthrough = (name) =>
+		function Stub(props) {
+			return React.createElement('div', { 'data-stub': name }, props.children ?? null)
+		}
+
+	const remotion = {
+		AbsoluteFill: passthrough('AbsoluteFill'),
+		Sequence: passthrough('Sequence'),
+		Composition: (props) => {
+			registered.push(props)
+			return null
+		},
+		Still: () => null,
+		useCurrentFrame: () => frame,
+		useVideoConfig: () => ({
+			fps: PLAN.fps,
+			width: PLAN.width,
+			height: PLAN.height,
+			durationInFrames: PLAN.durationInFrames,
+		}),
+		interpolate: (input, inputRange, outputRange) => {
+			const [a, b] = inputRange
+			const [x, y] = outputRange
+			if (input <= a) return x
+			if (input >= b) return y
+			return x + ((input - a) / (b - a || 1)) * (y - x)
+		},
+		spring: () => 1,
+		staticFile: (path) => `/${path}`,
+		registerRoot: (Root) => renderToStaticMarkup(React.createElement(Root)),
+	}
+
+	const modules = {
+		react: React,
+		'react/jsx-runtime': require('react/jsx-runtime'),
+		'react/jsx-dev-runtime': require('react/jsx-dev-runtime'),
+		remotion,
+		'@remotion/fonts': { loadFont: () => Promise.resolve() },
+		'@remotion/media': {
+			Video: (props) => {
+				video.push(props)
+				return null
+			},
+			Audio: (props) => {
+				audio.push(props)
+				return null
+			},
+		},
+	}
+
+	const exported = {}
+	const moduleObject = { exports: exported }
+	const load = (specifier) => {
+		if (!(specifier in modules)) throw new Error(`unexpected import ${specifier}`)
+		return modules[specifier]
+	}
+	new Function('require', 'module', 'exports', js)(load, moduleObject, moduleObject.exports)
+
+	const Component = moduleObject.exports.CaptionedVideo
+	const markup = renderToStaticMarkup(React.createElement(Component))
+	return { markup, audio, video, registered, exports: moduleObject.exports }
+}
+
+function checkCompositionRuntime() {
+	console.log('\nGenerated composition, executed')
+
+	const style = { ...CAPTION_PRESETS[0].style, emphasisWords: ['today'] }
+	const sound = {
+		...DEFAULT_CAPTION_SOUND,
+		enabled: true,
+		effectId: 'ui-pop',
+		duck: 0.4,
+		minGapMs: 0,
+	}
+	const code = buildCaptionSource({
+		videoSrc: 'https://example.com/clip.mp4',
+		videoName: 'clip.mp4',
+		cues: CUES,
+		style,
+		sound,
+		plan: PLAN,
+		origin: 'test',
+	})
+
+	let run = null
+	let threw = null
+	try {
+		run = renderGeneratedComposition(code, { frame: 3 })
+	} catch (error) {
+		threw = error
+	}
+	check('the generated file executes and renders', threw === null, threw && threw.message)
+	if (!run) return
+
+	check('it registers exactly one composition', run.registered.length === 1)
+	check('the captions reach the markup', run.markup.includes(CUES[0].tokens[0].text))
+	check(
+		'one <Audio> per scheduled sound',
+		run.audio.length === sfxFile.buildSoundtrack(CUES, sound, style).length,
+		`${run.audio.length}`,
+	)
+	check(
+		'each one points at a file in the kit and carries its own level',
+		run.audio.every(
+			(props) => props.src.startsWith('/assets/audio/') && props.volume > 0 && props.volume <= 1,
+		),
+	)
+	check(
+		'the video ducks through a volume function rather than a fixed number',
+		run.video.length === 1 && typeof run.video[0].volume === 'function',
+	)
+	check(
+		'and that function dips under an effect and not away from one',
+		run.video[0].volume(Math.round((CUES[0].startMs / 1000) * PLAN.fps)) < 1 &&
+			run.video[0].volume(PLAN.durationInFrames - 1) === 1,
+	)
+
+	// Every entrance has to survive a real render, at the frames where it does
+	// its work - frame 0, mid-entrance, and after it has settled.
+	const animations = ['pop', 'fade', 'slide', 'rise', 'blur', 'stamp', 'whoosh', 'glitch', 'none']
+	const broken = []
+	for (const animation of animations) {
+		for (const reveal of ['line', 'word', 'typewriter']) {
+			for (const frame of [0, 3, 40]) {
+				try {
+					const variant = buildCaptionSource({
+						videoSrc: 'https://example.com/clip.mp4',
+						videoName: 'clip.mp4',
+						cues: CUES,
+						style: { ...style, animation, reveal },
+						sound,
+						plan: PLAN,
+						origin: 'test',
+					})
+					const out = renderGeneratedComposition(variant, { frame })
+					// The typewriter splits a word across a shown and a hidden span, so
+					// the tags come off before the text is looked for.
+					const text = out.markup.replace(/<[^>]*>/g, '')
+					if (!text.includes(CUES[0].tokens[0].text)) {
+						broken.push(`${animation}/${reveal}@${frame}: nothing drawn`)
+					}
+				} catch (error) {
+					broken.push(`${animation}/${reveal}@${frame}: ${error.message}`)
+				}
+			}
+		}
+	}
+	check(
+		`all ${animations.length} entrances render in every reveal mode`,
+		broken.length === 0,
+		broken.slice(0, 3).join(' | '),
+	)
+
+	// The studio's own source audit runs on this file every time it compiles. A
+	// caption track schedules its sounds through staticFile(event.src), and the
+	// audit used to read that computed path as "reaching outside the asset kit"
+	// - a permanent, wrong warning on every captioned video.
+	const warnings = sourceAudit.analyzeSources([{ path: 'captioned-video.tsx', contents: code }])
+	check(
+		'the studio raises no asset warning for a captioned video with sound',
+		!warnings.some((warning) => /outside the built-in asset kit/.test(warning)),
+		warnings.join(' | '),
+	)
+	const outside = sourceAudit.analyzeSources([
+		{
+			path: 'other.tsx',
+			contents: "import {staticFile} from 'remotion'\nexport const a = staticFile('my-clip.mp4')",
+		},
+	])
+	check(
+		'but still warns about a path that is genuinely not in the kit',
+		outside.some((warning) => /outside the built-in asset kit/.test(warning)),
+	)
+
+	// A silent project must not mount a single audio decoder.
+	const silent = renderGeneratedComposition(
+		buildCaptionSource({
+			videoSrc: 'https://example.com/clip.mp4',
+			videoName: 'clip.mp4',
+			cues: CUES,
+			style,
+			sound: SILENT_SOUND,
+			plan: PLAN,
+			origin: 'test',
+		}),
+		{ frame: 3 },
+	)
+	check('a silent project mounts no audio at all', silent.audio.length === 0)
+	check(
+		'and leaves the video volume untouched',
+		silent.video.length === 1 && silent.video[0].volume === 1,
+	)
+}
+
 async function main() {
 	checkScript()
 	checkLoanwords()
@@ -1497,6 +1983,8 @@ async function main() {
 	await checkTranscribeRoute()
 	await checkRefineRoute()
 	checkComposition()
+	checkCaptionSound()
+	checkCompositionRuntime()
 	checkTools()
 	checkAss()
 	await checkSubtitleImport()

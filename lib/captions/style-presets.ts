@@ -8,6 +8,7 @@ import {
 } from './fonts'
 import type {
 	CaptionLayoutOptions,
+	CaptionSound,
 	CaptionStyle,
 	CaptionStylePresetId,
 } from './types'
@@ -518,7 +519,7 @@ export const CAPTION_PRESETS: CaptionPresetDefinition[] = [
 			extrudeColor: '#c1121f',
 			tilt: -3,
 			wordEffect: 'jitter',
-			animation: 'pop',
+			animation: 'stamp',
 			offsetPercent: 18,
 			scrim: 0.14,
 		},
@@ -591,7 +592,7 @@ export const CAPTION_PRESETS: CaptionPresetDefinition[] = [
 			shadow: 0.3,
 			shadowColor: '#12001a',
 			wordEffect: 'jitter',
-			animation: 'blur',
+			animation: 'glitch',
 			reveal: 'line',
 			offsetPercent: 12,
 			scrim: 0.24,
@@ -712,4 +713,62 @@ export const DEFAULT_CAPTION_STYLE: CaptionStyle = CAPTION_PRESETS[0].style
 
 export function presetById(id: CaptionStylePresetId): CaptionPresetDefinition {
 	return CAPTION_PRESETS.find((preset) => preset.id === id) ?? CAPTION_PRESETS[0]
+}
+
+/* --------------------------------------------------------------- sound */
+
+/**
+ * The sound layer starts off.
+ *
+ * A subtitle tool that silently adds noise to someone's video is a subtitle
+ * tool nobody trusts, so this is opt-in - but everything else is set so that
+ * the very first tap of the switch already sounds like a finished edit: `auto`
+ * follows the entrance, `shuffle` keeps consecutive lines from repeating one
+ * take, and a 45 ms lead means the sound lands with the caption rather than
+ * behind it, which is how an ear reads the two as one event.
+ */
+export const DEFAULT_CAPTION_SOUND: CaptionSound = {
+	enabled: false,
+	effectId: 'auto',
+	volume: 0.6,
+	trigger: 'sentence',
+	variation: 'shuffle',
+	pitchVariation: 0.04,
+	duck: 0.18,
+	offsetMs: -45,
+	minGapMs: 140,
+	seed: 'captions',
+}
+
+/**
+ * What each look should sound like when it is picked.
+ *
+ * Only the fields a preset really has an opinion about are listed - everything
+ * else stays at the default above, and picking a preset never switches the
+ * sound layer on by itself.
+ */
+const PRESET_SOUND: Partial<Record<CaptionStylePresetId, Partial<CaptionSound>>> = {
+	tiktok: { effectId: 'ui-pop', volume: 0.62 },
+	money: { effectId: 'accent-chime', volume: 0.55 },
+	karaoke: { effectId: 'ui-click', volume: 0.4, duck: 0.1 },
+	broadcast: { effectId: 'foley-touch', volume: 0.32, duck: 0.08 },
+	glass: { effectId: 'accent-shimmer', volume: 0.45 },
+	minimal: { effectId: 'ui-click', volume: 0.38 },
+	cinema: { effectId: 'impact-boom', volume: 0.5, duck: 0.28, minGapMs: 700 },
+	neon: { effectId: 'accent-power', volume: 0.55 },
+	tube: { effectId: 'accent-shimmer', volume: 0.5 },
+	sunset: { effectId: 'motion-whoosh', volume: 0.5 },
+	chrome: { effectId: 'transition-glitch', volume: 0.5 },
+	boxed: { effectId: 'motion-swipe', volume: 0.5 },
+	comic: { effectId: 'impact-hit', volume: 0.66, duck: 0.24 },
+	arcade: { effectId: 'accent-power', volume: 0.6 },
+	vhs: { effectId: 'transition-glitch', volume: 0.55 },
+	typewriter: { effectId: 'ui-key', trigger: 'word', volume: 0.5, minGapMs: 55, duck: 0.1 },
+	marker: { effectId: 'foley-touch', volume: 0.45 },
+	nepali: { effectId: 'ui-pop', volume: 0.55 },
+}
+
+/** The sound settings a preset implies, layered over whatever is set now. */
+export function soundForPreset(id: CaptionStylePresetId, current: CaptionSound): CaptionSound {
+	return { ...current, ...(PRESET_SOUND[id] ?? {}) }
 }

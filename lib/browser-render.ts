@@ -9,6 +9,8 @@
  * frame-accurately with WebCodecs rather than recording wall-clock playback.
  */
 
+import { deviceProfile } from './device'
+import { loadChunk, loadWebRenderer } from './lazy-chunk'
 import { computeBitrate, evenDimension, h264CodecString, QUALITY_PRESETS } from './presets'
 import type { CompiledComposition, RenderOutput, RenderProgress, RenderSettings } from './types'
 
@@ -147,10 +149,12 @@ async function mountStage(
 	composition: CompiledComposition,
 	css: string | undefined,
 ): Promise<Stage> {
+	// Retried like every other render chunk: on a weak connection the player
+	// bundle is as likely to time out as the encoder, and it fails the same way.
 	const [{ createRoot }, { flushSync }, { Thumbnail }, React] = await Promise.all([
 		import('react-dom/client'),
 		import('react-dom'),
-		import('@remotion/player'),
+		loadChunk(() => import('@remotion/player'), { label: 'preview player' }),
 		import('react'),
 	])
 
@@ -238,7 +242,9 @@ export async function renderStillInBrowser(args: BrowserRenderArgs): Promise<Ren
 	onProgress({ phase: 'preparing', progress: 0, message: 'Mounting composition' })
 	const stage = await mountStage(composition, css)
 	try {
-		const { toCanvas } = await import('html-to-image')
+		const { toCanvas } = await loadChunk(() => import('html-to-image'), {
+			label: 'frame rasteriser',
+		})
 		stage.setFrame(frame)
 		await document.fonts.ready
 		await settle(stage.host)
@@ -310,14 +316,41 @@ async function renderMediaWithSound(args: BrowserRenderArgs): Promise<RenderOutp
 		document.head.appendChild(style)
 	}
 
-	onProgress({ phase: 'preparing', progress: 0, message: 'Checking video and audio codecs', totalFrames })
+	onProgress({
+		phase: 'preparing',
+		progress: 0,
+		message: 'Loading the video encoder',
+		totalFrames,
+	})
 	try {
+		/**
+		 * The encoder is a multi-megabyte chunk fetched on the first render of the
+		 * session. On a phone that download is the slowest part of the whole job,
+		 * so it is announced rather than hidden behind "checking codecs", and a
+		 * timed-out fetch is retried instead of ending the render at 0%.
+		 */
 		const {
 			canRenderMediaOnWeb,
 			getEncodableAudioCodecs,
 			getEncodableVideoCodecs,
 			renderMediaOnWeb,
-		} = await import('@remotion/web-renderer')
+		} = await loadWebRenderer({
+			signal,
+			onRetry: (attempt, attempts) =>
+				onProgress({
+					phase: 'preparing',
+					progress: 0,
+					message: `The encoder download timed out - retrying (${attempt}/${attempts - 1})`,
+					totalFrames,
+				}),
+		})
+		assertLive(signal)
+		onProgress({
+			phase: 'preparing',
+			progress: 0.02,
+			message: 'Checking video and audio codecs',
+			totalFrames,
+		})
 		const wantedAudioCodec: 'opus' | 'aac' = container === 'webm' ? 'opus' : 'aac'
 		// Browsers cap audio encoders well below the video preset. Chrome's AAC
 		// encoder, for example, refuses anything over 128 kbps, so the highest
@@ -475,13 +508,18 @@ async function renderVisualOnly(args: BrowserRenderArgs): Promise<RenderOutput> 
 	)
 	const bitrate = computeBitrate(width, height, fps, settings.preset)
 	const keyFrameInterval = Math.max(1, Math.round(fps * preset.keyframeIntervalSeconds))
+	// A deep encoder queue is throughput on a desktop and a memory spike on a
+	// phone, where the tab is killed rather than told it ran out of room.
+	const { encoderQueueDepth: queueDepth } = deviceProfile()
 
 	onProgress({ phase: 'preparing', progress: 0, message: 'Configuring encoder', totalFrames })
 	const choice = await pickEncoderConfig(width, height, fps, bitrate, format)
 
 	const [{ Muxer: Mp4Muxer, ArrayBufferTarget: Mp4Target }, webmModule] = await Promise.all([
-		import('mp4-muxer'),
-		choice.container === 'webm' ? import('webm-muxer') : Promise.resolve(null),
+		loadChunk(() => import('mp4-muxer'), { label: 'MP4 muxer', signal }),
+		choice.container === 'webm'
+			? loadChunk(() => import('webm-muxer'), { label: 'WebM muxer', signal })
+			: Promise.resolve(null),
 	])
 
 	type MuxerLike = {
@@ -523,7 +561,10 @@ async function renderVisualOnly(args: BrowserRenderArgs): Promise<RenderOutput> 
 	const stage = await mountStage(composition, css)
 
 	try {
-		const { toCanvas, getFontEmbedCSS } = await import('html-to-image')
+		const { toCanvas, getFontEmbedCSS } = await loadChunk(() => import('html-to-image'), {
+			label: 'frame rasteriser',
+			signal,
+		})
 
 		stage.setFrame(0)
 		await document.fonts.ready
@@ -567,7 +608,7 @@ async function renderVisualOnly(args: BrowserRenderArgs): Promise<RenderOutput> 
 			encoder.encode(videoFrame, { keyFrame: frame % keyFrameInterval === 0 })
 			videoFrame.close()
 
-			while (encoder.encodeQueueSize > 8) {
+			while (encoder.encodeQueueSize > queueDepth) {
 				assertLive(signal)
 				await wait(4)
 			}
