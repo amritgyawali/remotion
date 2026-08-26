@@ -234,16 +234,57 @@ function anchorFor(position: AnchorPosition, width: number, height: number, marg
 	}
 }
 
-function drawTextClip(ctx: Canvas2D, text: TextStyle, transform: Transform, canvasWidth: number, canvasHeight: number): void {
+/** ease-out cubic - animations that arrive read as more natural than a straight linear ramp. */
+function easeOutCubic(t: number): number {
+	const c = clamp01(t)
+	return 1 - (1 - c) ** 3
+}
+
+/**
+ * How far into its enter/exit animation a text clip is right now, expressed
+ * as an opacity multiplier, a vertical offset in pixels, and a uniform scale
+ * multiplier - all three default to "fully settled" (1, 0, 1) outside the
+ * animation windows, so a clip with `animationIn: 'none'` costs nothing extra.
+ */
+function textEnterExit(text: TextStyle, localFrame: number, durationFrames: number): { opacity: number; offsetY: number; scale: number } {
+	const span = Math.max(1, Math.min(text.animationFrames, Math.floor(durationFrames / 2)))
+	let phase: 'in' | 'out' | null = null
+	let t = 1
+	if (text.animationIn !== 'none' && localFrame < span) {
+		phase = 'in'
+		t = easeOutCubic(localFrame / span)
+	} else if (text.animationOut !== 'none' && localFrame > durationFrames - span) {
+		phase = 'out'
+		t = easeOutCubic((durationFrames - localFrame) / span)
+	}
+	if (!phase) return { opacity: 1, offsetY: 0, scale: 1 }
+
+	const kind = phase === 'in' ? text.animationIn : text.animationOut
+	switch (kind) {
+		case 'fade':
+			return { opacity: t, offsetY: 0, scale: 1 }
+		case 'slide-up':
+			return { opacity: t, offsetY: (1 - t) * 46, scale: 1 }
+		case 'slide-down':
+			return { opacity: t, offsetY: -(1 - t) * 46, scale: 1 }
+		case 'pop':
+			return { opacity: t, offsetY: 0, scale: 0.82 + 0.18 * t }
+		default:
+			return { opacity: 1, offsetY: 0, scale: 1 }
+	}
+}
+
+function drawTextClip(ctx: Canvas2D, text: TextStyle, transform: Transform, canvasWidth: number, canvasHeight: number, localFrame: number, durationFrames: number): void {
 	const anchor = anchorFor(text.position, canvasWidth, canvasHeight, text.marginPx)
 	const lines = text.content.split('\n')
 	const lineHeight = text.fontSizePx * 1.25
+	const anim = textEnterExit(text, localFrame, durationFrames)
 
 	ctx.save()
-	ctx.globalAlpha = clamp01(transform.opacity)
-	ctx.translate(anchor.x + transform.x, anchor.y + transform.y)
+	ctx.globalAlpha = clamp01(transform.opacity) * anim.opacity
+	ctx.translate(anchor.x + transform.x, anchor.y + transform.y + anim.offsetY)
 	if (transform.rotationDeg) ctx.rotate((transform.rotationDeg * Math.PI) / 180)
-	ctx.scale(transform.scaleX, transform.scaleY)
+	ctx.scale(transform.scaleX * anim.scale, transform.scaleY * anim.scale)
 	ctx.font = `${text.weight} ${text.fontSizePx}px ${text.fontFamily}`
 	ctx.textAlign = anchor.align
 	ctx.textBaseline = 'alphabetic'
@@ -372,7 +413,7 @@ async function drawClip(
 	opacityMultiplier: number,
 ): Promise<void> {
 	if (clip.kind === 'text') {
-		drawTextClip(ctx, clip.text, withOpacityMultiplier(clip.transform, opacityMultiplier), canvasWidth, canvasHeight)
+		drawTextClip(ctx, clip.text, withOpacityMultiplier(clip.transform, opacityMultiplier), canvasWidth, canvasHeight, frameIndex - clip.startFrame, clip.durationFrames)
 		return
 	}
 	if (clip.kind === 'audio') return // audio-only clips have nothing to paint
@@ -424,7 +465,7 @@ async function drawClip(
 		drawOfflineSlate(ctx, clip.label, transform, canvasWidth, canvasHeight)
 		return
 	}
-	const sourceSeconds = clip.sourceInSeconds + ((frameIndex - clip.startFrame) / fps) * clip.speed
+	const sourceSeconds = clip.freezeFrame ? clip.sourceInSeconds : clip.sourceInSeconds + ((frameIndex - clip.startFrame) / fps) * clip.speed
 	const sample = await sink.videoSink.getSample(Math.max(0, sourceSeconds))
 	if (!sample) return
 	try {

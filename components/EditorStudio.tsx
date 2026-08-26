@@ -23,7 +23,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import EditorTopBar from './editor/EditorTopBar'
 import MediaPool, { type PickedFile } from './editor/MediaPool'
 import PreviewStage from './editor/PreviewStage'
-import Timeline, { type TimelineHandlers } from './editor/Timeline'
+import Timeline, { type DropPreview, type TimelineHandle, type TimelineHandlers } from './editor/Timeline'
 import Inspector from './editor/Inspector'
 import ExportPanel, { type ExportSettings } from './editor/ExportPanel'
 import { RestoreNotice } from './SaveState'
@@ -32,7 +32,7 @@ import { useAutosave, useRestoredSnapshot } from '../lib/persist/use-vault'
 import { AssetSinkPool } from '../lib/editor/sinks'
 import { Player } from '../lib/editor/player'
 import { useEngine, useEngineState } from '../lib/editor/use-engine'
-import { activeClipsAtFrame, clipsOnTrack, createTrack, createAudioClip, createImageClip, createTextClip, createVideoClip, createProject, nextTrackName, projectDurationFrames } from '../lib/editor/model'
+import { activeClipsAtFrame, assetDefaultDurationFrames, clipsOnTrack, createTrack, createAudioClip, createImageClip, createTextClip, createVideoClip, createProject, nextTrackName, projectDurationFrames } from '../lib/editor/model'
 import * as ops from '../lib/editor/ops'
 import { assetsNeedingPermission, deleteAssetStorage, importMediaFile, reconnectAsset, readAssetBlob, readAssetThumb } from '../lib/editor/persistence'
 import { renderEditorExport, ExportCancelled, type ExportProgress, type ExportResult } from '../lib/editor/export'
@@ -161,6 +161,26 @@ export default function EditorStudio() {
 				try {
 					const { asset } = await importMediaFile(file, handle)
 					blobsRef.current.set(asset.id, file)
+
+					// Match the project canvas to the very first clip dropped into an
+					// otherwise-empty project - the same "sequence settings from the
+					// first clip" convention Premiere/Resolve default to. This is what
+					// keeps the preview showing the source at its own real resolution
+					// instead of letterboxed inside a generic 1920x1080 canvas; it never
+					// fires again once the project already has media, so it can't yank
+					// the canvas out from under work already in progress.
+					const before = engine.getDoc()
+					const isEmptyProject = Object.keys(before.assets).length === 0 && Object.keys(before.clips).length === 0
+					if (isEmptyProject && (asset.kind === 'video' || asset.kind === 'image') && asset.width > 0 && asset.height > 0) {
+						engine.dispatch(
+							ops.setProjectSettings(before, {
+								width: asset.width,
+								height: asset.height,
+								fps: asset.kind === 'video' && asset.fps > 0 ? asset.fps : before.settings.fps,
+							}),
+						)
+					}
+
 					engine.dispatch(ops.addAsset(asset))
 					if (asset.thumbKey) {
 						const thumb = await readAssetThumb(asset)
@@ -215,16 +235,15 @@ export default function EditorStudio() {
 
 	/* ------------------------------------------------------- timeline ops */
 
-	const buildClipForAsset = useCallback((asset: Asset, trackId: string, startFrame: number): Clip => {
-		const fps = doc.settings.fps
-		if (asset.kind === 'image') {
-			return createImageClip({ trackId, assetId: asset.id, startFrame, durationFrames: Math.max(1, Math.round(5 * fps)), label: asset.name })
-		}
-		if (asset.kind === 'audio') {
-			return createAudioClip({ trackId, assetId: asset.id, startFrame, durationFrames: Math.max(1, Math.round(asset.durationSeconds * fps)), label: asset.name })
-		}
-		return createVideoClip({ trackId, assetId: asset.id, startFrame, durationFrames: Math.max(1, Math.round(asset.durationSeconds * fps)), label: asset.name })
-	}, [doc.settings.fps])
+	const buildClipForAsset = useCallback(
+		(asset: Asset, trackId: string, startFrame: number): Clip => {
+			const durationFrames = assetDefaultDurationFrames(asset, doc.settings.fps)
+			if (asset.kind === 'image') return createImageClip({ trackId, assetId: asset.id, startFrame, durationFrames, label: asset.name })
+			if (asset.kind === 'audio') return createAudioClip({ trackId, assetId: asset.id, startFrame, durationFrames, label: asset.name })
+			return createVideoClip({ trackId, assetId: asset.id, startFrame, durationFrames, label: asset.name })
+		},
+		[doc.settings.fps],
+	)
 
 	const handleAddAssetToTimeline = useCallback(
 		(assetId: string, atFrame?: number) => {
@@ -326,6 +345,79 @@ export default function EditorStudio() {
 		[buildClipForAsset, engine, handleSeek],
 	)
 
+	/* -------------------------------------------------- media pool drag/drop */
+
+	const timelineRef = useRef<TimelineHandle>(null)
+	const ghostRef = useRef<HTMLDivElement>(null)
+	const poolDragRef = useRef<{ assetId: string; pointerActive: boolean; startX: number; startY: number } | null>(null)
+	const poolDragRaf = useRef<number | null>(null)
+	const pendingDragPos = useRef<{ x: number; y: number } | null>(null)
+	const [dragAssetId, setDragAssetId] = useState<string | null>(null)
+	const [dropPreview, setDropPreview] = useState<DropPreview>(null)
+
+	const positionGhost = useCallback((x: number, y: number) => {
+		if (ghostRef.current) ghostRef.current.style.transform = `translate(${x + 14}px, ${y + 14}px)`
+	}, [])
+
+	const handleDragAssetStart = useCallback((assetId: string, x: number, y: number) => {
+		poolDragRef.current = { assetId, pointerActive: false, startX: x, startY: y }
+	}, [])
+
+	/** Promotes a plain tap into a real drag only past a small movement threshold, then follows the pointer via a ref-mutated ghost (not React state) so 60 pointermove events a second never re-render the whole studio. */
+	const handleDragAssetMove = useCallback(
+		(x: number, y: number) => {
+			const drag = poolDragRef.current
+			if (!drag) return
+			pendingDragPos.current = { x, y }
+			if (!drag.pointerActive) {
+				if (Math.hypot(x - drag.startX, y - drag.startY) < 5) return
+				drag.pointerActive = true
+				setDragAssetId(drag.assetId)
+				positionGhost(x, y)
+			}
+			if (poolDragRaf.current !== null) return
+			poolDragRaf.current = requestAnimationFrame(() => {
+				poolDragRaf.current = null
+				const pos = pendingDragPos.current
+				if (!pos || !poolDragRef.current?.pointerActive) return
+				positionGhost(pos.x, pos.y)
+				const hit = timelineRef.current?.hitTest(pos.x, pos.y) ?? null
+				if (!hit) {
+					setDropPreview(null)
+					return
+				}
+				const asset = doc.assets[poolDragRef.current.assetId]
+				setDropPreview(asset ? { trackId: hit.trackId, frame: hit.frame, durationFrames: assetDefaultDurationFrames(asset, doc.settings.fps) } : null)
+			})
+		},
+		[doc.assets, doc.settings.fps, positionGhost],
+	)
+
+	const handleDragAssetEnd = useCallback(
+		(x: number, y: number) => {
+			const drag = poolDragRef.current
+			poolDragRef.current = null
+			if (poolDragRaf.current !== null) {
+				cancelAnimationFrame(poolDragRaf.current)
+				poolDragRaf.current = null
+			}
+			if (drag?.pointerActive) {
+				const hit = x >= 0 ? (timelineRef.current?.hitTest(x, y) ?? null) : null
+				if (hit) {
+					const asset = engine.getDoc().assets[drag.assetId]
+					if (asset) {
+						const clip = buildClipForAsset(asset, hit.trackId, hit.frame)
+						engine.dispatch(ops.addClip(clip))
+						setUi((prev) => ({ ...prev, selection: [clip.id] }))
+					}
+				}
+			}
+			setDragAssetId(null)
+			setDropPreview(null)
+		},
+		[buildClipForAsset, engine],
+	)
+
 	/* ---------------------------------------------------------- inspector */
 
 	const selectedClip = ui.selection.length === 1 ? doc.clips[ui.selection[0]] ?? null : null
@@ -355,9 +447,18 @@ export default function EditorStudio() {
 			onChromaKey: (chromaKey: ChromaKeySpec | null) => {
 				if (selectedClip) engine.dispatch(ops.setChromaKey(engine.getDoc(), selectedClip.id, chromaKey))
 			},
+			onFreezeFrame: (freeze: boolean, atSourceSeconds?: number) => {
+				if (selectedClip) engine.dispatch(ops.setFreezeFrame(engine.getDoc(), selectedClip.id, freeze, atSourceSeconds))
+			},
 		}),
 		[engine, selectedClip],
 	)
+
+	/** Where the playhead currently sits inside the selected clip's own source, in seconds - what "freeze on this frame" captures. */
+	const currentSourceSeconds = useMemo(() => {
+		if (!selectedClip || selectedClip.kind !== 'video') return 0
+		return selectedClip.sourceInSeconds + ((ui.playheadFrame - selectedClip.startFrame) / doc.settings.fps) * selectedClip.speed
+	}, [doc.settings.fps, selectedClip, ui.playheadFrame])
 
 	/* --------------------------------------------------------------- keys */
 
@@ -484,6 +585,9 @@ export default function EditorStudio() {
 						onAddToTimeline={(id) => handleAddAssetToTimeline(id)}
 						onRemoveAsset={handleRemoveAsset}
 						onReconnect={handleReconnect}
+						onDragStart={handleDragAssetStart}
+						onDragMove={handleDragAssetMove}
+						onDragEnd={handleDragAssetEnd}
 					/>
 					<button type="button" className="btn btn--sm editor-add-text-btn" onClick={handleAddTextClip}>
 						+ Text clip
@@ -507,7 +611,7 @@ export default function EditorStudio() {
 						onZoomIn={() => timelineHandlers.onZoom(Math.min(80, ui.zoom * 1.4))}
 						onZoomOut={() => timelineHandlers.onZoom(Math.max(0.5, ui.zoom / 1.4))}
 					/>
-					<Timeline doc={doc} ui={ui} fps={doc.settings.fps} handlers={timelineHandlers} />
+					<Timeline ref={timelineRef} doc={doc} ui={ui} fps={doc.settings.fps} handlers={timelineHandlers} dropPreview={dropPreview} />
 				</div>
 
 				<aside className="editor-rail editor-rail--right">
@@ -517,10 +621,21 @@ export default function EditorStudio() {
 						projectName={doc.name}
 						settings={doc.settings}
 						clipCount={Object.keys(doc.clips).length}
+						currentSourceSeconds={currentSourceSeconds}
 						{...inspectorHandlers}
 					/>
 				</aside>
 			</div>
+
+			{dragAssetId ? (
+				<div ref={ghostRef} className="editor-drag-ghost" aria-hidden="true">
+					{thumbUrls[dragAssetId] ? (
+						// eslint-disable-next-line @next/next/no-img-element
+						<img src={thumbUrls[dragAssetId]} alt="" />
+					) : null}
+					<span>{doc.assets[dragAssetId]?.name ?? 'Clip'}</span>
+				</div>
+			) : null}
 
 			<ExportPanel
 				open={exportOpen}

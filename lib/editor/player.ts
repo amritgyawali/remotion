@@ -173,7 +173,10 @@ export class Player {
 		if (ctx.state === 'suspended') await ctx.resume().catch(() => undefined)
 
 		const active = activeClipsAtFrame(this.doc, this.frame).filter(
-			(clip): clip is VideoClip | AudioClip => (clip.kind === 'video' || clip.kind === 'audio') && !clip.audio.muted,
+			// A frozen frame has no "moment" of audio to hold, so it stays silent
+			// rather than looping or smearing a fragment of sound - a deliberate
+			// choice, not a bug in the freeze-frame maths.
+			(clip): clip is VideoClip | AudioClip => (clip.kind === 'video' || clip.kind === 'audio') && !clip.audio.muted && !(clip.kind === 'video' && clip.freezeFrame),
 		)
 		const activeIds = new Set(active.map((c) => c.id))
 		for (const [id, pump] of this.pumps) {

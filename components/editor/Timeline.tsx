@@ -14,7 +14,7 @@
  * rings and screen-reader labels, which a canvas cannot give them for free.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { IconEye, IconLock, IconPlus, IconTrash, IconVolume, IconVolumeOff } from '../Icons'
 import { clipsOnTrack, snapCandidates } from '../../lib/editor/model'
 import { findTrackOverlaps } from '../../lib/editor/compositor'
@@ -59,13 +59,24 @@ export type TimelineHandlers = {
 	onDropAsset: (assetId: string, trackId: string, frame: number) => void
 }
 
+/** What's under a given screen point, right now - used both by the pointer-drag-from-media-pool drop logic and its live hover preview. Neither native HTML5 drag-and-drop nor its `dragstart`/`drop` events exist on touch, so this is deliberately plain geometry EditorStudio.tsx can call from its own pointer handlers instead. */
+export type TimelineHandle = {
+	hitTest: (clientX: number, clientY: number) => { trackId: string; frame: number } | null
+}
+
+/** Where a clip *would* land if the media-pool drag in progress were released right now - drawn as a ghost outline so touch users (who get no native drag affordance at all) can see the target before lifting their finger. */
+export type DropPreview = { trackId: string; frame: number; durationFrames: number } | null
+
 const TRACK_COLORS: Record<TrackKind, string> = { video: '#2c6bed', audio: '#17a08a', text: '#b4632f' }
 
 function trackColor(kind: TrackKind, hidden: boolean): string {
 	return hidden ? '#3c4150' : TRACK_COLORS[kind]
 }
 
-export default function Timeline({ doc, ui, fps, handlers }: { doc: ProjectDoc; ui: UiState; fps: number; handlers: TimelineHandlers }) {
+const Timeline = forwardRef<TimelineHandle, { doc: ProjectDoc; ui: UiState; fps: number; handlers: TimelineHandlers; dropPreview: DropPreview }>(function Timeline(
+	{ doc, ui, fps, handlers, dropPreview },
+	ref,
+) {
 	const canvasRef = useRef<HTMLCanvasElement>(null)
 	const containerRef = useRef<HTMLDivElement>(null)
 	const dragRef = useRef<DragState | null>(null)
@@ -106,6 +117,24 @@ export default function Timeline({ doc, ui, fps, handlers }: { doc: ProjectDoc; 
 			return null
 		},
 		[doc.trackOrder, doc.tracks, trackTops],
+	)
+
+	useImperativeHandle(
+		ref,
+		() => ({
+			hitTest(clientX: number, clientY: number) {
+				const canvas = canvasRef.current
+				if (!canvas) return null
+				const rect = canvas.getBoundingClientRect()
+				const x = clientX - rect.left
+				const y = clientY - rect.top
+				if (x < 0 || y < RULER_HEIGHT + MARKER_HEIGHT || x > rect.width || y > rect.height) return null
+				const trackId = trackAtY(y)
+				if (!trackId) return null
+				return { trackId, frame: Math.max(0, Math.round(xToFrame(x))) }
+			},
+		}),
+		[trackAtY, xToFrame],
 	)
 
 	const clipAt = useCallback(
@@ -258,6 +287,27 @@ export default function Timeline({ doc, ui, fps, handlers }: { doc: ProjectDoc; 
 			}
 		}
 
+		// Drop preview: where a clip dragged from the media pool would land if
+		// released right now - the only affordance touch users get, since there
+		// is no native drag cursor to look at on a phone.
+		if (dropPreview) {
+			const top = trackTops.get(dropPreview.trackId)
+			const track = doc.tracks[dropPreview.trackId]
+			if (top !== undefined && track) {
+				const x1 = frameToX(dropPreview.frame)
+				const x2 = frameToX(dropPreview.frame + dropPreview.durationFrames)
+				ctx.save()
+				ctx.setLineDash([6, 4])
+				ctx.strokeStyle = colors.accent
+				ctx.lineWidth = 2
+				ctx.fillStyle = 'rgba(125,124,255,0.18)'
+				roundRect(ctx, Math.max(x1, 0), top + 3, Math.min(x2, width) - Math.max(x1, 0), track.height - 6, 5)
+				ctx.fill()
+				ctx.stroke()
+				ctx.restore()
+			}
+		}
+
 		// Playhead.
 		const playX = frameToX(ui.playheadFrame)
 		if (playX >= -2 && playX <= width + 2) {
@@ -275,7 +325,7 @@ export default function Timeline({ doc, ui, fps, handlers }: { doc: ProjectDoc; 
 			ctx.closePath()
 			ctx.fill()
 		}
-	}, [doc, ui, fps, viewport, frameToX, trackTops])
+	}, [doc, ui, fps, viewport, frameToX, trackTops, dropPreview])
 
 	useEffect(() => {
 		draw()
@@ -418,21 +468,6 @@ export default function Timeline({ doc, ui, fps, handlers }: { doc: ProjectDoc; 
 		[handlers, ui.scrollFrame, ui.zoom, xToFrame],
 	)
 
-	const onDrop = useCallback(
-		(event: React.DragEvent<HTMLCanvasElement>) => {
-			event.preventDefault()
-			const assetId = event.dataTransfer.getData('application/x-editor-asset')
-			if (!assetId) return
-			const rect = event.currentTarget.getBoundingClientRect()
-			const y = event.clientY - rect.top
-			const x = event.clientX - rect.left
-			const trackId = trackAtY(y) ?? doc.trackOrder[0]
-			if (!trackId) return
-			handlers.onDropAsset(assetId, trackId, Math.max(0, Math.round(xToFrame(x))))
-		},
-		[doc.trackOrder, handlers, trackAtY, xToFrame],
-	)
-
 	/* -------------------------------------------------------------- render */
 
 	return (
@@ -487,13 +522,14 @@ export default function Timeline({ doc, ui, fps, handlers }: { doc: ProjectDoc; 
 					onPointerUp={onPointerUp}
 					onPointerCancel={onPointerUp}
 					onWheel={onWheel}
-					onDragOver={(event) => event.preventDefault()}
-					onDrop={onDrop}
 				/>
 			</div>
 		</div>
 	)
-}
+},
+)
+
+export default Timeline
 
 /* ------------------------------------------------------------------ utils */
 

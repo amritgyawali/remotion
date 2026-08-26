@@ -91,6 +91,8 @@ Status tags used below: **built** (code exists, logic reviewed, not yet browser-
 - [ ] Three-panel workspace (media/inspector rails + centre stage+timeline) — **built**
 - [ ] Canvas-rendered, virtualised multi-track timeline (not DOM-per-clip) — **built**, horizontally virtualised via `ui.scrollFrame`/`ui.zoom`; **vertical scrolling for more tracks than fit on screen is not implemented** — extra tracks are visually clipped rather than scrollable today
 - [ ] Drag to move a clip, drag an edge to trim, click-drag to scrub — **built**
+- [ ] Drag a clip from the media pool onto the timeline — **built on Pointer Events, not HTML5 drag-and-drop** (`MediaPool.tsx`/`Timeline.tsx`'s `hitTest`/`EditorStudio.tsx`'s pool-drag state), so the exact same gesture works on mouse *and* touch. A real bug from the previous pass is fixed here: the old native `draggable`/`dragstart` wiring had the handler on a *descendant* of the draggable element, which `dragstart` never bubbles into, so it silently never fired on any browser.
+- [ ] Project canvas auto-matches the first imported clip's resolution and frame rate — **built** (`EditorStudio.tsx`'s `handleImport`, only on a genuinely empty project) - this is what keeps the preview showing a source at its own real size instead of letterboxed inside a generic 1920x1080 canvas
 - [ ] Snapping (to clip edges/playhead/markers, hold Shift to disable) — **built**: `Timeline.tsx`'s drag handling calls `snapCandidates()` for move and both trim edges
 - [ ] Magnetic timeline mode — not started
 - [ ] Track header controls: mute / lock / hide / remove / add — **built**; solo and per-track colour/height editing are not
@@ -103,6 +105,7 @@ Status tags used below: **built** (code exists, logic reviewed, not yet browser-
 - [ ] Command palette (`Ctrl/Cmd+K`) — not started
 - [ ] Remappable keyboard shortcuts / Premiere-Resolve-CapCut keymap presets — not started (shortcuts exist, are not remappable)
 - [ ] Full accessibility pass (ARIA grid semantics for the timeline, screen-reader clip announcements) — not started; keyboard shortcuts exist but the canvas timeline has no ARIA grid semantics yet
+- [ ] Mobile layout: the preview stage gets a real, definite height instead of fighting a CSS grid's `auto` row sizing against a `flex: 1` child, and shows first (before the media pool) instead of requiring a scroll past it — **built**, `@media (max-width: 900px)` in `globals.css` switched from `display: grid` to a flex column with explicit heights and `order: -1`
 - [ ] Offline-first PWA (installable, service-worker precache) for this route — not started
 
 ---
@@ -112,7 +115,7 @@ Status tags used below: **built** (code exists, logic reviewed, not yet browser-
 ### A. Media ingest, assets & organization (1–14)
 
 - [ ] 1. Add media from device — **built** (`showOpenFilePicker` + `<input>` fallback, `components/editor/MediaPool.tsx`)
-- [ ] 2. Drag & drop import — **built**, captures a handle via `getAsFileSystemHandle` when available
+- [ ] 2. Drag & drop import — **built**, captures a handle via `getAsFileSystemHandle` when available (file-from-OS import; dragging a *pool item onto the timeline* is a separate feature, see Part A's UI shell)
 - [ ] 3. Media pool / bins — **partial**: flat list only, no folders/colour tags/ratings/view modes
 - [ ] 4. Auto metadata extraction — **built** (`lib/editor/probe.ts`, mediabunny-based)
 - [ ] 5. Thumbnail + filmstrip generation — **partial**: one poster thumbnail per asset; no filmstrip sprite sheet
@@ -158,7 +161,7 @@ Status tags used below: **built** (code exists, logic reviewed, not yet browser-
 - [ ] 39. Constant speed change — **partial**: a speed slider changes playback rate identically in live preview and export; pitch is **not** preserved (no WSOLA/phase-vocoder correction — changing speed changes pitch, a known, disclosed gap)
 - [ ] 40. Speed ramping with curves — not started
 - [ ] 41. Reverse playback — not started
-- [ ] 42. Freeze frame / hold — not started
+- [ ] 42. Freeze frame / hold — **built**: a per-clip toggle plus "use the frame at the playhead" to pick which instant freezes; audio on a frozen clip goes silent (a held frame has no moment of sound to loop), in both preview and export
 - [ ] 43. Optical-flow frame interpolation — not started
 - [ ] 44. Motion blur synthesis — not started
 - [ ] 45. Time remapping keyframes — not started (no keyframe system exists yet at all — see Part I)
@@ -248,7 +251,7 @@ Status tags used below: **built** (code exists, logic reviewed, not yet browser-
 - [ ] 112. Local font loading — not started (`queryLocalFonts()`/custom font upload not wired to text clips)
 - [ ] 113. Stroke, shadow, glow, gradient, background box, 3D extrude — **partial**: stroke and a flat background box are built; shadow/glow/gradient/3D extrude are not
 - [ ] 114. Text presets & title templates — not started
-- [ ] 115. Text animation in/out/loop — not started (text is static; no per-clip enter/exit animation)
+- [ ] 115. Text animation in/out/loop — **partial**: enter/exit animation (fade, slide up, slide down, pop) with an adjustable duration is built, eased with a cubic ease-out; looping/per-character stagger is not
 - [ ] 116. Auto captions (word-level, local Whisper) — not started for this studio (exists standalone in Captions Studio)
 - [ ] 117. Karaoke / animated word-highlight captions — not started
 - [ ] 118. Caption styles library — not started
@@ -388,8 +391,9 @@ just by going through `ops.ts`/`Engine.dispatch` like everything else does.
 ## What to do next (highest-leverage gaps, in order)
 
 1. Add a real keyframe system (`Keyframed<T>` on transform/opacity/audio gain/effects) — nearly everything in Part I and half of Part D/J depends on this existing first. This is now the single largest gap versus the blueprint's document schema.
-2. Verify the whole vertical slice in a real browser with real footage: import → trim/split/move → transform/color-grade/crop/key a clip → overlap two clips to dissolve → add text → export → play the exported file. Nothing above can be honestly ticked until this happens at least once.
-3. Expose export range (already built in `lib/editor/export.ts`) in `ExportPanel.tsx`.
-4. Add a blend-mode field to `Clip` and one compositing pass in `compositor.ts` for simultaneously-*stacked* layers (distinct from the crossfade transition, which is already built) — the cheapest way to unlock the rest of Part F.
-5. Add vertical scrolling to the timeline once a project has more tracks than fit on screen.
-6. Add temporal smoothing to the chroma-key alpha mask so it stops flickering frame to frame.
+2. Verify the whole vertical slice in a real browser, on both desktop and mobile, with real footage: import (including drag-from-pool onto the timeline) → trim/split/move → transform/color-grade/crop/key a clip → overlap two clips to dissolve → freeze a frame → animate a text clip in/out → export → play the exported file. Nothing above can be honestly ticked until this happens at least once.
+3. Add on-canvas transform handles - drag directly on the preview to move/scale the selected clip, instead of numeric fields only. Deliberately deferred this pass: it needs the compositor's fit/transform math exposed as a reusable pure function and careful CSS-pixel-to-canvas-pixel coordinate mapping, and shipping it rushed risks exactly the kind of subtly-wrong interaction a preview feature can't afford.
+4. Expose export range (already built in `lib/editor/export.ts`) in `ExportPanel.tsx`.
+5. Add a blend-mode field to `Clip` and one compositing pass in `compositor.ts` for simultaneously-*stacked* layers (distinct from the crossfade transition, which is already built) — the cheapest way to unlock the rest of Part F.
+6. Add vertical scrolling to the timeline once a project has more tracks than fit on screen.
+7. Add temporal smoothing to the chroma-key alpha mask so it stops flickering frame to frame.

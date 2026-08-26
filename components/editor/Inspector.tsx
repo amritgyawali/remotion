@@ -8,7 +8,7 @@
  * relevant" idea the blueprint borrows from Premiere (§1.1).
  */
 
-import type { ChromaKeySpec, Clip, ClipEffects, CropRect, ProjectSettings, TextAlign, TextStyle, Transform } from '../../lib/editor/types'
+import type { ChromaKeySpec, Clip, ClipEffects, CropRect, ProjectSettings, TextAlign, TextAnimation, TextStyle, Transform } from '../../lib/editor/types'
 
 const ANCHORS: Array<{ id: TextStyle['position']; label: string }> = [
 	{ id: 'top-left', label: '↖' },
@@ -85,6 +85,8 @@ export default function Inspector({
 	onEffects,
 	onCrop,
 	onChromaKey,
+	onFreezeFrame,
+	currentSourceSeconds,
 }: {
 	selectedClip: Clip | null
 	selectionCount: number
@@ -100,6 +102,9 @@ export default function Inspector({
 	onEffects: (fields: Partial<ClipEffects>) => void
 	onCrop: (crop: CropRect | null) => void
 	onChromaKey: (chromaKey: ChromaKeySpec | null) => void
+	onFreezeFrame: (freeze: boolean, atSourceSeconds?: number) => void
+	/** the source-time position the playhead is currently over, within the selected clip - used by "use the frame at the playhead" */
+	currentSourceSeconds: number
 }) {
 	if (selectionCount > 1) {
 		return (
@@ -164,6 +169,21 @@ export default function Inspector({
 						<input type="range" min={0.25} max={4} step={0.05} value={selectedClip.speed} onChange={(event) => onSpeed(parseFloat(event.target.value))} />
 					</label>
 					<span className="editor-hint">{selectedClip.speed.toFixed(2)}x</span>
+				</>
+			) : null}
+
+			{selectedClip.kind === 'video' ? (
+				<>
+					<h4>Freeze frame</h4>
+					<label className="editor-field editor-field--checkbox">
+						<input type="checkbox" checked={selectedClip.freezeFrame} onChange={(event) => onFreezeFrame(event.target.checked)} />
+						<span>Hold as a still</span>
+					</label>
+					{selectedClip.freezeFrame ? (
+						<button type="button" className="btn btn--ghost btn--sm" onClick={() => onFreezeFrame(true, currentSourceSeconds)}>
+							Use the frame at the playhead
+						</button>
+					) : null}
 				</>
 			) : null}
 
@@ -344,6 +364,33 @@ export default function Inspector({
 						/>
 						<span>Background box</span>
 					</label>
+
+					<h4>Animation</h4>
+					<div className="editor-field-row">
+						<label className="editor-field">
+							<span>Enter</span>
+							<select value={selectedClip.text.animationIn} onChange={(event) => onText({ animationIn: event.target.value as TextAnimation })}>
+								<option value="none">None</option>
+								<option value="fade">Fade</option>
+								<option value="slide-up">Slide up</option>
+								<option value="slide-down">Slide down</option>
+								<option value="pop">Pop</option>
+							</select>
+						</label>
+						<label className="editor-field">
+							<span>Exit</span>
+							<select value={selectedClip.text.animationOut} onChange={(event) => onText({ animationOut: event.target.value as TextAnimation })}>
+								<option value="none">None</option>
+								<option value="fade">Fade</option>
+								<option value="slide-up">Slide up</option>
+								<option value="slide-down">Slide down</option>
+								<option value="pop">Pop</option>
+							</select>
+						</label>
+					</div>
+					{selectedClip.text.animationIn !== 'none' || selectedClip.text.animationOut !== 'none' ? (
+						<NumberField label="Animation length (fr)" value={selectedClip.text.animationFrames} min={1} max={120} onChange={(animationFrames) => onText({ animationFrames: Math.round(animationFrames) })} />
+					) : null}
 				</>
 			) : null}
 		</div>

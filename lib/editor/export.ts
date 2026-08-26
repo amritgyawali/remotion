@@ -200,7 +200,7 @@ async function mixdownAudio(
 	const audibleClips = new Set<string>()
 	for (let frame = startFrame; frame < endFrame; frame += Math.max(1, Math.round(fps))) {
 		for (const clip of activeClipsAtFrame(doc, frame)) {
-			if ((clip.kind === 'video' || clip.kind === 'audio') && !clip.audio.muted) audibleClips.add(clip.id)
+			if ((clip.kind === 'video' || clip.kind === 'audio') && !clip.audio.muted && !(clip.kind === 'video' && clip.freezeFrame)) audibleClips.add(clip.id)
 		}
 	}
 

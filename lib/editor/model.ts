@@ -67,6 +67,9 @@ export function defaultTextStyle(overrides: Partial<TextStyle> = {}): TextStyle 
 		strokeColor: '#000000',
 		strokeWidthPx: 0,
 		marginPx: 48,
+		animationIn: 'none',
+		animationOut: 'none',
+		animationFrames: 12,
 		...overrides,
 	}
 }
@@ -109,6 +112,12 @@ function clipBase(trackId: string, startFrame: number, durationFrames: number, l
 	}
 }
 
+/** How many project frames a freshly-dropped clip of this asset should span by default - images get a flat 5s, everything else its own natural length. */
+export function assetDefaultDurationFrames(asset: Asset, fps: number): number {
+	const seconds = asset.kind === 'image' ? 5 : asset.durationSeconds
+	return Math.max(1, Math.round(seconds * fps))
+}
+
 export function createVideoClip(args: {
 	trackId: string
 	assetId: string
@@ -124,6 +133,7 @@ export function createVideoClip(args: {
 		assetId: args.assetId,
 		sourceInSeconds: args.sourceInSeconds ?? 0,
 		speed: args.speed ?? 1,
+		freezeFrame: false,
 	}
 }
 

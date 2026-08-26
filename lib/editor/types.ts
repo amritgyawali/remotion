@@ -78,6 +78,8 @@ export type AnchorPosition =
 	| 'bottom-center'
 	| 'bottom-right'
 
+export type TextAnimation = 'none' | 'fade' | 'slide-up' | 'slide-down' | 'pop'
+
 export type TextStyle = {
 	content: string
 	fontFamily: string
@@ -90,6 +92,10 @@ export type TextStyle = {
 	strokeColor: string | null
 	strokeWidthPx: number
 	marginPx: number
+	animationIn: TextAnimation
+	animationOut: TextAnimation
+	/** how many frames the in/out animation takes, measured from the clip's own start/end */
+	animationFrames: number
 }
 
 export type ClipAudio = {
@@ -161,10 +167,12 @@ type ClipBase = {
 export type VideoClip = ClipBase & {
 	kind: 'video'
 	assetId: string
-	/** trim point into the *source asset*, in source seconds */
+	/** trim point into the *source asset*, in source seconds - also the held frame when `freezeFrame` is on */
 	sourceInSeconds: number
 	/** playback rate multiplier; 1 = normal, 2 = double speed, 0.5 = half */
 	speed: number
+	/** holds `sourceInSeconds` for the whole clip instead of advancing - a still frame, still playing on the timeline */
+	freezeFrame: boolean
 }
 
 export type ImageClip = ClipBase & {

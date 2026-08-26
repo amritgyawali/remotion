@@ -7186,6 +7186,54 @@ textarea::placeholder {
 	overflow: hidden;
 	background: var(--surface-2);
 	color: var(--text-tertiary);
+	cursor: grab;
+	/* This element is a Pointer Events drag source (mouse + touch + pen) -
+	   without this, a touch-drag toward the timeline scrolls the page instead. */
+	touch-action: none;
+	-webkit-user-select: none;
+	user-select: none;
+}
+
+.editor-media-thumb:active {
+	cursor: grabbing;
+}
+
+/* Follows the pointer during a media-pool-to-timeline drag; position is set
+   via direct DOM mutation in EditorStudio.tsx, not React state/props, so it
+   tracks the pointer at full frame rate without re-rendering the studio. */
+.editor-drag-ghost {
+	position: fixed;
+	top: 0;
+	left: 0;
+	z-index: 80;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	max-width: 220px;
+	padding: 6px 10px 6px 6px;
+	border-radius: var(--radius-sm);
+	border: 1px solid var(--accent);
+	background: var(--raised);
+	box-shadow: var(--shadow-lg);
+	pointer-events: none;
+	will-change: transform;
+}
+
+.editor-drag-ghost img {
+	width: 32px;
+	height: 32px;
+	border-radius: 6px;
+	object-fit: cover;
+	flex-shrink: 0;
+}
+
+.editor-drag-ghost span {
+	font-size: 12px;
+	font-weight: 560;
+	color: var(--text);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .editor-media-thumb img {
@@ -7410,15 +7458,50 @@ textarea::placeholder {
 }
 
 @media (max-width: 900px) {
+	/* A CSS grid with `auto` rows has no way to know how tall a `flex: 1`
+	   descendant "should" be - the stage could end up a few pixels tall with
+	   the media pool eating the rest of the screen. Switching to a plain
+	   flex column and giving the preview a real, explicit height (not just
+	   `flex: 1` against an ambiguous parent) removes that ambiguity outright,
+	   and `order` puts the preview first regardless of DOM order, so a phone
+	   user sees video immediately instead of scrolling past the media pool. */
 	.editor-workspace {
-		grid-template-columns: 1fr;
-		grid-template-rows: auto auto auto;
+		display: flex;
+		flex-direction: column;
+		overflow-y: auto;
+	}
+
+	.editor-center {
+		order: -1;
+		flex: 0 0 auto;
+		height: min(62vh, 480px);
+		min-height: 320px;
+	}
+
+	.editor-stage {
+		min-height: 200px;
+	}
+
+	.editor-timeline {
+		height: 170px;
+		min-height: 170px;
+	}
+
+	.editor-rail {
+		flex: 0 0 auto;
+		max-height: 240px;
 	}
 
 	.editor-rail--left,
 	.editor-rail--right {
 		border: none;
 		border-top: 1px solid var(--border);
-		max-height: 220px;
+	}
+}
+
+@media (max-width: 480px) {
+	.editor-center {
+		height: min(48vh, 380px);
+		min-height: 260px;
 	}
 }

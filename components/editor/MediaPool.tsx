@@ -5,6 +5,15 @@
  * reusable `FileSystemFileHandle` when the browser offers one), see what is
  * in the project, drag a clip onto the timeline or tap "+" to drop it at the
  * playhead.
+ *
+ * The pool-item-to-timeline drag is built on Pointer Events, not HTML5 drag
+ * and drop: `draggable`/`dragstart`/`drop` simply do not exist on touch
+ * browsers, so a phone user would have no way to drag a clip onto the
+ * timeline at all. Pointer Events unify mouse, pen and touch into one API,
+ * so the exact same gesture works everywhere - `EditorStudio.tsx` owns the
+ * actual drag state (it needs to draw the floating thumbnail and ask the
+ * timeline what is under the pointer), this component only reports the raw
+ * pointer lifecycle for the thumbnail that started it.
  */
 
 import { useCallback, useRef } from 'react'
@@ -70,6 +79,9 @@ export default function MediaPool({
 	onAddToTimeline,
 	onRemoveAsset,
 	onReconnect,
+	onDragStart,
+	onDragMove,
+	onDragEnd,
 }: {
 	assets: Asset[]
 	thumbUrls: Record<string, string>
@@ -78,6 +90,9 @@ export default function MediaPool({
 	onAddToTimeline: (assetId: string) => void
 	onRemoveAsset: (assetId: string) => void
 	onReconnect: (assetId: string) => void
+	onDragStart: (assetId: string, clientX: number, clientY: number) => void
+	onDragMove: (clientX: number, clientY: number) => void
+	onDragEnd: (clientX: number, clientY: number) => void
 }) {
 	const inputRef = useRef<HTMLInputElement>(null)
 
@@ -128,12 +143,27 @@ export default function MediaPool({
 			) : (
 				<ul className="editor-media-list">
 					{assets.map((asset) => (
-						<li key={asset.id} className="editor-media-item" draggable data-status={asset.status}>
+						<li key={asset.id} className="editor-media-item" data-status={asset.status}>
 							<div
 								className="editor-media-thumb"
-								onDragStart={(event) => {
-									event.dataTransfer.setData('application/x-editor-asset', asset.id)
-									event.dataTransfer.effectAllowed = 'copy'
+								title="Drag onto the timeline"
+								onPointerDown={(event) => {
+									if (event.pointerType === 'mouse' && event.button !== 0) return
+									event.currentTarget.setPointerCapture(event.pointerId)
+									onDragStart(asset.id, event.clientX, event.clientY)
+								}}
+								onPointerMove={(event) => {
+									if (event.currentTarget.hasPointerCapture(event.pointerId)) onDragMove(event.clientX, event.clientY)
+								}}
+								onPointerUp={(event) => {
+									if (!event.currentTarget.hasPointerCapture(event.pointerId)) return
+									event.currentTarget.releasePointerCapture(event.pointerId)
+									onDragEnd(event.clientX, event.clientY)
+								}}
+								onPointerCancel={(event) => {
+									if (!event.currentTarget.hasPointerCapture(event.pointerId)) return
+									event.currentTarget.releasePointerCapture(event.pointerId)
+									onDragEnd(-1, -1)
 								}}
 							>
 								{thumbUrls[asset.id] ? (

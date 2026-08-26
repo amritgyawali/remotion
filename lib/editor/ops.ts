@@ -199,6 +199,13 @@ export function setClipSpeed(doc: ProjectDoc, clipId: string, speed: number): Co
 	return updateClip(doc, clipId, { speed: Math.max(0.1, Math.min(8, speed)) }, 'Change speed')
 }
 
+/** Toggles freeze-frame; `atSourceSeconds`, when given, also moves the held frame there ("freeze on this frame"). */
+export function setFreezeFrame(doc: ProjectDoc, clipId: string, freezeFrame: boolean, atSourceSeconds?: number): Command {
+	const before = doc.clips[clipId]
+	if (!before || before.kind !== 'video') return { label: 'Freeze frame', forward: {}, backward: {} }
+	return updateClip(doc, clipId, { freezeFrame, sourceInSeconds: atSourceSeconds ?? before.sourceInSeconds }, 'Freeze frame')
+}
+
 /**
  * Trims an edge in place: the *other* edge stays put. Trimming the left edge
  * also slides the source in-point so the picture does not jump; trimming the
