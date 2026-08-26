@@ -1,0 +1,9 @@
+# Asset licence and readme files are hashed byte-for-byte in the per-family
+# lock files (public/assets/fonts/fonts.lock.json and friends), and the CI
+# "deterministic assets" check compares those hashes. Upstream ships several
+# of them with CRLF endings, so without pinning here a Windows checkout
+# rewrites the bytes and the check fails on one platform but not the other.
+# Every one of these files is already LF in the index, so this changes no
+# content - it stops the endings from drifting again.
+public/assets/**/*.txt text eol=lf
+public/assets/**/*.md  text eol=lf
