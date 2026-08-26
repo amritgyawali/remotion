@@ -1,6 +1,6 @@
-import { IconCaptions, IconFile, IconFilm, IconScissors } from './Icons'
+import { IconCaptions, IconFile, IconFilm, IconScissors, IconTools } from './Icons'
 
-export type StudioId = 'video' | 'captions' | 'silence' | 'resume'
+export type StudioId = 'video' | 'captions' | 'silence' | 'tools' | 'resume'
 
 const STUDIOS: Array<{
 	id: StudioId
@@ -29,6 +29,13 @@ const STUDIOS: Array<{
 		label: 'Silence',
 		title: 'Find the dead air in a video and cut it or run it fast',
 		icon: IconScissors,
+	},
+	{
+		id: 'tools',
+		href: '/tools',
+		label: 'Tools',
+		title: '50+ editing tools: mono to stereo, trim, rotate, watermark and more',
+		icon: IconTools,
 	},
 	{
 		id: 'resume',

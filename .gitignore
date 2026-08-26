@@ -23,6 +23,15 @@ remotion-bundle/
 # generated sample mirror (rebuilt by `npm run samples`)
 public/samples/
 
+# generated 3D asset pack (rebuilt by `npm run assets:3d`)
+# 1,200 GLB models + previews, ~31 MB, and deterministic - regenerated in CI
+# rather than carried in the history. Only the Remotion 3D samples read them.
+# The hand-written docs beside the pack stay tracked: the asset-library build
+# reads both of them.
+public/assets/3d/*
+!public/assets/3d/README.md
+!public/assets/3d/LICENSE-3D.md
+
 # misc
 .DS_Store
 *.pem
