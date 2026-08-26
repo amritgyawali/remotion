@@ -1,6 +1,6 @@
-import { IconCaptions, IconFile, IconFilm, IconScissors, IconTools } from './Icons'
+import { IconCaptions, IconFile, IconFilm, IconLayers, IconScissors, IconTools } from './Icons'
 
-export type StudioId = 'video' | 'captions' | 'silence' | 'tools' | 'resume'
+export type StudioId = 'video' | 'captions' | 'silence' | 'tools' | 'editor' | 'resume'
 
 const STUDIOS: Array<{
 	id: StudioId
@@ -36,6 +36,13 @@ const STUDIOS: Array<{
 		label: 'Tools',
 		title: '50+ editing tools: mono to stereo, trim, rotate, watermark and more',
 		icon: IconTools,
+	},
+	{
+		id: 'editor',
+		href: '/editor',
+		label: 'Editor',
+		title: 'A full multi-track timeline editor: layers, effects, text, keyframes and export - all local',
+		icon: IconLayers,
 	},
 	{
 		id: 'resume',
