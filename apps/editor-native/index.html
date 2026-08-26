@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+		<title>Editor Studio</title>
+		<meta name="description" content="A full multi-track video editor that runs entirely on this device - nothing is uploaded." />
+		<script>
+			// Same bootstrap the web app's root layout runs inline: paint the saved
+			// theme before first paint so there is never a flash of the wrong one.
+			;(function () {
+				try {
+					var s = localStorage.getItem('rvs-theme')
+					if (s !== 'light' && s !== 'dark') s = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+					document.documentElement.setAttribute('data-theme', s)
+				} catch (e) {
+					document.documentElement.setAttribute('data-theme', 'dark')
+				}
+			})()
+		</script>
+	</head>
+	<body>
+		<div id="root"></div>
+		<script type="module" src="/src/main.tsx"></script>
+	</body>
+</html>

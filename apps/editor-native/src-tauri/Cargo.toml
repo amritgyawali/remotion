@@ -1,0 +1,31 @@
+[package]
+name = "editor-studio"
+version = "0.1.0"
+description = "Editor Studio - a full multi-track video editor that runs entirely on this device"
+authors = ["Remotion Video Studio"]
+license = ""
+repository = ""
+edition = "2021"
+rust-version = "1.77.2"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.11.3", features = [] }
+tauri-plugin-log = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
+# Cross-platform system info (RAM, CPU) - the frontend uses this to raise its
+# own quality ceilings (proxy resolution, encoder queue depth, upscale scale)
+# past what it would ever assume safe running as an ordinary browser tab.
+sysinfo = "0.32"

@@ -1,0 +1,7 @@
+{
+	"$schema": "../gen/schemas/desktop-schema.json",
+	"identifier": "default",
+	"description": "Editor Studio's default window permissions - a local, single-user video editor, so file access is granted broadly rather than path-scoped the way a multi-tenant app would need.",
+	"windows": ["main"],
+	"permissions": ["core:default", "fs:default", "fs:allow-read-file", "fs:allow-write-file", "dialog:default"]
+}

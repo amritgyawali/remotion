@@ -4,7 +4,8 @@
  * The media bin: import a file (picker, or drag-and-drop - both capture a
  * reusable `FileSystemFileHandle` when the browser offers one), see what is
  * in the project, drag a clip onto the timeline or tap "+" to drop it at the
- * playhead.
+ * playhead. Inside the native shell (`apps/editor-native`), the picker is
+ * the real OS file dialog instead - see `pickWithTauriDialog` below.
  *
  * The pool-item-to-timeline drag is built on Pointer Events, not HTML5 drag
  * and drop: `draggable`/`dragstart`/`drop` simply do not exist on touch
@@ -20,11 +21,40 @@ import { useCallback, useRef } from 'react'
 import { IconAlert, IconFile, IconLink, IconPlus, IconTrash, IconUpload } from '../Icons'
 import { formatBytes, formatSeconds } from '../../lib/format'
 import { handleSupported } from '../../lib/editor/handles'
+import { isTauriNative } from '../../lib/device'
 import type { Asset } from '../../lib/editor/types'
 
 export type PickedFile = { file: File; handle: FileSystemFileHandle | null }
 
 const ACCEPT = 'video/*,image/*,audio/*,.mp4,.mov,.webm,.mkv,.m4v,.mp3,.wav,.m4a,.ogg,.png,.jpg,.jpeg,.webp,.gif'
+const MEDIA_EXTENSIONS = ['mp4', 'mov', 'webm', 'mkv', 'm4v', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'mp3', 'wav', 'm4a', 'ogg', 'flac']
+
+/**
+ * The real OS file dialog, via Tauri's plugin - not just nicer than a plain
+ * `<input>`, necessary on WebKit-based Tauri builds (macOS/Linux/mobile),
+ * where the File System Access API this file otherwise prefers does not
+ * exist at all. `handle: null` because there is no browser-style
+ * `FileSystemFileHandle` here - a relaunch treats these the same as a plain
+ * `<input>` import (re-browse to reconnect), the same honest fallback the
+ * browser path already uses when the File System Access API is unavailable.
+ */
+async function pickWithTauriDialog(): Promise<PickedFile[]> {
+	const [{ open }, { readFile }] = await Promise.all([import('@tauri-apps/plugin-dialog'), import('@tauri-apps/plugin-fs')])
+	const paths = await open({ multiple: true, filters: [{ name: 'Media', extensions: MEDIA_EXTENSIONS }] })
+	if (!paths) return []
+	const list = Array.isArray(paths) ? paths : [paths]
+	const results: PickedFile[] = []
+	for (const path of list) {
+		try {
+			const bytes = await readFile(path)
+			const name = path.split(/[\\/]/).pop() ?? path
+			results.push({ file: new File([bytes], name), handle: null })
+		} catch {
+			/* skip a file that vanished or is unreadable between pick and read */
+		}
+	}
+	return results
+}
 
 async function pickWithFileSystemAccess(): Promise<PickedFile[]> {
 	const handles = await window.showOpenFilePicker!({
@@ -97,6 +127,15 @@ export default function MediaPool({
 	const inputRef = useRef<HTMLInputElement>(null)
 
 	const openPicker = useCallback(async () => {
+		if (isTauriNative()) {
+			try {
+				const picked = await pickWithTauriDialog()
+				if (picked.length) onImport(picked)
+				return
+			} catch {
+				// fall through to the browser pickers below as a backstop
+			}
+		}
 		if (handleSupported()) {
 			try {
 				const picked = await pickWithFileSystemAccess()

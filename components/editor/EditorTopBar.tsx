@@ -15,6 +15,7 @@ export default function EditorTopBar({
 	onRedo,
 	onExport,
 	onReset,
+	standalone = false,
 }: {
 	projectName: string
 	save: { status: VaultStatus; savedAt: number | null; error: string | null }
@@ -24,6 +25,8 @@ export default function EditorTopBar({
 	onRedo: () => void
 	onExport: () => void
 	onReset: () => void
+	/** true in the native desktop/mobile shell (`apps/editor-native`), which has no other studios to link to */
+	standalone?: boolean
 }) {
 	return (
 		<header className="topbar">
@@ -59,7 +62,7 @@ export default function EditorTopBar({
 					<IconDownload size={13} /> Export
 				</button>
 
-				<StudioNav current="editor" />
+				{standalone ? null : <StudioNav current="editor" />}
 
 				<ThemeToggle />
 

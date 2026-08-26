@@ -7,6 +7,9 @@
   "engines": {
     "node": ">=20.9.0"
   },
+  "workspaces": [
+    "apps/editor-native"
+  ],
   "scripts": {
     "predev": "node scripts/sync-samples.mjs",
     "dev": "next dev --webpack",

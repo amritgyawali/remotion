@@ -363,6 +363,33 @@ Status tags used below: **built** (code exists, logic reviewed, not yet browser-
 
 ---
 
+## Part B.5 — Native apps (`apps/editor-native`, Tauri)
+
+The Editor Studio packaged as a standalone app, since it is the one studio in
+this repo with zero server dependency - see `apps/editor-native/README.md`
+for the full write-up, prerequisites, and the exact commands. Status here is
+narrower than it looks: "the native shell boots and renders the real editor
+UI" is genuinely verified for desktop; "the actual editing workflow - import,
+edit, export - works correctly inside the native shell" is not tested on any
+platform yet, same as the web build throughout the rest of this file.
+
+- [ ] **Windows desktop build** — **built and partially verified**: `npm run tauri build` produces a real installer (`Editor Studio_0.1.0_x64-setup.exe`, `.msi`) and a 24.5MB `editor-studio.exe`. Launched it, took a screenshot - the window opens, titled "Editor Studio", full UI renders correctly (media pool, preview canvas, timeline, transport, save badge), 37MB memory footprint at idle. **Not yet verified**: importing real media, editing, or exporting inside the native shell.
+- [ ] **Android debug build** — **built, not run**: `npm run tauri android build --debug` produces a real, structurally-valid universal APK (`app-universal-debug.apk`, ~570MB unstripped/all-ABI debug build) and an AAB - confirmed via `aapt dump badging` (correct package id, label, minSdk/targetSdk). Never installed on a device or emulator, so the UI itself is unverified on Android.
+- [ ] **iOS build** — **not started, and not possible in this environment**: Tauri's iOS tooling shells out to Xcode, which only runs on macOS - not a missing-dependency gap the way Android's NDK was, a hard platform wall. Documented in the README what running `tauri ios init`/`build` on an actual Mac needs.
+- [ ] Native RAM/CPU detection replacing the browser's capped heuristic — **built**: `lib/device.ts`'s `refineDeviceProfileForNative()` calls a Rust `system_info` command (`sysinfo` crate) and raises `maxDimension`/`maxScale`/`encoderQueueDepth` past what the browser tab heuristic would ever assume safe (up to 8K/4x scale at ≥16GB RAM, vs. the browser's 4K/2x ceiling). The ceiling *numbers* are untested against real encode performance - they are a reasoned first pass, not benchmarked.
+- [ ] Native filesystem/dialog integration — **wired up, not click-through tested**: `MediaPool.tsx`'s `pickWithTauriDialog()` opens the real OS file picker (via `@tauri-apps/plugin-dialog`'s `open()` + `plugin-fs`'s `readFile()`) when `isTauriNative()`, ahead of the browser File System Access path; `EditorStudio.tsx`'s `handleDownloadExport` uses the native save dialog + `writeFile()` for export, falling back to the browser download if it throws. Both dynamically `import()` the Tauri packages, so the web build never pulls them in - confirmed only one small isolated chunk in `.next/static/chunks/` references `tauri` at all. Rebuilt and relaunched the desktop app after wiring this in - still boots and renders correctly. **Not verified**: I attempted to drive the actual native Open dialog end-to-end via synthetic mouse input to prove a real file imports through it, and the synthetic click did not reliably land on a DPI-scaled WebView2 button - gave up on that automation rather than report a false positive. The code path is type-checked and mirrors the already-working browser picker's shape (`PickedFile`), but nobody has clicked "Import media" on a real file inside the native shell yet.
+- [ ] GPU access beyond what the WebView's own WebGPU/WebCodecs already expose — not started; the compositor is still the Canvas2D tier from Part A regardless of shell, native or web.
+
+**Environment notes worth keeping**, since they cost real time to work out: this
+machine had no Visual Studio Build Tools, so the Windows build is pinned to
+the GNU/MinGW target (`src-tauri/rust-toolchain.toml`) instead of the MSVC
+one Tauri recommends by default - functionally identical, just a different
+linker. Gradle-spawned `cargo` (the Android build path) does not resolve
+that per-project toolchain override, so `rustup default` had to be changed
+system-wide too, not just this project - see the README's Android section.
+
+---
+
 ## Part C — Phase roadmap (blueprint Part 9)
 
 - [ ] **Phase 0 — Feasibility spike**: decode+composite+step frames, encode a verified MP4, persist+restore a file handle — **the spike's three risky bets are all built** (compositor, export, handle persistence) as production code rather than a throwaway spike, but none have been run end to end in a real browser by this session, so the phase's own exit criterion ("verified export") is not met yet.

@@ -39,6 +39,7 @@ import { renderEditorExport, ExportCancelled, type ExportProgress, type ExportRe
 import { EDITOR_SCHEMA_VERSION, clipEndFrame, type Asset, type ChromaKeySpec, type Clip, type CropRect, type ProjectDoc, type TextStyle, type Track, type TrackKind, type UiState } from '../lib/editor/types'
 import type { HistoryEntry } from '../lib/editor/commands'
 import { formatSeconds } from '../lib/format'
+import { isTauriNative } from '../lib/device'
 
 const SESSION_KEY = 'editor-studio'
 
@@ -48,7 +49,7 @@ function defaultUi(): UiState {
 	return { playheadFrame: 0, zoom: 6, scrollFrame: 0, selection: [], selectedTrackId: null }
 }
 
-export default function EditorStudio() {
+export default function EditorStudio({ standalone = false }: { standalone?: boolean } = {}) {
 	const engine = useEngine(useMemo(() => createProject(), []))
 	const state = useEngineState(engine)
 	const doc = state.doc
@@ -525,11 +526,33 @@ export default function EditorStudio() {
 		}
 	}, [engine, exportSettings, resolveBlob])
 
-	const handleDownloadExport = useCallback(() => {
+	/**
+	 * A browser can only ever "download" a file - into whatever folder the OS
+	 * picked once, years ago, with no format/location choice per-save. Native
+	 * gets the real thing: an OS save dialog and an unrestricted filesystem
+	 * write, which is exactly the kind of native-shell upgrade `isTauriNative()`
+	 * exists for (see `lib/device.ts`). Falls back to the browser path if the
+	 * native dialog throws for any reason, so a save is never a dead end.
+	 */
+	const handleDownloadExport = useCallback(async () => {
 		if (!exportResult) return
+		const filename = `${doc.name || 'export'}.${exportResult.format}`
+		if (isTauriNative()) {
+			try {
+				const [{ save }, { writeFile }] = await Promise.all([import('@tauri-apps/plugin-dialog'), import('@tauri-apps/plugin-fs')])
+				const path = await save({ defaultPath: filename, filters: [{ name: exportResult.format.toUpperCase(), extensions: [exportResult.format] }] })
+				if (path === null) return // the user cancelled the dialog - not an error
+				const bytes = new Uint8Array(await exportResult.blob.arrayBuffer())
+				await writeFile(path, bytes)
+				return
+			} catch (error) {
+				setExportError(error instanceof Error ? `Native save failed: ${error.message}` : 'Native save failed.')
+				// fall through to the browser download path below as a backstop
+			}
+		}
 		const anchor = document.createElement('a')
 		anchor.href = exportResult.url
-		anchor.download = `${doc.name || 'export'}.${exportResult.format}`
+		anchor.download = filename
 		document.body.appendChild(anchor)
 		anchor.click()
 		anchor.remove()
@@ -564,6 +587,7 @@ export default function EditorStudio() {
 				onRedo={() => engine.redo()}
 				onExport={() => setExportOpen(true)}
 				onReset={handleReset}
+				standalone={standalone}
 			/>
 
 			{restore.phase === 'restored' ? (

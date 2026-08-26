@@ -1,0 +1,17 @@
+/* Native-shell-only adjustments on top of the shared design system in
+   app/globals.css - everything else about how this looks is inherited
+   unchanged, so the native app and the web app never visually drift apart. */
+
+html,
+body,
+#root {
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+}
+
+body {
+	/* A mobile WebView's default is to let a two-finger drag scroll/refresh the
+	   whole page - which fights the timeline's own two-finger pan/zoom. */
+	overscroll-behavior: none;
+}
