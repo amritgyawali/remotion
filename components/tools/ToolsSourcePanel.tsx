@@ -19,6 +19,7 @@ export default function ToolsSourcePanel({
 	category,
 	params,
 	secondaryFile,
+	batchFiles,
 	onVideoFiles,
 	onClearVideo,
 	onQuery,
@@ -27,6 +28,7 @@ export default function ToolsSourcePanel({
 	onBackToCatalog,
 	onParamChange,
 	onSecondaryFile,
+	onBatchFiles,
 }: {
 	video: CaptionVideoSource | null
 	videoBanked: boolean
@@ -36,6 +38,7 @@ export default function ToolsSourcePanel({
 	category: ToolCategory | null
 	params: RunParams
 	secondaryFile: File | null
+	batchFiles: File[]
 	onVideoFiles: (files: File[]) => void
 	onClearVideo: () => void
 	onQuery: (value: string) => void
@@ -44,6 +47,7 @@ export default function ToolsSourcePanel({
 	onBackToCatalog: () => void
 	onParamChange: (key: string, value: string | number | boolean) => void
 	onSecondaryFile: (file: File | null) => void
+	onBatchFiles: (files: File[]) => void
 }) {
 	const inputRef = useRef<HTMLInputElement>(null)
 	const [dragging, setDragging] = useState(false)
@@ -168,9 +172,11 @@ export default function ToolsSourcePanel({
 							params={params}
 							video={video}
 							secondaryFile={secondaryFile}
+							batchFiles={batchFiles}
 							disabled={busy}
 							onParamChange={onParamChange}
 							onSecondaryFile={onSecondaryFile}
+							onBatchFiles={onBatchFiles}
 						/>
 					) : (
 						<ToolCatalog query={query} category={category} onQuery={onQuery} onCategory={onCategory} onSelect={onSelectTool} />
@@ -186,17 +192,21 @@ function SelectedToolPanel({
 	params,
 	video,
 	secondaryFile,
+	batchFiles,
 	disabled,
 	onParamChange,
 	onSecondaryFile,
+	onBatchFiles,
 }: {
 	tool: ToolDef
 	params: RunParams
 	video: CaptionVideoSource | null
 	secondaryFile: File | null
+	batchFiles: File[]
 	disabled: boolean
 	onParamChange: (key: string, value: string | number | boolean) => void
 	onSecondaryFile: (file: File | null) => void
+	onBatchFiles: (files: File[]) => void
 }) {
 	const Icon = tool.icon
 	return (
@@ -226,8 +236,10 @@ function SelectedToolPanel({
 					probe={video}
 					disabled={disabled}
 					secondaryFile={secondaryFile}
+					batchFiles={batchFiles}
 					onChange={onParamChange}
 					onSecondaryFile={onSecondaryFile}
+					onBatchFiles={onBatchFiles}
 				/>
 			)}
 		</div>

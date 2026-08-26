@@ -9,7 +9,7 @@
  */
 
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -1223,8 +1223,27 @@ async function verify() {
 
 const verifyOnly = process.argv.includes('--verify-only')
 
+/**
+ * This pack is generated on demand rather than committed - it is ~31 MB of
+ * deterministic binaries that only the Remotion 3D samples read, so the repo
+ * carries the recipe instead of the output. That makes "not built yet" a normal
+ * state rather than a failure, and verifying it is simply a no-op: there is
+ * nothing on disk that could have drifted. Run `npm run assets:3d` to build it.
+ */
+async function verifyIfBuilt() {
+	const built = await stat(catalogPath).then(
+		() => true,
+		() => false,
+	)
+	if (!built) {
+		console.log('3D pack not built - skipping verification. Run "npm run assets:3d" to generate it.')
+		return
+	}
+	await verify()
+}
+
 try {
-	await (verifyOnly ? verify() : generate())
+	await (verifyOnly ? verifyIfBuilt() : generate())
 } catch (error) {
 	console.error(error instanceof Error ? error.message : error)
 	process.exitCode = 1

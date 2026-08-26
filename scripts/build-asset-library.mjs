@@ -13,7 +13,7 @@
  */
 
 import { createHash } from 'node:crypto'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import JSZip from 'jszip'
@@ -873,7 +873,7 @@ fetch('./catalog.json')
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Browse and download ${catalog.counts.models3d} production-ready 3D GLB models, ${catalog.counts.visuals} editable SVG visuals, ${catalog.counts.sfx} original sound effects, textures, and self-hosted fonts for Remotion videos.">
+<meta name="description" content="Browse and download ${catalog.counts.models3d ? catalog.counts.models3d + ' production-ready 3D GLB models, ' : ''}${catalog.counts.visuals} editable SVG visuals, ${catalog.counts.sfx} original sound effects, textures, and self-hosted fonts for Remotion videos.">
 <title>Production Asset Library</title>
 <style>
 :root{color-scheme:dark;--bg:#070911;--surface:#111520;--line:#293143;--ink:#f4f7ff;--muted:#94a0b8;--cyan:#58f3e2;--violet:#9c7cff;--warm:#ffbe72;--green:#7cf5aa;--radius:22px}
@@ -893,9 +893,9 @@ ${fontFaceStyles(fonts)}
 <body>
 <header class="wrap topbar"><div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>Remotion Production Kit</span></div><nav class="top-actions"><a class="button" href="./catalog.json">Catalog JSON</a><a class="button primary" href="./production-asset-kit.zip" download>Download full kit &#8595;</a></nav></header>
 <main class="wrap">
-<section class="hero"><div><span class="kicker">Original &middot; editable &middot; license notices included</span><h1>Everything your video needs to move.</h1><p class="hero-copy">A production-ready library of lightweight 3D characters, objects, icons and scene props, plus deterministic SVG art, textures, self-hosted fonts, original music, and motion sound effects. Search exact families and roles, preview one catalog page at a time, or download the complete kit.</p></div><div class="stats"><div class="stat"><strong>${catalog.counts.models3d}</strong><span>3D GLB models</span></div><div class="stat"><strong>${catalog.counts.visuals}</strong><span>SVG visuals</span></div><div class="stat"><strong>${catalog.counts.textures}</strong><span>Textures</span></div><div class="stat"><strong>${catalog.counts.music + catalog.counts.sfx}</strong><span>Music &amp; SFX</span></div><div class="stat"><strong>${catalog.counts.fonts}</strong><span>Font families</span></div></div></section>
+<section class="hero"><div><span class="kicker">Original &middot; editable &middot; license notices included</span><h1>Everything your video needs to move.</h1><p class="hero-copy">A production-ready library of lightweight 3D characters, objects, icons and scene props, plus deterministic SVG art, textures, self-hosted fonts, original music, and motion sound effects. Search exact families and roles, preview one catalog page at a time, or download the complete kit.</p></div><div class="stats">${catalog.counts.models3d ? `<div class="stat"><strong>${catalog.counts.models3d}</strong><span>3D GLB models</span></div>` : ''}<div class="stat"><strong>${catalog.counts.visuals}</strong><span>SVG visuals</span></div><div class="stat"><strong>${catalog.counts.textures}</strong><span>Textures</span></div><div class="stat"><strong>${catalog.counts.music + catalog.counts.sfx}</strong><span>Music &amp; SFX</span></div><div class="stat"><strong>${catalog.counts.fonts}</strong><span>Font families</span></div></div></section>
 <aside class="usage"><p>Use any path directly from a Remotion composition. GLB models and SVG previews remain local for browser, Node, and server renders.</p><code>staticFile('${escapeHtml(modelExample)}')</code></aside>
-<section class="controls" aria-label="Asset filters"><label class="search"><input id="search" type="search" placeholder="Search family, style, role, mood, or category..." autocomplete="off" aria-label="Search assets"></label><select class="category-select" id="category" aria-label="Filter by category"><option value="all">All categories</option></select><label class="eligible-toggle"><input id="eligible-only" type="checkbox">Generator-ready only</label><div class="filters" role="group" aria-label="Filter by asset type"><button class="filter active" type="button" data-filter="all">All</button><button class="filter" type="button" data-filter="3d">3D models</button><button class="filter" type="button" data-filter="visual">Visuals</button><button class="filter" type="button" data-filter="texture">Textures</button><button class="filter" type="button" data-filter="font">Fonts</button><button class="filter" type="button" data-filter="music">Music</button><button class="filter" type="button" data-filter="sfx">SFX</button></div><span class="result-count" id="result-count">Loading catalog...</span></section>
+<section class="controls" aria-label="Asset filters"><label class="search"><input id="search" type="search" placeholder="Search family, style, role, mood, or category..." autocomplete="off" aria-label="Search assets"></label><select class="category-select" id="category" aria-label="Filter by category"><option value="all">All categories</option></select><label class="eligible-toggle"><input id="eligible-only" type="checkbox">Generator-ready only</label><div class="filters" role="group" aria-label="Filter by asset type"><button class="filter active" type="button" data-filter="all">All</button>${catalog.counts.models3d ? '<button class="filter" type="button" data-filter="3d">3D models</button>' : ''}<button class="filter" type="button" data-filter="visual">Visuals</button><button class="filter" type="button" data-filter="texture">Textures</button><button class="filter" type="button" data-filter="font">Fonts</button><button class="filter" type="button" data-filter="music">Music</button><button class="filter" type="button" data-filter="sfx">SFX</button></div><span class="result-count" id="result-count">Loading catalog...</span></section>
 <section class="asset-section" id="library"><div class="section-head"><div><h2>Searchable asset library</h2><p>Only ${MAX_GALLERY_CARDS} matching assets are mounted at once; 3D SVG previews decode lazily.</p></div><span class="count-badge">${catalog.counts.total} total assets</span></div><div class="asset-grid" id="asset-grid" aria-live="polite"></div><div class="pager" id="pager" hidden><button id="previous-page" type="button">Previous</button><span id="page-label">Page 1</span><button id="next-page" type="button">Next</button></div></section>
 <div class="empty" id="empty"><strong>No matching assets.</strong><br>Try a broader search or another filter.</div>
 <noscript><p class="empty visible">JavaScript is required for the paginated gallery. The complete machine-readable inventory remains available in <a href="./catalog.json">catalog.json</a>.</p></noscript>
@@ -908,13 +908,12 @@ ${fontFaceStyles(fonts)}
 }
 
 function archiveReadme(catalog) {
-	const modelExample = catalog.assets.find((asset) => asset.assetType === '3d')?.staticFilePath ?? 'assets/3d/v1/catalog.json'
+	const modelExample = catalog.assets.find((asset) => asset.assetType === '3d')?.staticFilePath ?? null
 	return [
 		'# Remotion Production Asset Kit',
 		'',
 		'This archive contains ' +
-			catalog.counts.models3d +
-			' lightweight GLB models with matching SVG previews, ' +
+			(catalog.counts.models3d ? catalog.counts.models3d + ' lightweight GLB models with matching SVG previews, ' : '') +
 			catalog.counts.visuals +
 			' editable SVG visuals, ' +
 			catalog.counts.textures +
@@ -928,11 +927,13 @@ function archiveReadme(catalog) {
 		'',
 		'## Install',
 		'',
-		'Extract the contents of this archive into your Remotion project public/assets directory. The existing 3d/, visual/, texture/, fonts/ and audio/ paths are preserved.',
+		'Extract the contents of this archive into your Remotion project public/assets directory. The existing ' +
+			(catalog.counts.models3d ? '3d/, ' : '') +
+			'visual/, texture/, fonts/ and audio/ paths are preserved.',
 		'',
 		'Use assets without the public/ prefix:',
 		'',
-		"    staticFile('" + modelExample + "')",
+		...(modelExample ? ["    staticFile('" + modelExample + "')"] : []),
 		"    staticFile('assets/visual/v1/kinetic/burst-001.svg')",
 		"    staticFile('assets/texture/v1/overlays/film-grain.png')",
 		"    staticFile('assets/audio/v1/music/neon-pulse-120bpm-loop.wav')",
@@ -942,10 +943,16 @@ function archiveReadme(catalog) {
 		"    loadFont({family: 'Anton', url: staticFile('assets/fonts/v1/anton/Anton-Regular.ttf')})",
 		'',
 		'- catalog.json is the combined machine-readable catalog.',
-		'- 3d/v1/catalog.json, visual/v1/catalog.json, texture/catalog.json, fonts/catalog.json and audio/catalog.json contain pack-specific metadata.',
+		'- ' +
+			(catalog.counts.models3d ? '3d/v1/catalog.json, ' : '') +
+			'visual/v1/catalog.json, texture/catalog.json, fonts/catalog.json and audio/catalog.json contain pack-specific metadata.',
 		'- index.html is the searchable gallery.',
-		'- Every 3D entry records its family, intended roles, triangle/node/material counts, bounds, content hash and preview hash.',
-		'- Generated 3D models, SVG previews, visuals, textures and audio are CC0-1.0 and require no attribution.',
+		...(catalog.counts.models3d
+			? ['- Every 3D entry records its family, intended roles, triangle/node/material counts, bounds, content hash and preview hash.']
+			: []),
+		'- Generated ' +
+			(catalog.counts.models3d ? '3D models, SVG previews, ' : '') +
+			'visuals, textures and audio are CC0-1.0 and require no attribution.',
 		'- Fonts are licensed per family under OFL-1.1 or Apache-2.0. Every required license text is included beside its font binary and must remain with redistributed copies.',
 		'- The combined catalog records the SPDX license and license path for every asset.',
 		'',
@@ -981,9 +988,11 @@ async function buildArchive({
 	add('visual/v1/catalog.json', visualCatalogText)
 	add('visual/README.md', await readFile(path.join(visualRoot, 'README.md')))
 	add('visual/LICENSE-VISUAL.md', await readFile(path.join(visualRoot, 'LICENSE-VISUAL.md')))
-	add('3d/v1/catalog.json', modelCatalogText)
-	add('3d/README.md', await readFile(path.join(modelRoot, 'README.md')))
-	add('3d/LICENSE-3D.md', await readFile(path.join(modelRoot, 'LICENSE-3D.md')))
+	if (modelCatalogText !== null) {
+		add('3d/v1/catalog.json', modelCatalogText)
+		add('3d/README.md', await readFile(path.join(modelRoot, 'README.md')))
+		add('3d/LICENSE-3D.md', await readFile(path.join(modelRoot, 'LICENSE-3D.md')))
+	}
 	add('audio/catalog.json', audioCatalogText)
 	add('audio/README.md', await readFile(path.join(audioRoot, 'README.md')))
 	add('audio/LICENSE-AUDIO.md', await readFile(path.join(audioRoot, 'LICENSE-AUDIO.md')))
@@ -1060,6 +1069,14 @@ async function buildArchive({
 }
 
 async function main() {
+	// The 3D pack is generated on demand rather than committed (see .gitignore),
+	// so the kit is built with it when it happens to be present and without it
+	// when it is not. An absent pack reproduces what the kit has always shipped:
+	// the published catalog has never carried a 3D entry.
+	const has3d = await stat(modelCatalogPath).then(
+		() => true,
+		() => false,
+	)
 	const [
 		visualCatalog,
 		modelCatalog,
@@ -1073,19 +1090,19 @@ async function main() {
 		fontCatalogText,
 	] = await Promise.all([
 		loadCatalog(visualCatalogPath),
-		loadCatalog(modelCatalogPath),
+		has3d ? loadCatalog(modelCatalogPath) : null,
 		loadCatalog(audioCatalogPath),
 		loadCatalog(textureCatalogPath),
 		loadCatalog(fontCatalogPath),
 		readFile(visualCatalogPath, 'utf8'),
-		readFile(modelCatalogPath, 'utf8'),
+		has3d ? readFile(modelCatalogPath, 'utf8') : null,
 		readFile(audioCatalogPath, 'utf8'),
 		readFile(textureCatalogPath, 'utf8'),
 		readFile(fontCatalogPath, 'utf8'),
 	])
 	const [visualAssets, modelAssets, audioAssets, textureAssets, fontAssets] = await Promise.all([
 		normalizeVisualAssets(visualCatalog),
-		normalizeModelAssets(modelCatalog),
+		has3d ? normalizeModelAssets(modelCatalog) : [],
 		normalizeAudioAssets(audioCatalog),
 		normalizeTextureAssets(textureCatalog),
 		normalizeFontAssets(fontCatalog),
@@ -1121,20 +1138,21 @@ async function main() {
 		licenseFilesRequired: fontAssets.length > 0,
 		downloadPath: '/assets/production-asset-kit.zip',
 		sourceCatalogs: [
-			{ kind: '3d', path: '/assets/3d/v1/catalog.json', packVersion: modelCatalog.packVersion, assetCount: modelAssets.length },
+			...(has3d
+				? [{ kind: '3d', path: '/assets/3d/v1/catalog.json', packVersion: modelCatalog.packVersion, assetCount: modelAssets.length }]
+				: []),
 			{ kind: 'visual', path: '/assets/visual/v1/catalog.json', packVersion: visualCatalog.packVersion, assetCount: visualAssets.length },
 			{ kind: 'texture', path: '/assets/texture/catalog.json', packVersion: textureCatalog.packVersion, assetCount: textureAssets.length },
 			{ kind: 'font', path: '/assets/fonts/catalog.json', packVersion: fontCatalog.packVersion, assetCount: fontAssets.length },
 			{ kind: 'audio', path: '/assets/audio/catalog.json', packVersion: audioCatalog.packVersion, assetCount: audioAssets.length },
 		],
-		modelFamilies: modelCatalog.families ?? [],
+		...(has3d ? { modelFamilies: modelCatalog.families ?? [] } : {}),
 		visualFamilies: visualCatalog.families ?? [],
 		audioFamilies: audioCatalog.families ?? [],
 		counts: {
 			total: allAssets.length,
 			totalFiles: archivePaths.length,
-			models3d: modelAssets.length,
-			modelPreviews: modelAssets.length,
+			...(has3d ? { models3d: modelAssets.length, modelPreviews: modelAssets.length } : {}),
 			visuals: visualAssets.length,
 			textures: textureAssets.length,
 			fonts: fontAssets.length,

@@ -314,7 +314,12 @@ function computeEnvelope(composite: Float32Array, sampleRate: number, attackMs: 
 }
 
 /** Linear-interpolation resample - used to bring a second file onto the first's sample rate before mixing. */
-export function resampleChannel(data: Float32Array, fromRate: number, toRate: number, targetLength?: number): Float32Array {
+export function resampleChannel(
+	data: Float32Array<ArrayBuffer>,
+	fromRate: number,
+	toRate: number,
+	targetLength?: number,
+): Float32Array<ArrayBuffer> {
 	if (fromRate === toRate && targetLength === undefined) return data
 	const ratio = fromRate / toRate
 	const outLength = targetLength ?? Math.max(1, Math.round(data.length / ratio))

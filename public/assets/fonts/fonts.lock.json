@@ -80,8 +80,8 @@
 			"bytes": 172088
 		},
 		"v1/oswald/OFL.txt": {
-			"sha256": "0fd731a904b729a4e02eaf5e8ebd06783edd9abe400e8882760160230675b652",
-			"bytes": 4483
+			"sha256": "0687c51a3126ae6963389181135a2eaea02f2e88f31230d27409952f28e84da5",
+			"bytes": 4390
 		},
 		"v1/bebas-neue/BebasNeue-Regular.ttf": {
 			"sha256": "08e4623805102d819f58601e46e345648846075e363b2ceb23313c2d1c83ec73",
@@ -128,24 +128,24 @@
 			"bytes": 170812
 		},
 		"v1/anton/OFL.txt": {
-			"sha256": "ee67e6ee22790b7929f1a3769ca2801d565c64b5a9096942c1adf5596de9c9e4",
-			"bytes": 4484
+			"sha256": "eee1d24ff8f553eb732237c7dd9b945a78313ed49ad6de02872a47277741b44a",
+			"bytes": 4391
 		},
 		"v1/archivo-black/ArchivoBlack-Regular.ttf": {
 			"sha256": "dd9a89a019b4849f66ab75455fe7bdf931311042cbb0f0f97acc061539703180",
 			"bytes": 90988
 		},
 		"v1/archivo-black/OFL.txt": {
-			"sha256": "3173acd82f8c6159b5b1037b539fcbd4edff68e65c2ea8b9412b5a5ca97b08ff",
-			"bytes": 4492
+			"sha256": "4eb085b4f06e3c1625d8b577902bf639d480633635837bf2ed94d1a7b1b842f5",
+			"bytes": 4399
 		},
 		"v1/alfa-slab-one/AlfaSlabOne-Regular.ttf": {
 			"sha256": "28664afa698a3393bd5a29eec750230a0645c5301d62200e5f2d3a027fb2299d",
 			"bytes": 97376
 		},
 		"v1/alfa-slab-one/OFL.txt": {
-			"sha256": "e315abc82a78710c7242e2f2e6529651fd631d4d50e6ad98ea194f9b54c3d701",
-			"bytes": 4523
+			"sha256": "05dd88a474f93493ff1db3a89974fbae9455ec4e911356ffcd2ab1efd2bd4ee9",
+			"bytes": 4430
 		},
 		"v1/titan-one/TitanOne-Regular.ttf": {
 			"sha256": "563ff6de179bbd44bcd7d2a6c448d6dc3bf935834237cf1250e506e65cd86ff1",
@@ -176,8 +176,8 @@
 			"bytes": 93148
 		},
 		"v1/bangers/OFL.txt": {
-			"sha256": "630dd5a307c0657b094d324e069b390edf90182fe5003639e06c02a0e5769af7",
-			"bytes": 4479
+			"sha256": "c36ad22ae5daf9bb19fa6decb3d9ec51cb9dc5b89c04c630aebe34ef26fb962e",
+			"bytes": 4388
 		},
 		"v1/luckiest-guy/LuckiestGuy-Regular.ttf": {
 			"sha256": "cfbdd68a039f92df51cf3721506af6242e64594c6325fe0bedbeff3fe385d980",
@@ -200,32 +200,32 @@
 			"bytes": 118996
 		},
 		"v1/bungee/OFL.txt": {
-			"sha256": "d5787a50dde5be6c6daecab9ed459939b1bc37cff0d0e00257eaf1ec2cf4c16c",
-			"bytes": 4473
+			"sha256": "ff43f39d2143afa2ef0a7009629d25f62de23f0614ecdaea6dd07f6c58c5d2b1",
+			"bytes": 4380
 		},
 		"v1/bungee-shade/BungeeShade-Regular.ttf": {
 			"sha256": "665c626082682b462f4e696308eafa7071c114da8f8ff3fb73a289c7ff7df482",
 			"bytes": 304936
 		},
 		"v1/bungee-shade/OFL.txt": {
-			"sha256": "d5787a50dde5be6c6daecab9ed459939b1bc37cff0d0e00257eaf1ec2cf4c16c",
-			"bytes": 4473
+			"sha256": "ff43f39d2143afa2ef0a7009629d25f62de23f0614ecdaea6dd07f6c58c5d2b1",
+			"bytes": 4380
 		},
 		"v1/rubik-mono-one/RubikMonoOne-Regular.ttf": {
 			"sha256": "b22624b6a36e543e942106edfccd198c50b57b65b924bfe02a6f0a5699429e6b",
 			"bytes": 141088
 		},
 		"v1/rubik-mono-one/OFL.txt": {
-			"sha256": "43d530580461a574f6dfed9e15af6a74e95f7c04d9bfa1174a63ff036e8eee07",
-			"bytes": 4462
+			"sha256": "6f75d5aabf18bee599425934465529d65bf8a15a1e4a74cd48e8aa7d02026e40",
+			"bytes": 4369
 		},
 		"v1/shrikhand/Shrikhand-Regular.ttf": {
 			"sha256": "8ba32f6d6a96fb8dbc92fc1acfbc4d2123d5348063d89b2c3dd784e7afcb81af",
 			"bytes": 220804
 		},
 		"v1/shrikhand/OFL.txt": {
-			"sha256": "325e890b8b26fe0a683c3ba24c506d902bdd7034d9c47bd7fa2bb72b5433b9c9",
-			"bytes": 4463
+			"sha256": "72b3c4c159b5c5c88a6db41ee8c1c0f4ac9be1b5b6e8174dccc48b0877a4e059",
+			"bytes": 4370
 		},
 		"v1/playfair-display/PlayfairDisplay[wght].ttf": {
 			"sha256": "c40f2293766a503bc70cce9e512ef844a4ccb7cbcde792fe2ea31d191917d8d6",
@@ -248,8 +248,8 @@
 			"bytes": 76580
 		},
 		"v1/dm-serif-display/OFL.txt": {
-			"sha256": "a3e5cdd67d4571dd0a24fcc968de0efde7ae97ef752daf0906e4767619dd7231",
-			"bytes": 4605
+			"sha256": "aa49c876a28d8c0b0a3027d6c25b9c607eee8c0fb96165011d42a6ace1408fe1",
+			"bytes": 4512
 		},
 		"v1/cinzel/Cinzel[wght].ttf": {
 			"sha256": "f4d83d34d1f6c741193e4acf4b3dff9531e5a67b6aa65228d00a7db72a4e0f34",
@@ -264,8 +264,8 @@
 			"bytes": 136676
 		},
 		"v1/space-grotesk/OFL.txt": {
-			"sha256": "564ce565c371c5e5bbf286006565a7c9aa55a9f56e7ca58d56e05d649dd61a72",
-			"bytes": 4495
+			"sha256": "c6dec685825f73b18c20926fddc65e8315642e12986f15db0699170940a09efc",
+			"bytes": 4402
 		},
 		"v1/syne/Syne[wght].ttf": {
 			"sha256": "ce5ac77142a65cab2248a1a2ebb740b1d4d9c20b52488877d3ff664d1356104a",
@@ -480,8 +480,8 @@
 			"bytes": 276324
 		},
 		"v1/yatra-one/OFL.txt": {
-			"sha256": "71e5222c549d85a1403b6e709b4328b81d7b51ba021b8bd20df89550da80c087",
-			"bytes": 4438
+			"sha256": "6d27c8b6204d21e76ccca378f8cab04bdcda30a2d83ebead76ad629f5204d1de",
+			"bytes": 4345
 		},
 		"v1/kalam/Kalam-Bold.ttf": {
 			"sha256": "2f6576601db015d4f6c08678120277fc8510b98c06e932ce7a6a9cbff4cbdded",
@@ -528,8 +528,8 @@
 			"bytes": 186404
 		},
 		"v1/arya/OFL.txt": {
-			"sha256": "dd028a807788d5e22e9f8cc18f026cda23369954673658f2ecc7d30bdb364b89",
-			"bytes": 4506
+			"sha256": "f6a40516ecea4b0341aec61ed0cd5df9cf6baf55649b6d8abe44ca1aecd71a88",
+			"bytes": 4413
 		},
 		"v1/asar/Asar-Regular.ttf": {
 			"sha256": "8b4147354af009836d031f50af3e0450768d78b1e0e0281c7df17cd26440cc2e",
@@ -584,8 +584,8 @@
 			"bytes": 239892
 		},
 		"v1/kadwa/OFL.txt": {
-			"sha256": "84991b97bbcb16199fd156d20d45cffb049d063b14e94991d1d4960fcdd4d8b2",
-			"bytes": 4456
+			"sha256": "8810ca740c7461003223dd5b34249448b0f9944bdd5b327f35e624d8a44bd07f",
+			"bytes": 4363
 		},
 		"v1/karma/Karma-Bold.ttf": {
 			"sha256": "3819cedaa8ef7247aaae77113cbb9b22b207f5fe6c045ae0e1442a7b6b69328e",
@@ -632,8 +632,8 @@
 			"bytes": 233792
 		},
 		"v1/rhodium-libre/OFL.txt": {
-			"sha256": "0886960207bb5bcf81a46ce663bab6c52a742dad80ee2cff5cbcda6f1df88568",
-			"bytes": 4513
+			"sha256": "517bad845043c937c50900485cad71941445f2baaa1e7cdb5622a86017e82624",
+			"bytes": 4420
 		},
 		"v1/sahitya/Sahitya-Bold.ttf": {
 			"sha256": "9feb27b5d2980b741355bb6240d0f0b44d0f4cfdb15c11980049f4750fcaa88a",
@@ -704,8 +704,8 @@
 			"bytes": 330896
 		},
 		"v1/ibm-plex-sans-devanagari/OFL.txt": {
-			"sha256": "7e6b2818edbd8f6a01ae80641cc8f16a51080d08fb4e532be3a0b6f74adb07da",
-			"bytes": 4456
+			"sha256": "37784b44044a4ffd9256702b7c0982c37e5c8887ba90c6dca0479aea93dc898d",
+			"bytes": 4363
 		},
 		"v1/martel/Martel-Bold.ttf": {
 			"sha256": "072b7259061a99128e50056b081024975dfc6e4c0b265ab99f75bf66bd50c338",
@@ -728,8 +728,8 @@
 			"bytes": 419792
 		},
 		"v1/pragati-narrow/OFL.txt": {
-			"sha256": "2dab153a33dcb2101bba3f194d27d953c848a0fabf2e336650a81f84a0c33b3f",
-			"bytes": 4482
+			"sha256": "9bb89095eaa599d1d3d093ec991065a456dbbe735427d2b061389a362eac79b5",
+			"bytes": 4388
 		},
 		"v1/dekko/Dekko-Regular.ttf": {
 			"sha256": "e6b151a5bdc521833ceb9a4f8010195515259e9416abfe055cfd16adb2e1af42",
@@ -752,8 +752,8 @@
 			"bytes": 398368
 		},
 		"v1/inknut-antiqua/OFL.txt": {
-			"sha256": "3c6545e1923c7dbbe2103b93023e21514d005012ef6543f90ecf51ee45667a73",
-			"bytes": 4492
+			"sha256": "32fe22d892811ffe9cf4e94e82a3263433fc61a76dacf6f1d68e00b945ad3716",
+			"bytes": 4400
 		},
 		"v1/palanquin/Palanquin-Bold.ttf": {
 			"sha256": "b9ff87d5743c179d1300ecbbdb97c53e7a1adb2f54c446c21acec50e2bc77acf",
@@ -776,8 +776,8 @@
 			"bytes": 239072
 		},
 		"v1/sarala/OFL.txt": {
-			"sha256": "afb8c471158619593df0fb501453bd39fda42396e2cc3911e2a0a471c11b863c",
-			"bytes": 4451
+			"sha256": "d776cab8d5df808eb017a2adf48b924dbb5e3b2d9c762b0887f13e33ffba19bc",
+			"bytes": 4358
 		},
 		"v1/biryani/Biryani-Bold.ttf": {
 			"sha256": "5e1b0cc60cbf479a1ce41c6b764fcb25160726485c6676db8e789ed4bab43e43",

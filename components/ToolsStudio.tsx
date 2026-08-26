@@ -59,6 +59,7 @@ export default function ToolsStudio() {
 	const [category, setCategory] = useState<ToolCategory | null>(null)
 	const [paramsByTool, setParamsByTool] = useState<Record<string, RunParams>>({})
 	const [secondaryFile, setSecondaryFile] = useState<File | null>(null)
+	const [batchFiles, setBatchFiles] = useState<File[]>([])
 	const [output, setOutput] = useState<OutputSettings>(DEFAULT_OUTPUT_SETTINGS)
 
 	const [running, setRunning] = useState(false)
@@ -149,6 +150,7 @@ export default function ToolsStudio() {
 	const selectTool = useCallback((id: string) => {
 		setSelectedToolId(id)
 		setSecondaryFile(null)
+		setBatchFiles([])
 		setOutputs((current) => {
 			current.forEach((item) => URL.revokeObjectURL(item.url))
 			return []
@@ -174,7 +176,11 @@ export default function ToolsStudio() {
 	/* -------------------------------------------------------------- run */
 
 	const handleRun = useCallback(() => {
-		if (!selectedTool || !video?.file) return
+		if (!selectedTool) return
+		// A batch tool works off its own queue rather than the loaded clip, so it is
+		// the queue that has to be non-empty - the studio may hold no clip at all.
+		const isBatch = Boolean(selectedTool.multiFile)
+		if (isBatch ? batchFiles.length === 0 : !video?.file) return
 		runAbortRef.current?.abort()
 		const controller = new AbortController()
 		runAbortRef.current = controller
@@ -190,12 +196,21 @@ export default function ToolsStudio() {
 		setProgress({ phase: 'preparing', ratio: 0 })
 
 		void (async () => {
+			// A batch run describes itself by its first queued file: the batch handler
+			// probes each file itself, but `RunContext` should still name something real
+			// rather than carry a stand-in for a clip that was never loaded.
+			let batchProbe: CaptionVideoSource | null = null
 			try {
+				if (isBatch) batchProbe = await probeVideo({ file: batchFiles[0] })
+				if (controller.signal.aborted) return
+				const primary = isBatch ? batchFiles[0] : (video?.file as File)
+				const probe = isBatch ? (batchProbe as CaptionVideoSource) : (video as CaptionVideoSource)
 				const result = await runTool(selectedTool, {
-					file: video.file as File,
-					probe: video,
+					file: primary,
+					probe,
 					params: currentParams,
 					secondaryFile,
+					batchFiles: isBatch ? batchFiles : [],
 					output,
 					signal: controller.signal,
 					onProgress: setProgress,
@@ -207,6 +222,7 @@ export default function ToolsStudio() {
 				if (controller.signal.aborted) return
 				setRunError(error instanceof Error ? error.message : String(error))
 			} finally {
+				releaseVideoSource(batchProbe)
 				if (runAbortRef.current === controller) {
 					setRunning(false)
 					setProgress(null)
@@ -214,7 +230,7 @@ export default function ToolsStudio() {
 				}
 			}
 		})()
-	}, [currentParams, output, secondaryFile, selectedTool, video])
+	}, [batchFiles, currentParams, output, secondaryFile, selectedTool, video])
 
 	const handleCancelRun = useCallback(() => {
 		runAbortRef.current?.abort()
@@ -357,6 +373,8 @@ export default function ToolsStudio() {
 	const handleReset = useCallback(() => {
 		handleClearVideo()
 		setSelectedToolId(null)
+		setSecondaryFile(null)
+		setBatchFiles([])
 		setParamsByTool({})
 		setOutput(DEFAULT_OUTPUT_SETTINGS)
 		setQuery('')
@@ -417,6 +435,7 @@ export default function ToolsStudio() {
 					category={category}
 					params={currentParams}
 					secondaryFile={secondaryFile}
+					batchFiles={batchFiles}
 					onVideoFiles={handleVideoFiles}
 					onClearVideo={handleClearVideo}
 					onQuery={setQuery}
@@ -425,6 +444,7 @@ export default function ToolsStudio() {
 					onBackToCatalog={backToCatalog}
 					onParamChange={patchParam}
 					onSecondaryFile={setSecondaryFile}
+					onBatchFiles={setBatchFiles}
 				/>
 
 				<section className="panel panel--stage">
@@ -479,6 +499,7 @@ export default function ToolsStudio() {
 				<ToolsOutputPanel
 					tool={selectedTool}
 					hasVideo={video !== null}
+					batchCount={batchFiles.length}
 					webCodecs={webCodecs}
 					output={output}
 					onOutput={(patch) => setOutput((current) => ({ ...current, ...patch }))}

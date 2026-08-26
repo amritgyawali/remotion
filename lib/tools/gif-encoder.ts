@@ -88,7 +88,7 @@ function buildIndexer(palette: Rgb[]): (r: number, g: number, b: number) => numb
 	}
 }
 
-function toSubBlocks(data: Uint8Array): Uint8Array {
+function toSubBlocks(data: Uint8Array): Uint8Array<ArrayBuffer> {
 	const chunks: number[] = []
 	for (let i = 0; i < data.length; i += 255) {
 		const length = Math.min(255, data.length - i)
@@ -100,7 +100,7 @@ function toSubBlocks(data: Uint8Array): Uint8Array {
 }
 
 /** Standard GIF LZW: a growing string table, codes packed LSB-first at a variable bit width. */
-function lzwEncode(indices: Uint8Array, minCodeSize: number): Uint8Array {
+function lzwEncode(indices: Uint8Array, minCodeSize: number): Uint8Array<ArrayBuffer> {
 	const clearCode = 1 << minCodeSize
 	const endCode = clearCode + 1
 	let codeSize = minCodeSize + 1
@@ -203,9 +203,11 @@ export async function encodeGif(options: GifEncodeOptions): Promise<Blob> {
 	const minCodeSize = Math.max(2, Math.ceil(Math.log2(Math.max(2, palette.length))))
 	const tableSize = 1 << minCodeSize
 
-	const parts: Uint8Array[] = []
+	// Bound to `ArrayBuffer` because these parts go straight into a `Blob`,
+	// which will not take a view onto a `SharedArrayBuffer`.
+	const parts: Uint8Array<ArrayBuffer>[] = []
 	const push = (...bytes: number[]) => parts.push(Uint8Array.from(bytes))
-	const pushBytes = (bytes: Uint8Array) => parts.push(bytes)
+	const pushBytes = (bytes: Uint8Array<ArrayBuffer>) => parts.push(bytes)
 	const pushString = (text: string) => parts.push(Uint8Array.from([...text].map((c) => c.charCodeAt(0))))
 
 	pushString('GIF89a')

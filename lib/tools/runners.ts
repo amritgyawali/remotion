@@ -14,7 +14,7 @@
  */
 
 import type { CaptionVideoSource } from '../captions/types'
-import { probeVideo } from '../captions/video-source'
+import { probeVideo, releaseVideoSource } from '../captions/video-source'
 import { toolById, type HandlerId, type ToolDef } from './registry'
 import {
 	applyFade,
@@ -56,7 +56,7 @@ import {
 import { cutFileName, freezeFramePlan, loopPlan, renderCutVideo, speedPlan, speedRampPlan, trimPlan } from './plan-ops'
 import { mergeClips, mergeFileName } from './merge'
 import { detectSceneCuts } from './scene-detect'
-import { buildZip } from './zip-writer'
+import { buildZip, type ZipEntry } from './zip-writer'
 
 export type OutputSettings = { format: VideoFilterFormat; quality: VideoFilterQuality }
 
@@ -441,23 +441,41 @@ export async function runTool(tool: ToolDef, ctx: RunContext): Promise<RunResult
 		const subTool = toolById(subToolId)
 		if (!subTool || !subTool.handler) throw new Error('Pick which tool to run over the batch.')
 
-		const zipEntries: Array<{ name: string; data: Uint8Array }> = []
+		const zipEntries: ZipEntry[] = []
+		// Each output is named after its own input, so two queued files that share a
+		// name would produce two identically-named zip entries - and most unzip tools
+		// silently overwrite, quietly losing a result. Number the repeats instead.
+		const usedNames = new Map<string, number>()
+		const uniqueName = (name: string): string => {
+			const seen = usedNames.get(name) ?? 0
+			usedNames.set(name, seen + 1)
+			if (seen === 0) return name
+			const dot = name.lastIndexOf('.')
+			return dot > 0 ? `${name.slice(0, dot)} (${seen + 1})${name.slice(dot)}` : `${name} (${seen + 1})`
+		}
 		for (let i = 0; i < ctx.batchFiles.length; i++) {
 			const file = ctx.batchFiles[i]
 			ctx.onProgress({ phase: `file ${i + 1} of ${ctx.batchFiles.length}`, ratio: i / ctx.batchFiles.length })
+			// Probing mints an object URL per file. Without the release a long batch
+			// would pin every input in memory until the tab navigated away.
 			const probe = await probeFile(file)
-			const sub = await runTool(subTool, {
-				file,
-				probe,
-				params: {},
-				secondaryFile: null,
-				batchFiles: [],
-				output: ctx.output,
-				signal: ctx.signal,
-				onProgress: (p) => ctx.onProgress({ phase: `file ${i + 1}/${ctx.batchFiles.length}: ${p.phase}`, ratio: (i + p.ratio) / ctx.batchFiles.length }),
-			})
-			for (const output of sub.outputs) {
-				zipEntries.push({ name: output.name, data: new Uint8Array(await output.blob.arrayBuffer()) })
+			try {
+				const sub = await runTool(subTool, {
+					file,
+					probe,
+					params: {},
+					secondaryFile: null,
+					batchFiles: [],
+					output: ctx.output,
+					signal: ctx.signal,
+					onProgress: (p) => ctx.onProgress({ phase: `file ${i + 1}/${ctx.batchFiles.length}: ${p.phase}`, ratio: (i + p.ratio) / ctx.batchFiles.length }),
+				})
+				for (const output of sub.outputs) {
+					zipEntries.push({ name: uniqueName(output.name), data: new Uint8Array(await output.blob.arrayBuffer()) })
+					URL.revokeObjectURL(output.url)
+				}
+			} finally {
+				releaseVideoSource(probe)
 			}
 		}
 		const zip = buildZip(zipEntries)
