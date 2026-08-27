@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { composeVideoSource } from '../lib/ai/compose'
 import { planStoryboard, promptRequestsThreeDimensional } from '../lib/ai/planner'
+import type { ArcId } from '../lib/ai/arcs'
 import type { TemplateId } from '../lib/ai/variation'
 import { compileProject } from '../lib/compiler'
 import { prefetchWebRenderer } from '../lib/lazy-chunk'
@@ -243,6 +244,7 @@ export default function Studio() {
 				generationId: string
 				designFingerprint: string
 				template?: string
+				arc?: string
 				notice?: string
 			}
 
@@ -260,6 +262,7 @@ export default function Studio() {
 						creativeSeed: request.creativeSeed,
 						avoidDesignFingerprints: request.avoidDesignFingerprints,
 						avoidTemplates: request.avoidTemplates,
+						avoidArcs: request.avoidArcs,
 					}),
 				})
 				const data = (await response.json().catch(() => ({}))) as Partial<Candidate> & {
@@ -282,6 +285,7 @@ export default function Studio() {
 						generationId: data.generationId || request.creativeSeed,
 						designFingerprint: data.designFingerprint || '',
 						template: data.template,
+						arc: data.arc,
 						notice: data.notice,
 					})
 				} else {
@@ -304,6 +308,7 @@ export default function Studio() {
 				creativeSeed: request.creativeSeed,
 				avoidDesignFingerprints: request.avoidDesignFingerprints,
 				avoidTemplates: request.avoidTemplates as TemplateId[],
+				avoidArcs: request.avoidArcs as ArcId[],
 				allowThreeDimensional,
 			})
 			const local = composeVideoSource(localStoryboard)
@@ -321,6 +326,7 @@ export default function Studio() {
 				generationId: localStoryboard.creativeSeed,
 				designFingerprint: localStoryboard.designFingerprint,
 				template: localStoryboard.creativeProfile.template,
+				arc: localStoryboard.creativeProfile.arc,
 				notice: transportError
 					? `The AI service was unavailable, so the Studio director planned this video in your browser. ${transportError}`
 					: 'The Studio director planned this video in your browser.',
@@ -351,6 +357,7 @@ export default function Studio() {
 						generationId: candidate.generationId,
 						designFingerprint: candidate.designFingerprint,
 						template: candidate.template,
+						arc: candidate.arc,
 						notice: candidate.notice,
 						renderQueued: request.renderAfterGenerate,
 					}
