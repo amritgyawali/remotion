@@ -96,8 +96,8 @@ export type SceneType =
 	| 'terrain3d'
 	| 'carousel3d'
 	/**
-	 * The motion-graphics library. Fifty pieces of design that all read the same
-	 * props, so any of them can carry any beat the planner hands them.
+	 * The motion-graphics library. A hundred pieces of design that all read the
+	 * same props, so any of them can carry any beat the planner hands them.
 	 */
 	| MotionSceneType
 
@@ -254,7 +254,7 @@ export type Carousel3dScene = Base & {
 /**
  * One motion-graphics card.
  *
- * Deliberately one shape for all fifty renderers: the planner should be able to
+ * Deliberately one shape for every motion renderer: the planner should be able to
  * swap the piece a beat resolves to without rewriting the content, and a
  * renderer should be able to take what it needs and derive the rest.
  */
