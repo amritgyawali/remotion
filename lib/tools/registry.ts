@@ -32,6 +32,8 @@ import {
 	IconLink,
 	IconMerge,
 	IconMic,
+	IconPalette,
+	IconPerson,
 	IconPlus,
 	IconScissors,
 	IconSliders,
@@ -47,9 +49,10 @@ import {
 
 export type IconComponent = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>
 
-export type ToolCategory = 'levels' | 'timing' | 'transform' | 'color' | 'overlay' | 'export' | 'restore'
+export type ToolCategory = 'levels' | 'timing' | 'transform' | 'color' | 'overlay' | 'export' | 'restore' | 'ai'
 
 export const CATEGORIES: Array<{ id: ToolCategory; label: string; blurb: string }> = [
+	{ id: 'ai', label: 'AI & background', blurb: 'Detect the person, swap what is behind them' },
 	{ id: 'levels', label: 'Audio levels & channels', blurb: 'Fix, balance and shape the sound' },
 	{ id: 'timing', label: 'Silence & timing', blurb: 'Trim, speed, loop and cut' },
 	{ id: 'transform', label: 'Visual transform', blurb: 'Rotate, crop, resize, reframe' },
@@ -81,8 +84,17 @@ export type ParamSpec =
 	| { type: 'toggle'; key: string; label: string; default: boolean; hint?: string }
 	| { type: 'text'; key: string; label: string; default: string; placeholder?: string; hint?: string }
 	| { type: 'color'; key: string; label: string; default: string; hint?: string }
+	/**
+	 * A colour look, chosen from the library in `color-tone.ts`.
+	 *
+	 * It gets a spec of its own rather than being a `select` with eighty
+	 * options because nobody can pick a grade from a dropdown of names - the
+	 * field renders a gallery of live thumbnails made from the loaded clip's
+	 * own first frames, which is the only way the choice is a real one.
+	 */
+	| { type: 'tone'; key: string; label: string; default: string; hint?: string }
 
-export type SecondaryFileSpec = { key: string; label: string; accept: string; hint: string; kind: 'image' | 'audio' | 'video' }
+export type SecondaryFileSpec = { key: string; label: string; accept: string; hint: string; kind: 'image' | 'audio' | 'video' | 'media' }
 
 export type HandlerId =
 	| 'mono-stereo'
@@ -143,6 +155,9 @@ export type HandlerId =
 	| 'lufs-normalize'
 	| 'pitch-shift'
 	| 'letterbox-pad'
+	| 'background-replace'
+	| 'color-tone'
+	| 'chroma-overlay'
 
 export type ToolDef = {
 	id: string
@@ -160,6 +175,16 @@ export type ToolDef = {
 	outputKind: 'video' | 'audio' | 'image'
 	/** why it's fast: shown as a small badge when the tool never re-encodes the picture */
 	losslessVideo?: boolean
+	/**
+	 * Offers a single-frame preview before the whole clip is rendered.
+	 *
+	 * Only worth it for tools whose result cannot be guessed from the sliders -
+	 * a background swap or a film look have to be seen - and only possible for
+	 * tools whose engine is per-frame, so one frame really is representative.
+	 */
+	preview?: boolean
+	/** shown above the parameters when a tool needs a word of warning or setup */
+	note?: string
 }
 
 const ASPECT_OPTIONS = [
@@ -180,6 +205,71 @@ const POSITION_OPTIONS = [
 ]
 
 export const TOOLS: ToolDef[] = [
+	/* --------------------------------------------------------- ai & background */
+	{
+		id: 'background-replace',
+		name: 'AI Background Replace',
+		short: 'Finds the person in every frame and puts a photo, a video, a colour or a blur behind them.',
+		category: 'ai',
+		status: 'ready',
+		icon: IconPerson,
+		handler: 'background-replace',
+		outputKind: 'video',
+		preview: true,
+		note: 'The person-detection model is downloaded once, then kept in this browser. Nothing is uploaded - the model comes to the video, not the other way round.',
+		secondaryFile: {
+			key: 'plate',
+			label: 'Background photo or video',
+			accept: 'image/*,video/*',
+			hint: 'Only used by the "Photo or video" mode. A still is fastest; a clip loops if it is shorter than yours.',
+			kind: 'media',
+		},
+		params: [
+			{
+				type: 'select',
+				key: 'mode',
+				label: 'What goes behind the person',
+				default: 'upload',
+				options: [
+					{ value: 'upload', label: 'Photo or video I choose' },
+					{ value: 'blur', label: 'Blur the real background' },
+					{ value: 'color', label: 'A solid colour' },
+				],
+			},
+			{ type: 'color', key: 'color', label: 'Colour', default: '#0b0f1a', hint: 'Used by the solid-colour mode. Pick a green here to key it again later.' },
+			{
+				type: 'select',
+				key: 'fit',
+				label: 'How the background fills the frame',
+				default: 'cover',
+				options: [
+					{ value: 'cover', label: 'Fill the frame (crop)' },
+					{ value: 'contain', label: 'Fit inside (bars)' },
+					{ value: 'stretch', label: 'Stretch to fit' },
+				],
+			},
+			{ type: 'slider', key: 'blur', label: 'Background blur', min: 1, max: 12, step: 0.5, default: 4, unit: '%', hint: 'Used by the blur mode. Higher is a shallower, more portrait-like depth of field.' },
+			{
+				type: 'select',
+				key: 'model',
+				label: 'Detection quality',
+				default: 'balanced',
+				options: [
+					{ value: 'balanced', label: 'Balanced - 0.25 MB, fast' },
+					{ value: 'precise', label: 'Precise - 16 MB, better hair' },
+				],
+				hint: 'Precise is a six-class model and holds on to hair, hands and loose clothing far better.',
+			},
+			{ type: 'slider', key: 'feather', label: 'Edge softness', min: 0, max: 40, step: 1, default: 10, unit: '%' },
+			{ type: 'slider', key: 'matte', label: 'Edge sharpness', min: 0, max: 100, step: 1, default: 55, unit: '%', hint: 'Higher makes the cut-out decisive; lower leaves a gentler, more forgiving edge.' },
+			{ type: 'slider', key: 'edgeShift', label: 'Grow / shrink the cut-out', min: -50, max: 50, step: 1, default: 0, unit: '%', hint: 'Push it negative if a rim of the old room survives, positive if the subject is being shaved into.' },
+			{ type: 'slider', key: 'edgeClean', label: 'Fringe clean-up', min: 0, max: 100, step: 1, default: 35, unit: '%', hint: 'Neutralises the colour the old backdrop left along the outline.' },
+			{ type: 'slider', key: 'lightWrap', label: 'Light wrap', min: 0, max: 100, step: 1, default: 25, unit: '%', hint: 'Lets the new background spill light around the subject, the way a real one would.' },
+			{ type: 'slider', key: 'smoothing', label: 'Steadiness', min: 0, max: 95, step: 5, default: 60, unit: '%', hint: 'Blends each frame’s cut-out with the last, which is what stops the outline shimmering.' },
+			{ type: 'toggle', key: 'showMatte', label: 'Show the cut-out instead', default: false, hint: 'White is kept, black is replaced. The fastest way to judge the edge settings.' },
+		],
+	},
+
 	/* ------------------------------------------------------- audio levels */
 	{
 		id: 'mono-to-stereo',
@@ -632,6 +722,28 @@ export const TOOLS: ToolDef[] = [
 		],
 	},
 	{
+		id: 'color-tone',
+		name: 'Color Tone / Film Look',
+		short: 'Seventy-nine graded looks - cinematic, film stock, retro, monochrome - with live thumbnails of your own footage.',
+		category: 'color',
+		status: 'ready',
+		icon: IconPalette,
+		handler: 'color-tone',
+		outputKind: 'video',
+		preview: true,
+		params: [
+			{ type: 'tone', key: 'tone', label: 'Look', default: 'teal-orange' },
+			{ type: 'slider', key: 'strength', label: 'Strength', min: 0, max: 100, step: 1, default: 100, unit: '%' },
+			{ type: 'slider', key: 'warmth', label: 'Warmth trim', min: -100, max: 100, step: 1, default: 0, unit: '%' },
+			{ type: 'slider', key: 'exposure', label: 'Exposure trim', min: -100, max: 100, step: 1, default: 0, unit: '%' },
+			{ type: 'slider', key: 'saturationTrim', label: 'Saturation trim', min: -100, max: 100, step: 1, default: 0, unit: '%' },
+			{ type: 'slider', key: 'contrastTrim', label: 'Contrast trim', min: -100, max: 100, step: 1, default: 0, unit: '%' },
+			{ type: 'slider', key: 'grain', label: 'Extra grain', min: 0, max: 100, step: 1, default: 0, unit: '%', hint: 'Added on top of whatever grain the look already has.' },
+			{ type: 'slider', key: 'vignette', label: 'Extra vignette', min: 0, max: 100, step: 1, default: 0, unit: '%' },
+			{ type: 'slider', key: 'bloom', label: 'Extra bloom', min: 0, max: 100, step: 1, default: 0, unit: '%', hint: 'Glow around the brightest parts of the frame.' },
+		],
+	},
+	{
 		id: 'auto-color',
 		name: 'Auto Color / Exposure Fix',
 		short: 'Samples the clip and corrects exposure and contrast automatically - no sliders to set.',
@@ -674,6 +786,70 @@ export const TOOLS: ToolDef[] = [
 			{ type: 'slider', key: 'size', label: 'Size', min: 14, max: 96, step: 1, default: 36, unit: 'px' },
 			{ type: 'color', key: 'color', label: 'Text color', default: '#ffffff' },
 			{ type: 'toggle', key: 'background', label: 'Dark background chip', default: true },
+		],
+	},
+	{
+		id: 'chroma-overlay',
+		name: 'Chroma Key Overlay',
+		short: 'Removes the green screen from a second clip and lays it over this one.',
+		category: 'overlay',
+		status: 'ready',
+		icon: IconLayers,
+		handler: 'chroma-overlay',
+		outputKind: 'video',
+		preview: true,
+		note: 'Your clip stays exactly as it was shot. The green-screen clip is keyed and stacked on top of it, and only the main clip’s audio is kept.',
+		secondaryFile: {
+			key: 'overlay',
+			label: 'Green-screen clip to lay on top',
+			accept: 'video/*',
+			hint: 'Anything filmed against a solid green or blue backdrop. It keeps its own size until you place it.',
+			kind: 'video',
+		},
+		params: [
+			{
+				type: 'toggle',
+				key: 'autoKey',
+				label: 'Find the backdrop colour for me',
+				default: true,
+				hint: 'Samples the edges of the overlay clip, which reads the lighting rather than the paint.',
+			},
+			{ type: 'color', key: 'keyColor', label: 'Backdrop colour', default: '#00b140', hint: 'Only used when the automatic sample is off.' },
+			{ type: 'slider', key: 'tolerance', label: 'How much to remove', min: 1, max: 100, step: 1, default: 30, unit: '%' },
+			{ type: 'slider', key: 'smoothing', label: 'Edge softness', min: 0, max: 100, step: 1, default: 12, unit: '%' },
+			{ type: 'slider', key: 'despill', label: 'Colour spill removal', min: 0, max: 100, step: 1, default: 60, unit: '%', hint: 'Pulls the backdrop’s cast out of skin, hair and light clothing.' },
+			{
+				type: 'select',
+				key: 'placement',
+				label: 'Where it sits',
+				default: 'fill',
+				options: [
+					{ value: 'fill', label: 'Fill the whole frame' },
+					{ value: 'center', label: 'Centre' },
+					{ value: 'bottom-right', label: 'Bottom right' },
+					{ value: 'bottom-left', label: 'Bottom left' },
+					{ value: 'top-right', label: 'Top right' },
+					{ value: 'top-left', label: 'Top left' },
+					{ value: 'bottom-center', label: 'Bottom centre' },
+				],
+			},
+			{
+				type: 'select',
+				key: 'fit',
+				label: 'How it fills the frame',
+				default: 'cover',
+				options: [
+					{ value: 'cover', label: 'Fill the frame (crop)' },
+					{ value: 'contain', label: 'Fit inside' },
+					{ value: 'stretch', label: 'Stretch to fit' },
+				],
+				hint: 'Used by the full-frame placement.',
+			},
+			{ type: 'slider', key: 'scale', label: 'Size', min: 5, max: 100, step: 1, default: 35, unit: '% of width', hint: 'Used by the corner and centre placements.' },
+			{ type: 'slider', key: 'opacity', label: 'Opacity', min: 10, max: 100, step: 1, default: 100, unit: '%' },
+			{ type: 'slider', key: 'startAt', label: 'Starts at', min: 0, max: 600, step: 0.1, default: 0, unit: 's', maxFrom: 'durationSeconds' },
+			{ type: 'toggle', key: 'loop', label: 'Loop it if it runs out', default: true },
+			{ type: 'toggle', key: 'showMatte', label: 'Show the key instead', default: false, hint: 'White is kept, black is removed. The quickest way to judge the tolerance.' },
 		],
 	},
 	{

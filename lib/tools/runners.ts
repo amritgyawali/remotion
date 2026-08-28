@@ -54,6 +54,12 @@ import {
 	type VideoFilterQuality,
 } from './video-filter'
 import { cutFileName, freezeFramePlan, loopPlan, renderCutVideo, speedPlan, speedRampPlan, trimPlan } from './plan-ops'
+import { bakeToneLut, DEFAULT_TONE_ID, resolveFinish, toneById, trimRecipe } from './color-tone'
+import { createToneProcessor, type ToneProcessor } from './tone-renderer'
+import { prepareBackgroundReplace, type BackgroundMode, type BackgroundReplaceParams } from './background-runner'
+import type { PlateFit } from './background-replace'
+import { prepareChromaOverlay, type ChromaOverlayParams, type OverlayFit, type OverlayPlacement } from './chroma-overlay'
+import type { SegmentationModelId } from './segmentation'
 import { mergeClips, mergeFileName } from './merge'
 import { detectSceneCuts } from './scene-detect'
 import { buildZip, type ZipEntry } from './zip-writer'
@@ -117,6 +123,67 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
 	const value = clean.length === 3 ? clean.split('').map((c) => c + c).join('') : clean.padEnd(6, '0')
 	const parsed = Number.parseInt(value, 16)
 	return { r: (parsed >> 16) & 0xff, g: (parsed >> 8) & 0xff, b: parsed & 0xff }
+}
+
+/**
+ * Turns the colour-tone tool's sliders into a baked cube and the shader that
+ * applies it. The trims are folded into the recipe *before* baking rather
+ * than being extra shader uniforms, so warming a look by 20% costs the same
+ * as not warming it.
+ */
+function buildToneProcessor(params: RunParams): ToneProcessor {
+	const tone = toneById(str(params, 'tone', DEFAULT_TONE_ID)) ?? toneById(DEFAULT_TONE_ID)!
+	const strength = num(params, 'strength', 100) / 100
+	const recipe = trimRecipe(tone.recipe, {
+		warmth: num(params, 'warmth', 0) / 100,
+		exposure: num(params, 'exposure', 0) / 100,
+		saturation: num(params, 'saturationTrim', 0) / 100,
+		contrast: num(params, 'contrastTrim', 0) / 100,
+	})
+	const finish = resolveFinish(
+		tone,
+		{
+			grain: num(params, 'grain', 0) / 100,
+			vignette: num(params, 'vignette', 0) / 100,
+			bloom: num(params, 'bloom', 0) / 100,
+		},
+		strength,
+	)
+	return createToneProcessor({ lut: bakeToneLut(recipe), strength, finish })
+}
+
+function readChromaOverlayParams(params: RunParams): ChromaOverlayParams {
+	return {
+		keyColor: str(params, 'keyColor', '#00b140'),
+		autoKey: bool(params, 'autoKey', true),
+		tolerance: num(params, 'tolerance', 30),
+		smoothing: num(params, 'smoothing', 12),
+		despill: num(params, 'despill', 60),
+		opacity: num(params, 'opacity', 100),
+		scale: num(params, 'scale', 35),
+		placement: str(params, 'placement', 'fill') as OverlayPlacement,
+		fit: str(params, 'fit', 'cover') as OverlayFit,
+		startAt: num(params, 'startAt', 0),
+		loop: bool(params, 'loop', true),
+		showMatte: bool(params, 'showMatte', false),
+	}
+}
+
+function readBackgroundParams(params: RunParams): BackgroundReplaceParams {
+	return {
+		mode: str(params, 'mode', 'upload') as BackgroundMode,
+		color: str(params, 'color', '#0b0f1a'),
+		fit: str(params, 'fit', 'cover') as PlateFit,
+		blurPercent: num(params, 'blur', 4),
+		model: str(params, 'model', 'balanced') as SegmentationModelId,
+		feather: num(params, 'feather', 10),
+		matte: num(params, 'matte', 55),
+		edgeShift: num(params, 'edgeShift', 0),
+		edgeClean: num(params, 'edgeClean', 35),
+		lightWrap: num(params, 'lightWrap', 25),
+		smoothing: num(params, 'smoothing', 60),
+		showMatte: bool(params, 'showMatte', false),
+	}
 }
 
 async function probeFile(file: File): Promise<CaptionVideoSource> {
@@ -561,6 +628,116 @@ export async function runTool(tool: ToolDef, ctx: RunContext): Promise<RunResult
 		}
 	}
 
+	if (handler === 'color-tone') {
+		const processor = buildToneProcessor(ctx.params)
+		try {
+			const result = await renderVideoFilter({
+				source: ctx.file,
+				params: { tonePass: processor },
+				audio: 'copy',
+				format: ctx.output.format,
+				quality: ctx.output.quality,
+				signal: ctx.signal,
+				onProgress: (p) => ctx.onProgress({ phase: p.phase, ratio: p.ratio }),
+			})
+			const tone = toneById(str(ctx.params, 'tone', DEFAULT_TONE_ID))
+			return {
+				outputs: [
+					{
+						blob: result.blob,
+						url: result.url,
+						name: filterFileName(baseName, result.format, tone ? tone.id : 'graded'),
+						sizeInBytes: result.sizeInBytes,
+						kind: 'video',
+						meta: tone
+							? `${tone.name} at ${Math.round(num(ctx.params, 'strength', 100))}%${processor.degraded ? ' - graded on the CPU, without the optical effects' : ''}`
+							: undefined,
+					},
+				],
+			}
+		} finally {
+			processor.dispose()
+		}
+	}
+
+	if (handler === 'background-replace') {
+		ctx.onProgress({ phase: 'preparing the person model', ratio: 0 })
+		const prepared = await prepareBackgroundReplace({
+			params: readBackgroundParams(ctx.params),
+			probe: ctx.probe,
+			plateFile: ctx.secondaryFile,
+			signal: ctx.signal,
+			// The model is a one-off download that can be sixteen megabytes, so it
+			// gets its own slice of the progress bar rather than a frozen 0%.
+			onProgress: (p) =>
+				ctx.onProgress({
+					phase: p.phase === 'model' ? 'downloading the person model' : 'starting the person model',
+					ratio: p.ratio * 0.12,
+				}),
+		})
+		try {
+			const result = await renderVideoFilter({
+				source: ctx.file,
+				params: {},
+				audio: 'copy',
+				format: ctx.output.format,
+				quality: ctx.output.quality,
+				perFrame: prepared.perFrame,
+				signal: ctx.signal,
+				onProgress: (p) => ctx.onProgress({ phase: p.phase, ratio: 0.12 + p.ratio * 0.88 }),
+			})
+			return {
+				outputs: [
+					{
+						blob: result.blob,
+						url: result.url,
+						name: filterFileName(baseName, result.format, 'background'),
+						sizeInBytes: result.sizeInBytes,
+						kind: 'video',
+						meta: prepared.summary,
+					},
+				],
+			}
+		} finally {
+			prepared.dispose()
+		}
+	}
+
+	if (handler === 'chroma-overlay') {
+		ctx.onProgress({ phase: 'reading the overlay clip', ratio: 0 })
+		const prepared = await prepareChromaOverlay({
+			params: readChromaOverlayParams(ctx.params),
+			overlayFile: ctx.secondaryFile,
+			signal: ctx.signal,
+		})
+		try {
+			const result = await renderVideoFilter({
+				source: ctx.file,
+				params: {},
+				audio: 'copy',
+				format: ctx.output.format,
+				quality: ctx.output.quality,
+				perFrame: prepared.perFrame,
+				signal: ctx.signal,
+				onProgress: (p) => ctx.onProgress({ phase: p.phase, ratio: p.ratio }),
+			})
+			return {
+				outputs: [
+					{
+						blob: result.blob,
+						url: result.url,
+						name: filterFileName(baseName, result.format, 'overlay'),
+						sizeInBytes: result.sizeInBytes,
+						kind: 'video',
+						meta: prepared.summary,
+					},
+				],
+			}
+		} finally {
+			prepared.dispose()
+		}
+	}
+
 	const visualParams = await buildVisualParams(handler, ctx)
 	if (visualParams) {
 		const result = await renderVideoFilter({
@@ -683,6 +860,139 @@ async function buildVisualParams(handler: HandlerId, ctx: RunContext): Promise<F
 		default:
 			return null
 	}
+}
+
+/* ==========================================================================
+   Previews.
+
+   Two of the tools here cannot be judged from their sliders - a background
+   swap and a colour grade both have to be *seen* - and both would otherwise
+   be judged by rendering the whole clip, changing one number and rendering it
+   again. So one frame is put through the identical engine instead, at a
+   capped width, which takes about as long as it takes to decode that frame.
+
+   This is deliberately not a second implementation: it builds the same
+   processors and the same per-frame hook the render does, and hands them to
+   `extractThumbnail`, which runs the same `drawFrame`. A preview that could
+   disagree with the export would be worse than no preview.
+   ========================================================================== */
+
+export type PreviewContext = {
+	file: File
+	probe: CaptionVideoSource
+	params: RunParams
+	secondaryFile: File | null
+	/** where in the clip to sample; clamped into the clip by the caller */
+	atSeconds: number
+	signal: AbortSignal
+	onProgress?: (progress: RunProgress) => void
+}
+
+export type PreviewResult = {
+	blob: Blob
+	url: string
+	width: number
+	height: number
+	/** what the preview actually did, when that is worth saying */
+	note?: string
+}
+
+/** Preview frames are capped here: past this they cost more than they teach. */
+const PREVIEW_MAX_WIDTH = 720
+
+export async function previewTool(tool: ToolDef, ctx: PreviewContext): Promise<PreviewResult> {
+	const handler = tool.handler as HandlerId | undefined
+	if (!handler) throw new Error(`"${tool.name}" has nothing to preview.`)
+
+	const targetWidth = Math.min(PREVIEW_MAX_WIDTH, ctx.probe.width)
+	const atSeconds = Math.max(0, Math.min(ctx.probe.durationInSeconds - 0.05, ctx.atSeconds))
+
+	if (handler === 'color-tone') {
+		const processor = buildToneProcessor(ctx.params)
+		try {
+			ctx.onProgress?.({ phase: 'grading a frame', ratio: 0.5 })
+			const still = await extractThumbnail({
+				source: ctx.file,
+				atSeconds,
+				params: { targetWidth, tonePass: processor },
+				signal: ctx.signal,
+			})
+			return {
+				...still,
+				note: processor.degraded ? 'Graded on the CPU - bloom, halation and diffusion need WebGL2.' : undefined,
+			}
+		} finally {
+			processor.dispose()
+		}
+	}
+
+	if (handler === 'background-replace') {
+		ctx.onProgress?.({ phase: 'preparing the person model', ratio: 0.05 })
+		const prepared = await prepareBackgroundReplace({
+			params: readBackgroundParams(ctx.params),
+			probe: ctx.probe,
+			plateFile: ctx.secondaryFile,
+			signal: ctx.signal,
+			onProgress: (p) =>
+				ctx.onProgress?.({
+					phase: p.phase === 'model' ? 'downloading the person model' : 'starting the person model',
+					ratio: p.ratio * 0.8,
+				}),
+		})
+		try {
+			ctx.onProgress?.({ phase: 'compositing a frame', ratio: 0.9 })
+			const still = await extractThumbnail({
+				source: ctx.file,
+				atSeconds,
+				params: { targetWidth },
+				perFrame: prepared.perFrame,
+				signal: ctx.signal,
+			})
+			return {
+				...still,
+				note: prepared.degraded ? 'Composited without a GPU - no light wrap or fringe clean-up.' : undefined,
+			}
+		} finally {
+			prepared.dispose()
+		}
+	}
+
+	if (handler === 'chroma-overlay') {
+		ctx.onProgress?.({ phase: 'keying a frame', ratio: 0.5 })
+		const prepared = await prepareChromaOverlay({
+			params: readChromaOverlayParams(ctx.params),
+			overlayFile: ctx.secondaryFile,
+			signal: ctx.signal,
+		})
+		try {
+			const still = await extractThumbnail({
+				source: ctx.file,
+				atSeconds,
+				params: { targetWidth },
+				perFrame: prepared.perFrame,
+				signal: ctx.signal,
+			})
+			return {
+				...still,
+				note: prepared.degraded ? 'Keyed on the CPU - correct, but far slower over a whole clip.' : undefined,
+			}
+		} finally {
+			prepared.dispose()
+		}
+	}
+
+	const visualParams = await buildVisualParams(handler, {
+		file: ctx.file,
+		probe: ctx.probe,
+		params: ctx.params,
+		secondaryFile: ctx.secondaryFile,
+		batchFiles: [],
+		output: { format: 'mp4', quality: 'draft' },
+		signal: ctx.signal,
+		onProgress: () => {},
+	})
+	if (!visualParams) throw new Error(`"${tool.name}" cannot be previewed a frame at a time.`)
+	return extractThumbnail({ source: ctx.file, atSeconds, params: { ...visualParams, targetWidth }, signal: ctx.signal })
 }
 
 export type { AudioOutputFormat }
