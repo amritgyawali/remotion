@@ -976,13 +976,6 @@ export default function CaptionStudio() {
 
 	handleVideoFilesRef.current = handleVideoFiles
 
-	const handleVideoUrl = useCallback(
-		(url: string) => {
-			void adoptVideo({ url })
-		},
-		[adoptVideo],
-	)
-
 	const handleClearVideo = useCallback(() => {
 		transcribeAbortRef.current?.abort()
 		const previous = videoRef.current
@@ -1728,7 +1721,6 @@ export default function CaptionStudio() {
 					engineUsed={engineUsed}
 					videoError={videoError}
 					onVideoFiles={handleVideoFiles}
-					onVideoUrl={handleVideoUrl}
 					onClearVideo={handleClearVideo}
 					onMode={setMode}
 					onTranscriptText={setTranscriptText}

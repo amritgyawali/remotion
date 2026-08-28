@@ -19,6 +19,7 @@
 
 import { useCallback, useRef } from 'react'
 import { IconAlert, IconFile, IconLink, IconPlus, IconTrash, IconUpload } from '../Icons'
+import RemoteVideoField from '../RemoteVideoField'
 import { formatBytes, formatSeconds } from '../../lib/format'
 import { handleSupported } from '../../lib/editor/handles'
 import { isTauriNative } from '../../lib/device'
@@ -173,6 +174,10 @@ export default function MediaPool({
 			<button type="button" className="btn btn--primary editor-import-btn" onClick={openPicker}>
 				<IconUpload size={14} /> Import media
 			</button>
+
+			{/* A clip that lives on a server is imported the same way as one on disk:
+			    it is fetched here and lands in the pool as an ordinary file. */}
+			<RemoteVideoField onFile={(file) => onImport([{ file, handle: null }])} label="Add" compact />
 
 			{assets.length === 0 ? (
 				<div className="editor-media-empty">

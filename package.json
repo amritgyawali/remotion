@@ -23,6 +23,8 @@
     "motion:check": "node scripts/check-motion-scenes.cjs",
     "motion:check:stress": "node scripts/check-motion-scenes.cjs --stress --overflow --aspects=all",
     "scenes:audit": "node scripts/audit-scene-library.cjs",
+    "media:check": "node scripts/check-remote-import.cjs",
+    "media:check:guards": "node scripts/check-remote-import.cjs --guards-only",
     "captions:check": "node scripts/check-captions.cjs",
     "fonts:check": "node scripts/check-devanagari-glyphs.mjs",
     "riva:check": "node scripts/check-riva.cjs",
