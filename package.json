@@ -20,6 +20,8 @@
     "typecheck": "tsc --noEmit",
     "samples": "node scripts/sync-samples.mjs",
     "ai:check": "node scripts/check-ai-compose.cjs",
+    "motion:check": "node scripts/check-motion-scenes.cjs",
+    "motion:check:stress": "node scripts/check-motion-scenes.cjs --stress --overflow --aspects=all",
     "captions:check": "node scripts/check-captions.cjs",
     "fonts:check": "node scripts/check-devanagari-glyphs.mjs",
     "riva:check": "node scripts/check-riva.cjs",

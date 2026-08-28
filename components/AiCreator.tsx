@@ -21,6 +21,8 @@ export type AiGenerationRequest = {
 	avoidDesignFingerprints: string[]
 	/** House styles of the caller's recent videos, so none repeats back to back. */
 	avoidTemplates: string[]
+	/** Story shapes of the caller's recent videos, so none repeats back to back. */
+	avoidArcs: string[]
 }
 
 export type AiGenerationResult = {
@@ -34,6 +36,7 @@ export type AiGenerationResult = {
 	generationId: string
 	designFingerprint: string
 	template?: string
+	arc?: string
 	notice?: string
 	renderQueued: boolean
 }
@@ -49,12 +52,19 @@ const MODEL: AiModelId = 'auto'
 const RENDER_AFTER_GENERATE = true
 const DESIGN_HISTORY_KEY = 'remotion-video-studio:recent-design-fingerprints:v1'
 const TEMPLATE_HISTORY_KEY = 'remotion-video-studio:recent-templates:v1'
+const ARC_HISTORY_KEY = 'remotion-video-studio:recent-arcs:v1'
 const MAX_RECENT_DESIGNS = 32
 /**
  * Only the last few house styles are withheld. Blocking more of them would
  * shrink the pool faster than it refills and force the resolver into repeats.
  */
 const MAX_RECENT_TEMPLATES = 5
+/**
+ * Story shapes are withheld for slightly longer than house styles: the arc is
+ * what a viewer remembers as "the same video", and the pool is large enough to
+ * absorb it.
+ */
+const MAX_RECENT_ARCS = 6
 
 const STARTERS: Array<{ label: string; prompt: string }> = [
 	{
@@ -135,6 +145,7 @@ export default function AiCreator({
 	const chatRef = useRef<HTMLDivElement>(null)
 	const recentDesignsRef = useRef<string[]>([])
 	const recentTemplatesRef = useRef<string[]>([])
+	const recentArcsRef = useRef<string[]>([])
 
 	const disabled = busy || generating
 
@@ -154,6 +165,14 @@ export default function AiCreator({
 				: []
 		} catch {
 			recentTemplatesRef.current = []
+		}
+		try {
+			const stored = JSON.parse(window.localStorage.getItem(ARC_HISTORY_KEY) ?? '[]') as unknown
+			recentArcsRef.current = Array.isArray(stored)
+				? stored.filter((item): item is string => typeof item === 'string').slice(-MAX_RECENT_ARCS)
+				: []
+		} catch {
+			recentArcsRef.current = []
 		}
 	}, [])
 
@@ -199,6 +218,7 @@ export default function AiCreator({
 				creativeSeed,
 				avoidDesignFingerprints: recentDesignsRef.current,
 				avoidTemplates: recentTemplatesRef.current,
+				avoidArcs: recentArcsRef.current,
 			})
 			if (result.designFingerprint) {
 				const nextDesigns = [
@@ -220,6 +240,17 @@ export default function AiCreator({
 				recentTemplatesRef.current = nextTemplates
 				try {
 					window.localStorage.setItem(TEMPLATE_HISTORY_KEY, JSON.stringify(nextTemplates))
+				} catch {
+					// Storage may be disabled; variation still works for the current request.
+				}
+			}
+			if (result.arc) {
+				const nextArcs = [...recentArcsRef.current.filter((item) => item !== result.arc), result.arc].slice(
+					-MAX_RECENT_ARCS,
+				)
+				recentArcsRef.current = nextArcs
+				try {
+					window.localStorage.setItem(ARC_HISTORY_KEY, JSON.stringify(nextArcs))
 				} catch {
 					// Storage may be disabled; variation still works for the current request.
 				}

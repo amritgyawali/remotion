@@ -25,6 +25,9 @@ import * as RemotionSlide from '@remotion/transitions/slide'
 import * as RemotionWipe from '@remotion/transitions/wipe'
 import * as RemotionFlip from '@remotion/transitions/flip'
 import * as RemotionClockWipe from '@remotion/transitions/clock-wipe'
+import * as RemotionIris from '@remotion/transitions/iris'
+import * as RemotionPushCut from '@remotion/transitions/push-cut'
+import * as RemotionNoTransition from '@remotion/transitions/none'
 import * as RemotionMediaUtils from '@remotion/media-utils'
 import * as RemotionMedia from '@remotion/media'
 import * as RemotionGif from '@remotion/gif'
@@ -50,6 +53,9 @@ export const MODULE_REGISTRY: Record<string, unknown> = {
 	'@remotion/transitions/wipe': RemotionWipe,
 	'@remotion/transitions/flip': RemotionFlip,
 	'@remotion/transitions/clock-wipe': RemotionClockWipe,
+	'@remotion/transitions/iris': RemotionIris,
+	'@remotion/transitions/push-cut': RemotionPushCut,
+	'@remotion/transitions/none': RemotionNoTransition,
 	'@remotion/media-utils': RemotionMediaUtils,
 	'@remotion/media': RemotionMedia,
 	'@remotion/gif': RemotionGif,

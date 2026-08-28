@@ -14,6 +14,7 @@ import { composeVideoSource } from '../../../../lib/ai/compose'
 import { planStoryboard, promptRequestsThreeDimensional } from '../../../../lib/ai/planner'
 import { STORYBOARD_SYSTEM_PROMPT, buildUserMessage, extractJsonObject } from '../../../../lib/ai/prompt'
 import { normalizeStoryboard, type Storyboard } from '../../../../lib/ai/storyboard'
+import { ARC_IDS, type ArcId } from '../../../../lib/ai/arcs'
 import { TEMPLATE_IDS, normalizeAvoidFingerprints, type TemplateId } from '../../../../lib/ai/variation'
 
 export const runtime = 'nodejs'
@@ -51,6 +52,7 @@ type GenerateBody = {
 	creativeSeed?: unknown
 	avoidDesignFingerprints?: unknown
 	avoidTemplates?: unknown
+	avoidArcs?: unknown
 }
 
 type NvidiaResponse = {
@@ -80,6 +82,14 @@ function collectAvoidTemplates(value: unknown): TemplateId[] {
 		...new Set(
 			value.filter((item): item is TemplateId => typeof item === 'string' && TEMPLATE_IDS.includes(item as TemplateId)),
 		),
+	].slice(-6)
+}
+
+/** Story shapes the caller has already shipped, so none is reused back to back. */
+function collectAvoidArcs(value: unknown): ArcId[] {
+	if (!Array.isArray(value)) return []
+	return [
+		...new Set(value.filter((item): item is ArcId => typeof item === 'string' && ARC_IDS.includes(item as ArcId))),
 	].slice(-6)
 }
 
@@ -208,6 +218,8 @@ function payloadFor(
 		generationId: storyboard.creativeSeed,
 		designFingerprint: storyboard.designFingerprint,
 		template: storyboard.creativeProfile.template,
+		arc: storyboard.creativeProfile.arc,
+		motionSignature: storyboard.creativeProfile.motionSignature,
 		dimension: storyboard.dimension,
 		creativeProfile: storyboard.creativeProfile,
 		attempts,
@@ -239,6 +251,7 @@ export async function POST(request: Request) {
 		: randomUUID()
 	const avoidDesignFingerprints = normalizeAvoidFingerprints(body.avoidDesignFingerprints)
 	const avoidTemplates = collectAvoidTemplates(body.avoidTemplates)
+	const avoidArcs = collectAvoidArcs(body.avoidArcs)
 
 	/**
 	 * Three-dimensional treatment is opt-in for the whole chat, not just the
@@ -253,6 +266,7 @@ export async function POST(request: Request) {
 		creativeSeed,
 		avoidDesignFingerprints,
 		avoidTemplates,
+		avoidArcs,
 		allowThreeDimensional,
 	})
 	const attempts: Attempt[] = []
@@ -346,6 +360,7 @@ export async function POST(request: Request) {
 		const storyboard = normalizeStoryboard(parsed, localPlan, {
 			avoidDesignFingerprints,
 			avoidTemplates,
+			avoidArcs,
 			allowThreeDimensional,
 		})
 		try {
