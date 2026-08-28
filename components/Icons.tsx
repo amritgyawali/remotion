@@ -386,3 +386,19 @@ export const IconLock = (props: IconProps) => (
 		<path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
 	</Base>
 )
+
+export const IconPerson = (props: IconProps) => (
+	<Base {...props}>
+		<circle cx="12" cy="7.5" r="3.5" />
+		<path d="M4.5 20.5a7.5 7.5 0 0 1 15 0" />
+	</Base>
+)
+
+export const IconPalette = (props: IconProps) => (
+	<Base {...props}>
+		<path d="M12 3a9 9 0 0 0 0 18c1.4 0 2-.9 2-1.8 0-1.3-1-1.7-1-2.7 0-.8.7-1.5 1.6-1.5H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8Z" />
+		<circle cx="8" cy="10.5" r="1.1" fill="currentColor" stroke="none" />
+		<circle cx="11.5" cy="7.5" r="1.1" fill="currentColor" stroke="none" />
+		<circle cx="15.5" cy="9" r="1.1" fill="currentColor" stroke="none" />
+	</Base>
+)

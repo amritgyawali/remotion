@@ -65,9 +65,32 @@ export type FrameOpsParams = {
 	watermark?: WatermarkSpec | null
 	text?: TextOverlaySpec | null
 	chromaKey?: ChromaKeySpec | null
+	/**
+	 * Whole-frame passes that own their own pixels.
+	 *
+	 * Everything else here is a description of what to do; these two are the
+	 * thing that does it, because both are per-pixel work that belongs on the
+	 * GPU (`background-replace.ts` and `tone-renderer.ts` each hold a shader and
+	 * its textures) and neither can be expressed as canvas state. They run in
+	 * this order - the new backdrop is in place before the grade sees the
+	 * frame, so the subject and the background are graded as one picture.
+	 */
+	backgroundPass?: FramePass | null
+	tonePass?: FramePass | null
+	/**
+	 * Stacked onto the finished picture, after the grade and after the vignette,
+	 * the way a watermark is - because that is what it is. The chroma-key
+	 * overlay lives here rather than in `watermark` because it has to key its
+	 * own source per frame and place the result itself.
+	 */
+	overlayPass?: FramePass | null
 	/** `contain` letterboxes/pillarboxes onto `padColor` instead of stretching to fill */
 	fit?: 'fill' | 'contain'
 	padColor?: string
+}
+
+export type FramePass = {
+	apply(ctx: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D, width: number, height: number, frameIndex: number): void
 }
 
 export type ChromaKeyBackground =
@@ -197,7 +220,7 @@ function drawVignette(ctx: Ctx2D, width: number, height: number, strength: numbe
 	ctx.restore()
 }
 
-function anchorPoint(
+export function anchorPoint(
 	position: AnchorPosition,
 	frameWidth: number,
 	frameHeight: number,
@@ -327,6 +350,7 @@ export function drawFrame(
 	params: FrameOpsParams,
 	dims: FrameOpsDims,
 	cropOffset: { dx: number; dy: number } = { dx: 0, dy: 0 },
+	frameIndex = 0,
 ): void {
 	const rotate = params.rotate ?? 0
 	const crop = { x: dims.crop.x + cropOffset.dx, y: dims.crop.y + cropOffset.dy, width: dims.crop.width, height: dims.crop.height }
@@ -361,8 +385,11 @@ export function drawFrame(
 	destCtx.filter = 'none'
 
 	if (params.chromaKey) applyChromaKey(destCtx, dims.width, dims.height, params.chromaKey)
+	if (params.backgroundPass) params.backgroundPass.apply(destCtx, dims.width, dims.height, frameIndex)
+	if (params.tonePass) params.tonePass.apply(destCtx, dims.width, dims.height, frameIndex)
 	if (params.sharpenAmount) applySharpen(destCtx, dims.width, dims.height, params.sharpenAmount)
 	if (params.vignette) drawVignette(destCtx, dims.width, dims.height, params.vignette)
+	if (params.overlayPass) params.overlayPass.apply(destCtx, dims.width, dims.height, frameIndex)
 	if (params.watermark) drawWatermark(destCtx, dims.width, dims.height, params.watermark)
 	if (params.text) drawText(destCtx, dims.width, dims.height, params.text)
 }

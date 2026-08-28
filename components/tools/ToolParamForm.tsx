@@ -5,6 +5,7 @@ import type { CaptionVideoSource } from '../../lib/captions/types'
 import type { ParamSpec, ToolDef } from '../../lib/tools/registry'
 import type { RunParams } from '../../lib/tools/runners'
 import { formatBytes } from '../../lib/format'
+import TonePicker from './TonePicker'
 import { IconClose, IconLayers, IconPlus, IconUpload } from '../Icons'
 
 export function resolveMax(spec: Extract<ParamSpec, { type: 'slider' }>, probe: CaptionVideoSource | null): number {
@@ -252,6 +253,17 @@ export default function ToolParamForm({
 								onChange={(event) => onChange(spec.key, event.target.checked)}
 							/>
 						</label>
+					)
+				}
+				if (spec.type === 'tone') {
+					return (
+						<TonePicker
+							key={spec.key}
+							value={typeof value === 'string' ? value : spec.default}
+							probe={probe}
+							disabled={disabled}
+							onChange={(id) => onChange(spec.key, id)}
+						/>
 					)
 				}
 				if (spec.type === 'color') {

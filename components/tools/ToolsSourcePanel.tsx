@@ -7,6 +7,7 @@ import type { CaptionVideoSource } from '../../lib/captions/types'
 import { toolById, type ToolCategory, type ToolDef } from '../../lib/tools/registry'
 import type { RunParams } from '../../lib/tools/runners'
 import ToolCatalog from './ToolCatalog'
+import ToolFramePreview from './ToolFramePreview'
 import ToolParamForm from './ToolParamForm'
 import { IconCloudOff, IconFilm, IconLink, IconTools, IconTrash, IconUpload, IconVault } from '../Icons'
 import RemoteVideoField from '../RemoteVideoField'
@@ -233,17 +234,27 @@ function SelectedToolPanel({
 					</a>
 				</div>
 			) : (
-				<ToolParamForm
-					tool={tool}
-					params={params}
-					probe={video}
-					disabled={disabled}
-					secondaryFile={secondaryFile}
-					batchFiles={batchFiles}
-					onChange={onParamChange}
-					onSecondaryFile={onSecondaryFile}
-					onBatchFiles={onBatchFiles}
-				/>
+				<>
+					{tool.note ? (
+						<div className="notice notice--info" style={{ marginTop: 10 }}>
+							<span>{tool.note}</span>
+						</div>
+					) : null}
+					<ToolParamForm
+						tool={tool}
+						params={params}
+						probe={video}
+						disabled={disabled}
+						secondaryFile={secondaryFile}
+						batchFiles={batchFiles}
+						onChange={onParamChange}
+						onSecondaryFile={onSecondaryFile}
+						onBatchFiles={onBatchFiles}
+					/>
+					{tool.preview ? (
+						<ToolFramePreview tool={tool} params={params} probe={video} secondaryFile={secondaryFile} disabled={disabled} />
+					) : null}
+				</>
 			)}
 		</div>
 	)

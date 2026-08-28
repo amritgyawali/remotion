@@ -52,3 +52,10 @@ yarn-error.log*
 apps/editor-native/dist/
 apps/editor-native/src-tauri/target/
 apps/editor-native/src-tauri/gen/
+
+# MediaPipe segmentation runtime, copied out of node_modules by `predev`/
+# `prebuild`, and the optional vendored models (`npm run assets:segmentation`).
+# Both are regenerated, and the models are a 16 MB download the studio can also
+# fetch on demand - neither belongs in the history.
+public/mediapipe/
+public/models/
