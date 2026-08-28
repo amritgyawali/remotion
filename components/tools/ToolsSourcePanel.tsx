@@ -9,6 +9,7 @@ import type { RunParams } from '../../lib/tools/runners'
 import ToolCatalog from './ToolCatalog'
 import ToolParamForm from './ToolParamForm'
 import { IconCloudOff, IconFilm, IconLink, IconTools, IconTrash, IconUpload, IconVault } from '../Icons'
+import RemoteVideoField from '../RemoteVideoField'
 
 export default function ToolsSourcePanel({
 	video,
@@ -138,6 +139,8 @@ export default function ToolsSourcePanel({
 							</div>
 						</div>
 					)}
+
+					<RemoteVideoField onFile={(file) => onVideoFiles([file])} disabled={busy} />
 
 					<input
 						ref={inputRef}

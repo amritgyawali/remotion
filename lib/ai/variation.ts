@@ -191,6 +191,41 @@ export function seededChoice<T>(seed: string, label: string, choices: readonly T
 	return choices[seededIndex(seed, label, choices.length)]
 }
 
+/**
+ * A seeded draw that can be told some choices matter more than others.
+ *
+ * `seededChoice` treats a pool as flat, which is right when nothing separates
+ * the options. When something does - a scene template whose subject matches the
+ * brief, say - a flat draw throws that away. This keeps the draw deterministic
+ * for a given seed and label while letting weight tilt it: a choice weighted 4
+ * is four times as likely as one weighted 1, and a pool of equal weights
+ * behaves exactly like `seededChoice`.
+ *
+ * Weights are clamped to a floor of one, so an unweighted option is unlikely
+ * rather than unreachable - the point is to bias the library, not to lock most
+ * of it away the moment a brief mentions one word.
+ */
+export function seededWeightedChoice<T>(
+	seed: string,
+	label: string,
+	choices: readonly T[],
+	weightOf: (choice: T) => number,
+): T {
+	if (choices.length === 0) throw new Error(`No creative choices are available for ${label}.`)
+	if (choices.length === 1) return choices[0]
+
+	const weights = choices.map((choice) => Math.max(1, Math.round(weightOf(choice))))
+	const total = weights.reduce((sum, weight) => sum + weight, 0)
+	// The hash is taken over the same string `seededIndex` would use, so a pool
+	// whose weights are all equal draws exactly what an unweighted call draws.
+	let ticket = stableHash(`${seed}:${label}`) % total
+	for (let index = 0; index < choices.length; index += 1) {
+		ticket -= weights[index]
+		if (ticket < 0) return choices[index]
+	}
+	return choices[choices.length - 1]
+}
+
 export function promptFallbackSeed(prompt: string): string {
 	const first = stableHash(prompt, 0x13579bdf).toString(16).padStart(8, '0')
 	const second = stableHash(prompt, 0x2468ace0).toString(16).padStart(8, '0')

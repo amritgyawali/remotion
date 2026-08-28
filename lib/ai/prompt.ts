@@ -100,7 +100,7 @@ SCENE TYPES
 {"type":"carousel3d","headline":string,"items":[{"title":string,"detail":string,"icon":<icon id>}]}  // 3-6 cards on a rotating 3D rig
 
 MOTION LIBRARY
-Fifty further scenes share one shape. They are complete pieces of motion design - kinetic type, wipes, decks, gauges, terminals, split flaps, before-and-afters - and they are the main reason two videos about different subjects do not look alike. Prefer them for anything that is not literally a chronology, a map or a set of measured figures, and use several different ones in a single film.
+A hundred further scenes share one shape. They are complete pieces of motion design - kinetic type, wipes, decks, gauges, terminals, split flaps, before-and-afters, lens flares, dominoes, spreads, radar sweeps, corridors - and they are the main reason two videos about different subjects do not look alike. Prefer them for anything that is not literally a chronology, a map or a set of measured figures, and use several different ones in a single film.
 
 {"type":<motion scene id>,"kicker":string,"headline":string,"caption":string,"lines":[string],"items":[{"title":string,"detail":string,"icon":<icon id>}],"stats":[{"value":number,"prefix":string,"suffix":string,"label":string,"decimals":number}],"icon":<icon id>}
 

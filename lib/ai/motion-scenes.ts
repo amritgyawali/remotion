@@ -1,8 +1,8 @@
 /**
  * The motion-graphics scene library.
  *
- * Fifty complete pieces of design, each one a different idea about how a frame
- * should move. They exist because art direction alone cannot stop two films
+ * One hundred complete pieces of design, each one a different idea about how a
+ * frame should move. They exist because art direction alone cannot stop two films
  * from feeling the same: a palette and a font change the surface, but if every
  * generation reaches for the same three compositions the viewer still sees one
  * video wearing different clothes.
@@ -16,8 +16,13 @@
 
 import type { BeatRole } from './arcs'
 import { DATA_SCENES } from './scenes/data'
+import { EDITORIAL_SCENES } from './scenes/editorial'
 import { FRAME_SCENES } from './scenes/frames'
+import { OPTICAL_SCENES } from './scenes/optical'
+import { PHYSICAL_SCENES } from './scenes/physical'
 import { MOTION_SHELL } from './scenes/shell'
+import { SIGNAL_SCENES } from './scenes/signal'
+import { SPATIAL_SCENES } from './scenes/spatial'
 import { STORY_SCENES } from './scenes/story'
 import { STRUCTURE_SCENES } from './scenes/structure'
 import { TYPE_SCENES } from './scenes/type'
@@ -31,6 +36,11 @@ export const MOTION_SCENE_SOURCE = {
 	...FRAME_SCENES,
 	...DATA_SCENES,
 	...STORY_SCENES,
+	...OPTICAL_SCENES,
+	...PHYSICAL_SCENES,
+	...EDITORIAL_SCENES,
+	...SIGNAL_SCENES,
+	...SPATIAL_SCENES,
 } as const
 
 export type MotionSceneType = keyof typeof MOTION_SCENE_SOURCE
@@ -47,7 +57,17 @@ export type MotionSceneType = keyof typeof MOTION_SCENE_SOURCE
 export type MotionSceneRecipe = {
 	label: string
 	component: string
-	family: 'type' | 'structure' | 'frame' | 'data' | 'story'
+	family:
+		| 'type'
+		| 'structure'
+		| 'frame'
+		| 'data'
+		| 'story'
+		| 'optical'
+		| 'physical'
+		| 'editorial'
+		| 'signal'
+		| 'spatial'
 	roles: readonly BeatRole[]
 	needs: 'copy' | 'items' | 'numbers'
 	/**
@@ -143,7 +163,7 @@ export const MOTION_SCENE_KIT = {
 		label: 'Letter Grid',
 		component: 'LetterGridScene',
 		family: 'type',
-		roles: ['open', 'hook', 'turn'],
+		roles: ['open', 'hook', 'showcase'],
 		needs: 'copy',
 		anchor: true,
 		minLines: 1,
@@ -314,7 +334,7 @@ export const MOTION_SCENE_KIT = {
 		label: 'Ranked Race',
 		component: 'BarRaceScene',
 		family: 'data',
-		roles: ['evidence', 'compare', 'list'],
+		roles: ['evidence', 'compare', 'list', 'time'],
 		needs: 'numbers',
 		minLines: 3,
 	},
@@ -464,6 +484,411 @@ export const MOTION_SCENE_KIT = {
 		roles: ['hook', 'turn', 'list', 'close'],
 		needs: 'copy',
 		anchor: true,
+		minLines: 2,
+	},
+	/* -- Optical ----------------------------------------------------------- */
+	'lens-flare-title': {
+		label: 'Lens Flare',
+		component: 'LensFlareTitleScene',
+		family: 'optical',
+		roles: ['open', 'hook', 'showcase', 'close'],
+		needs: 'copy',
+		anchor: true,
+	},
+	'chromatic-split': {
+		label: 'Chromatic Split',
+		component: 'ChromaticSplitScene',
+		family: 'optical',
+		roles: ['open', 'hook', 'turn'],
+		needs: 'copy',
+		anchor: true,
+	},
+	'moire-field': {
+		label: 'Moire Field',
+		component: 'MoireFieldScene',
+		family: 'optical',
+		roles: ['hook', 'thesis', 'turn', 'context'],
+		needs: 'copy',
+		minLines: 2,
+	},
+	'caustic-pool': {
+		label: 'Caustics',
+		component: 'CausticPoolScene',
+		family: 'optical',
+		roles: ['open', 'context', 'place', 'showcase'],
+		needs: 'copy',
+		minLines: 2,
+	},
+	'prism-refract': {
+		label: 'Prism',
+		component: 'PrismRefractScene',
+		family: 'optical',
+		roles: ['turn', 'thesis', 'showcase'],
+		needs: 'copy',
+		anchor: true,
+	},
+	'bokeh-drift': {
+		label: 'Bokeh Pull',
+		component: 'BokehDriftScene',
+		family: 'optical',
+		roles: ['open', 'context', 'quote', 'close'],
+		needs: 'copy',
+		minLines: 2,
+	},
+	'scanline-crt': {
+		label: 'Tube Screen',
+		component: 'ScanlineCrtScene',
+		family: 'optical',
+		roles: ['list', 'context', 'evidence', 'turn'],
+		needs: 'copy',
+		minLines: 3,
+	},
+	'halftone-bloom': {
+		label: 'Halftone Bloom',
+		component: 'HalftoneBloomScene',
+		family: 'optical',
+		roles: ['open', 'hook', 'turn', 'close'],
+		needs: 'copy',
+		anchor: true,
+	},
+	'light-leak-wipe': {
+		label: 'Light Leak',
+		component: 'LightLeakWipeScene',
+		family: 'optical',
+		roles: ['turn', 'compare', 'hook'],
+		needs: 'copy',
+		minLines: 2,
+	},
+	'vignette-pulse': {
+		label: 'Iris',
+		component: 'VignettePulseScene',
+		family: 'optical',
+		roles: ['quote', 'thesis', 'close', 'context'],
+		needs: 'copy',
+	},
+	/* -- Physical ---------------------------------------------------------- */
+	'gravity-drop': {
+		label: 'Gravity Drop',
+		component: 'GravityDropScene',
+		family: 'physical',
+		roles: ['open', 'hook', 'thesis', 'turn'],
+		needs: 'copy',
+		anchor: true,
+	},
+	'pendulum-swing': {
+		label: 'Pendulums',
+		component: 'PendulumSwingScene',
+		family: 'physical',
+		roles: ['list', 'context', 'compare'],
+		needs: 'items',
+		minLines: 3,
+	},
+	'domino-fall': {
+		label: 'Dominoes',
+		component: 'DominoFallScene',
+		family: 'physical',
+		roles: ['steps', 'list', 'turn', 'time'],
+		needs: 'copy',
+		minLines: 4,
+	},
+	'elastic-rope': {
+		label: 'Tension',
+		component: 'ElasticRopeScene',
+		family: 'physical',
+		roles: ['compare', 'turn', 'thesis'],
+		needs: 'copy',
+		minLines: 2,
+	},
+	'sand-settle': {
+		label: 'Settling',
+		component: 'SandSettleScene',
+		family: 'physical',
+		roles: ['context', 'time', 'close', 'thesis'],
+		needs: 'copy',
+	},
+	'magnet-snap': {
+		label: 'Snap To Grid',
+		component: 'MagnetSnapScene',
+		family: 'physical',
+		roles: ['list', 'showcase', 'evidence'],
+		needs: 'items',
+		minLines: 4,
+	},
+	'spring-board': {
+		label: 'Springboard',
+		component: 'SpringBoardScene',
+		family: 'physical',
+		roles: ['list', 'steps', 'showcase'],
+		needs: 'items',
+		minLines: 3,
+	},
+	'liquid-fill': {
+		label: 'Fill Level',
+		component: 'LiquidFillScene',
+		family: 'physical',
+		roles: ['evidence', 'showcase', 'thesis'],
+		needs: 'numbers',
+	},
+	'smoke-reveal': {
+		label: 'Smoke Clear',
+		component: 'SmokeRevealScene',
+		family: 'physical',
+		roles: ['open', 'turn', 'hook', 'close'],
+		needs: 'copy',
+		anchor: true,
+	},
+	'shatter-glass': {
+		label: 'Shatter',
+		component: 'ShatterGlassScene',
+		family: 'physical',
+		roles: ['turn', 'hook', 'close'],
+		needs: 'copy',
+		anchor: true,
+	},
+	/* -- Editorial --------------------------------------------------------- */
+	'magazine-spread': {
+		label: 'Spread',
+		component: 'MagazineSpreadScene',
+		family: 'editorial',
+		roles: ['thesis', 'context', 'quote', 'open'],
+		needs: 'copy',
+		minLines: 2,
+	},
+	'newspaper-fold': {
+		label: 'Front Page',
+		component: 'NewspaperFoldScene',
+		family: 'editorial',
+		roles: ['open', 'turn', 'evidence', 'context'],
+		needs: 'copy',
+		anchor: true,
+		minLines: 2,
+	},
+	'index-card': {
+		label: 'Card Index',
+		component: 'IndexCardScene',
+		family: 'editorial',
+		roles: ['list', 'steps', 'context'],
+		needs: 'copy',
+		minLines: 3,
+	},
+	'footnote-margin': {
+		label: 'Marginalia',
+		component: 'FootnoteMarginScene',
+		family: 'editorial',
+		roles: ['context', 'evidence', 'thesis'],
+		needs: 'copy',
+		minLines: 3,
+	},
+	'contact-sheet': {
+		label: 'Contact Sheet',
+		component: 'ContactSheetScene',
+		family: 'editorial',
+		roles: ['list', 'showcase', 'turn'],
+		needs: 'copy',
+		minLines: 4,
+	},
+	'book-page-turn': {
+		label: 'Page Turn',
+		component: 'BookPageTurnScene',
+		family: 'editorial',
+		roles: ['time', 'steps', 'context', 'quote'],
+		needs: 'copy',
+		minLines: 3,
+	},
+	'stamp-postcard': {
+		label: 'Postcard',
+		component: 'StampPostcardScene',
+		family: 'editorial',
+		roles: ['place', 'open', 'close', 'quote'],
+		needs: 'copy',
+		minLines: 2,
+	},
+	'receipt-roll': {
+		label: 'Receipt',
+		component: 'ReceiptRollScene',
+		family: 'editorial',
+		roles: ['evidence', 'list', 'close'],
+		needs: 'copy',
+		minLines: 4,
+	},
+	'blueprint-draft': {
+		label: 'Blueprint',
+		component: 'BlueprintDraftScene',
+		family: 'editorial',
+		roles: ['showcase', 'context', 'steps', 'evidence'],
+		needs: 'copy',
+		minLines: 3,
+	},
+	'sticker-sheet': {
+		label: 'Stickers',
+		component: 'StickerSheetScene',
+		family: 'editorial',
+		roles: ['list', 'showcase', 'close'],
+		needs: 'items',
+		minLines: 4,
+	},
+	/* -- Signal ------------------------------------------------------------ */
+	'radar-sweep': {
+		label: 'Radar',
+		component: 'RadarSweepScene',
+		family: 'signal',
+		roles: ['list', 'place', 'context', 'evidence'],
+		needs: 'copy',
+		minLines: 3,
+	},
+	'waveform-scrub': {
+		label: 'Playhead',
+		component: 'WaveformScrubScene',
+		family: 'signal',
+		roles: ['time', 'steps', 'quote', 'context'],
+		needs: 'copy',
+		minLines: 3,
+	},
+	'equalizer-bars': {
+		label: 'Spectrum',
+		component: 'EqualizerBarsScene',
+		family: 'signal',
+		roles: ['list', 'compare', 'evidence'],
+		needs: 'copy',
+		minLines: 4,
+	},
+	'sonar-ping': {
+		label: 'Sonar',
+		component: 'SonarPingScene',
+		family: 'signal',
+		roles: ['open', 'thesis', 'quote', 'close'],
+		needs: 'copy',
+		minLines: 2,
+	},
+	'barcode-scan': {
+		label: 'Scanner',
+		component: 'BarcodeScanScene',
+		family: 'signal',
+		roles: ['hook', 'turn', 'evidence', 'close'],
+		needs: 'copy',
+		anchor: true,
+	},
+	'loading-bars': {
+		label: 'Progress',
+		component: 'LoadingBarsScene',
+		family: 'signal',
+		roles: ['evidence', 'steps', 'compare', 'list'],
+		needs: 'copy',
+		minLines: 3,
+	},
+	'notification-stack': {
+		label: 'Alerts',
+		component: 'NotificationStackScene',
+		family: 'signal',
+		roles: ['list', 'evidence', 'turn'],
+		needs: 'items',
+		minLines: 3,
+	},
+	'search-suggest': {
+		label: 'Query',
+		component: 'SearchSuggestScene',
+		family: 'signal',
+		roles: ['hook', 'open', 'list', 'context'],
+		needs: 'copy',
+		minLines: 3,
+	},
+	'dial-tuner': {
+		label: 'Tuner',
+		component: 'DialTunerScene',
+		family: 'signal',
+		roles: ['turn', 'list', 'compare'],
+		needs: 'copy',
+		minLines: 3,
+	},
+	'telemetry-hud': {
+		label: 'Telemetry',
+		component: 'TelemetryHudScene',
+		family: 'signal',
+		roles: ['evidence', 'showcase', 'context'],
+		needs: 'numbers',
+		minLines: 2,
+	},
+	/* -- Spatial ----------------------------------------------------------- */
+	'corridor-fly': {
+		label: 'Corridor',
+		component: 'CorridorFlyScene',
+		family: 'spatial',
+		roles: ['list', 'context', 'steps', 'showcase'],
+		needs: 'copy',
+		minLines: 3,
+	},
+	'card-ring': {
+		label: 'Ring',
+		component: 'CardRingScene',
+		family: 'spatial',
+		roles: ['list', 'showcase', 'compare'],
+		needs: 'items',
+		minLines: 4,
+	},
+	'elevator-floors': {
+		label: 'Floors',
+		component: 'ElevatorFloorsScene',
+		family: 'spatial',
+		roles: ['steps', 'time', 'compare', 'list'],
+		needs: 'copy',
+		minLines: 3,
+	},
+	'tunnel-rings': {
+		label: 'Tunnel',
+		component: 'TunnelRingsScene',
+		family: 'spatial',
+		roles: ['open', 'turn', 'thesis', 'close'],
+		needs: 'copy',
+		anchor: true,
+		minLines: 2,
+	},
+	'cube-unfold': {
+		label: 'Unfold',
+		component: 'CubeUnfoldScene',
+		family: 'spatial',
+		roles: ['list', 'showcase', 'context'],
+		needs: 'items',
+		minLines: 3,
+	},
+	'stairs-climb': {
+		label: 'Stairs',
+		component: 'StairsClimbScene',
+		family: 'spatial',
+		roles: ['steps', 'time', 'evidence'],
+		needs: 'copy',
+		minLines: 3,
+	},
+	'window-grid': {
+		label: 'Facade',
+		component: 'WindowGridScene',
+		family: 'spatial',
+		roles: ['place', 'context', 'list', 'showcase'],
+		needs: 'copy',
+		minLines: 3,
+	},
+	'horizon-parallax': {
+		label: 'Horizon',
+		component: 'HorizonParallaxScene',
+		family: 'spatial',
+		roles: ['open', 'place', 'close', 'context'],
+		needs: 'copy',
+		anchor: true,
+		minLines: 2,
+	},
+	'orbit-slab': {
+		label: 'Slab',
+		component: 'OrbitSlabScene',
+		family: 'spatial',
+		roles: ['open', 'hook', 'showcase', 'close'],
+		needs: 'copy',
+		anchor: true,
+	},
+	'depth-push': {
+		label: 'Push Through',
+		component: 'DepthPushScene',
+		family: 'spatial',
+		roles: ['thesis', 'list', 'turn', 'steps'],
+		needs: 'copy',
 		minLines: 2,
 	},
 } as const satisfies Record<MotionSceneType, MotionSceneRecipe>

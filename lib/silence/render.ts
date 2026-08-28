@@ -9,7 +9,7 @@
  * source time the plan says it comes from, re-stamped onto the output clock and
  * re-encoded, and the audio is rebuilt sample by sample against the same map.
  *
- * Two decisions carry the whole design:
+ * Three decisions carry the whole design:
  *
  *   1. video is driven by *output* frames, not by source frames. Asking "what
  *      belongs at output frame 900?" makes removal, speed-up and a frame-rate
@@ -18,11 +18,12 @@
  *   2. audio positions are computed from absolute time, never accumulated. A
  *      per-buffer counter would collect a fraction of a sample of error at each
  *      of a hundred splices and end the file visibly out of lip-sync.
- *
- * Everything is streamed: buffers are decoded, mapped and encoded a few at a
- * time, so a long clip costs bounded memory rather than its own size in RAM.
+ *   3. nothing that grows with the length of the clip is held in memory. The
+ *      file is streamed to disk as it is encoded, and audio is moved a run of
+ *      samples at a time rather than one sample per promise.
  */
 
+import { createRenderSink, describeRenderFailure } from '../media/render-sink'
 import { outputToSource, type CutPlan, type PlanSegment } from './plan'
 
 export type RenderQuality = 'draft' | 'high' | 'max'
@@ -74,6 +75,14 @@ export class RenderCancelled extends Error {
 
 /** Audio is handed to the encoder in slices this long. */
 const AUDIO_CHUNK_SECONDS = 0.5
+
+/**
+ * Progress is reported on a clock, not on a frame count, because the caller is
+ * a React state setter: a report per frame would re-render the studio more
+ * often than the screen refreshes, and the encode would spend its time laying
+ * out a progress bar instead of encoding.
+ */
+const PROGRESS_INTERVAL_MS = 120
 
 function assertLive(signal: AbortSignal): void {
 	if (signal.aborted) throw new RenderCancelled()
@@ -147,13 +156,34 @@ class AudioWriter {
 		}
 	}
 
-	async push(frame: number[]): Promise<void> {
-		for (let channel = 0; channel < this.channels; channel++) {
-			this.channelData[channel][this.fill] = frame[channel] ?? frame[0] ?? 0
+	/**
+	 * Writes output samples `[from, to)` by handing the destination arrays to
+	 * `render`, one contiguous run at a time.
+	 *
+	 * The run, not the sample, is the unit of work. A per-sample `await` costs a
+	 * microtask each, and an hour of 48 kHz audio is a hundred and seventy
+	 * million of them - enough on its own to make an export look hung. A run is
+	 * a plain loop over typed arrays, and in the common case a memory copy.
+	 */
+	async writeRun(
+		from: number,
+		to: number,
+		render: (
+			channels: Float32Array<ArrayBuffer>[],
+			offset: number,
+			first: number,
+			count: number,
+		) => void,
+	): Promise<void> {
+		let position = Math.max(from, this.written)
+		while (position < to) {
+			const run = Math.min(to - position, this.chunkFrames - this.fill)
+			render(this.channelData, this.fill, position, run)
+			this.fill += run
+			this.written += run
+			position += run
+			if (this.fill >= this.chunkFrames) await this.flush()
 		}
-		this.fill += 1
-		this.written += 1
-		if (this.fill >= this.chunkFrames) await this.flush()
 	}
 
 	async finish(totalFrames: number): Promise<void> {
@@ -196,7 +226,6 @@ export async function renderCutVideo(options: SilenceRenderOptions): Promise<Sil
 		AudioBufferSink,
 		AudioBufferSource,
 		BlobSource,
-		BufferTarget,
 		Input,
 		Mp4OutputFormat,
 		Output,
@@ -208,7 +237,10 @@ export async function renderCutVideo(options: SilenceRenderOptions): Promise<Sil
 	} = mediabunny
 
 	const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(options.source) })
+	const sink = await createRenderSink(`cut.${options.format}`)
 	let output: InstanceType<typeof Output> | null = null
+	/** Set once the finished file belongs to the caller and must not be swept. */
+	let handedOver = false
 	const onAbort = () => {
 		void output?.cancel()
 	}
@@ -262,9 +294,13 @@ export async function renderCutVideo(options: SilenceRenderOptions): Promise<Sil
 		output = new Output({
 			format:
 				options.format === 'mp4'
-					? new Mp4OutputFormat({ fastStart: 'in-memory' })
+					? // Fast Start and streaming to disk are mutually exclusive: putting
+						// the metadata first means holding every media chunk until the very
+						// end, which is the allocation this render exists to avoid. The
+						// moov box goes last instead, which local playback does not mind.
+						new Mp4OutputFormat({ fastStart: sink.streaming ? false : 'in-memory' })
 					: new WebMOutputFormat(),
-			target: new BufferTarget(),
+			target: sink.target,
 		})
 
 		const videoSource = new VideoSampleSource({
@@ -288,8 +324,13 @@ export async function renderCutVideo(options: SilenceRenderOptions): Promise<Sil
 		await output.start()
 
 		let framesDone = 0
+		let reportedAt = 0
 		const report = (phase: RenderProgress['phase']) => {
-			options.onProgress?.({
+			if (!options.onProgress) return
+			const now = performance.now()
+			if (now - reportedAt < PROGRESS_INTERVAL_MS) return
+			reportedAt = now
+			options.onProgress({
 				phase,
 				ratio: Math.min(0.999, framesDone / framesTotal),
 				framesDone,
@@ -301,12 +342,12 @@ export async function renderCutVideo(options: SilenceRenderOptions): Promise<Sil
 		/* ---------------------------------------------------------- video */
 
 		const encodeVideo = async () => {
-			const sink = new VideoSampleSink(videoTrack)
+			const videoSink = new VideoSampleSink(videoTrack)
 			let previous: import('mediabunny').VideoSample | null = null
 			let index = 0
 
 			try {
-				for await (const sample of sink.samplesAtTimestamps(
+				for await (const sample of videoSink.samplesAtTimestamps(
 					sourceTimestamps(plan, fps, framesTotal),
 				)) {
 					assertLive(signal)
@@ -330,7 +371,7 @@ export async function renderCutVideo(options: SilenceRenderOptions): Promise<Sil
 					frame.close()
 
 					framesDone += 1
-					if (framesDone % 5 === 0) report('encoding')
+					report('encoding')
 				}
 			} finally {
 				previous?.close()
@@ -342,27 +383,29 @@ export async function renderCutVideo(options: SilenceRenderOptions): Promise<Sil
 
 		const encodeAudio = async () => {
 			if (!audioSource || !audioTrack) return
-			const sink = new AudioBufferSink(audioTrack)
-			const writer = new AudioWriter(
-				(buffer) => audioSource.add(buffer),
-				sampleRate,
-				Math.max(1, channels),
-			)
+			const audioSink = new AudioBufferSink(audioTrack)
+			const outChannels = Math.max(1, channels)
+			const writer = new AudioWriter((buffer) => audioSource.add(buffer), sampleRate, outChannels)
 			const segments = keptSegments(plan)
 			const totalFrames = Math.round((plan.outputDurationMs / 1000) * sampleRate)
 			let cursor = 0
-			const frame: number[] = new Array(Math.max(1, channels)).fill(0)
+			const inputChannels: Float32Array[] = []
 
 			try {
-				for await (const wrapped of sink.buffers()) {
+				for await (const wrapped of audioSink.buffers()) {
 					assertLive(signal)
 					const bufferStart = wrapped.timestamp
 					const bufferEnd = bufferStart + wrapped.duration
 					const rate = wrapped.buffer.sampleRate
-					const data: Float32Array[] = []
-					for (let channel = 0; channel < Math.max(1, channels); channel++) {
-						data.push(
-							wrapped.buffer.getChannelData(Math.min(channel, wrapped.buffer.numberOfChannels - 1)),
+					const lastIndex = wrapped.buffer.length - 1
+					if (lastIndex < 0) continue
+
+					inputChannels.length = 0
+					for (let channel = 0; channel < outChannels; channel++) {
+						inputChannels.push(
+							wrapped.buffer.getChannelData(
+								Math.min(channel, Math.max(0, wrapped.buffer.numberOfChannels - 1)),
+							),
 						)
 					}
 
@@ -389,23 +432,55 @@ export async function renderCutVideo(options: SilenceRenderOptions): Promise<Sil
 
 						// A gap here is a stretch the source had no samples for.
 						if (firstSample > writer.position) await writer.silenceUntil(firstSample)
+						if (lastSample <= writer.position) continue
 
-						for (let position = Math.max(firstSample, writer.position); position < lastSample; position++) {
-							// Absolute, never accumulated: this is the line that keeps a
-							// hundred splices in sync with the picture.
-							const sourceSeconds = segStart + (position / sampleRate - outStart) * speed
-							const exact = (sourceSeconds - bufferStart) * rate
-							const left = Math.floor(exact)
-							const fraction = exact - left
-							const leftIndex = Math.max(0, Math.min(wrapped.buffer.length - 1, left))
-							const rightIndex = Math.max(0, Math.min(wrapped.buffer.length - 1, left + 1))
-							for (let channel = 0; channel < data.length; channel++) {
-								const channelData = data[channel]
-								frame[channel] =
-									channelData[leftIndex] * (1 - fraction) + channelData[rightIndex] * fraction
+						// Output sample `position` reads source sample `base + position *
+						// step` of this buffer. Still the same absolute mapping - nothing
+						// accumulates across buffers or splices - only folded into one
+						// multiply-add instead of four divisions per sample.
+						const step = (speed * rate) / sampleRate
+						const base = (segStart - bufferStart - outStart * speed) * rate
+						const wholeOffset = Math.round(base)
+						// A straight cut at unchanged speed lands exactly on source
+						// samples, and then the entire run is one memory copy.
+						const aligned = Math.abs(step - 1) < 1e-9 && Math.abs(base - wholeOffset) < 1e-6
+
+						await writer.writeRun(firstSample, lastSample, (out, offset, first, count) => {
+							if (aligned) {
+								const start = wholeOffset + first
+								// Anything reaching past either end of the buffer holds the
+								// edge sample, which is what clamping the index did before.
+								const head = Math.max(0, Math.min(count, -start))
+								const tail = Math.max(head, Math.min(count, lastIndex + 1 - start))
+								for (let channel = 0; channel < out.length; channel++) {
+									const source = inputChannels[channel]
+									const destination = out[channel]
+									if (head > 0) destination.fill(source[0], offset, offset + head)
+									if (tail > head) {
+										destination.set(source.subarray(start + head, start + tail), offset + head)
+									}
+									if (tail < count) {
+										destination.fill(source[lastIndex], offset + tail, offset + count)
+									}
+								}
+								return
 							}
-							await writer.push(frame)
-						}
+
+							for (let channel = 0; channel < out.length; channel++) {
+								const source = inputChannels[channel]
+								const destination = out[channel]
+								for (let n = 0; n < count; n++) {
+									const exact = base + (first + n) * step
+									const left = Math.floor(exact)
+									const fraction = exact - left
+									const leftIndex = left < 0 ? 0 : left > lastIndex ? lastIndex : left
+									const right = left + 1
+									const rightIndex = right < 0 ? 0 : right > lastIndex ? lastIndex : right
+									destination[offset + n] =
+										source[leftIndex] * (1 - fraction) + source[rightIndex] * fraction
+								}
+							}
+						})
 					}
 				}
 
@@ -427,12 +502,8 @@ export async function renderCutVideo(options: SilenceRenderOptions): Promise<Sil
 		})
 
 		await output.finalize()
-		const buffer = (output.target as InstanceType<typeof BufferTarget>).buffer
-		if (!buffer) throw new Error('The encoder produced no file.')
-
-		const blob = new Blob([buffer], {
-			type: options.format === 'mp4' ? 'video/mp4' : 'video/webm',
-		})
+		const blob = await sink.finish(options.format === 'mp4' ? 'video/mp4' : 'video/webm')
+		handedOver = true
 
 		options.onProgress?.({
 			phase: 'finishing',
@@ -456,10 +527,11 @@ export async function renderCutVideo(options: SilenceRenderOptions): Promise<Sil
 		}
 	} catch (error) {
 		if (signal.aborted) throw new RenderCancelled()
-		throw error
+		throw describeRenderFailure(error)
 	} finally {
 		signal.removeEventListener('abort', onAbort)
 		input.dispose()
+		if (!handedOver) void sink.discard()
 	}
 }
 

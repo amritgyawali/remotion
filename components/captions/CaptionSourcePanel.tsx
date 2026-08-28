@@ -55,6 +55,7 @@ import {
 	IconVault,
 	IconWand,
 } from '../Icons'
+import RemoteVideoField from '../RemoteVideoField'
 
 export type TranscriptMode = 'auto' | 'write' | 'import'
 
@@ -144,7 +145,6 @@ export default function CaptionSourcePanel({
 	engineUsed,
 	videoError,
 	onVideoFiles,
-	onVideoUrl,
 	onClearVideo,
 	onMode,
 	onTranscriptText,
@@ -191,7 +191,6 @@ export default function CaptionSourcePanel({
 	engineUsed: 'cloud' | 'device' | null
 	videoError: string | null
 	onVideoFiles: (files: File[]) => void
-	onVideoUrl: (url: string) => void
 	onClearVideo: () => void
 	onMode: (mode: TranscriptMode) => void
 	onTranscriptText: (value: string) => void
@@ -216,7 +215,6 @@ export default function CaptionSourcePanel({
 	const subtitleInputRef = useRef<HTMLInputElement>(null)
 	const [dragging, setDragging] = useState(false)
 	const [showUrl, setShowUrl] = useState(false)
-	const [urlValue, setUrlValue] = useState('')
 	const [promptCopied, setPromptCopied] = useState(false)
 	const [subtitleDragging, setSubtitleDragging] = useState(false)
 	const [pasteOpen, setPasteOpen] = useState(false)
@@ -378,23 +376,7 @@ export default function CaptionSourcePanel({
 								<IconLink size={12} /> Use a video URL instead
 							</button>
 
-							{showUrl ? (
-								<div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-									<input
-										className="input"
-										placeholder="https://example.com/clip.mp4"
-										value={urlValue}
-										onChange={(event) => setUrlValue(event.target.value)}
-									/>
-									<button
-										className="btn btn--sm"
-										disabled={!urlValue.trim() || busy}
-										onClick={() => onVideoUrl(urlValue.trim())}
-									>
-										Load
-									</button>
-								</div>
-							) : null}
+							{showUrl ? <RemoteVideoField onFile={(file) => onVideoFiles([file])} disabled={busy} /> : null}
 						</>
 					)}
 
