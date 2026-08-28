@@ -21,6 +21,7 @@
 
 import { computeFrameDims, drawFrame, type CropRect, type FrameOpsDims, type FrameOpsParams, type WatermarkSpec } from './frame-ops'
 import { encodeGif, type GifFrame } from './gif-encoder'
+import { createRenderSink, describeRenderFailure } from '../media/render-sink'
 
 export type VideoFilterFormat = 'mp4' | 'webm'
 export type VideoFilterQuality = 'draft' | 'high' | 'max'
@@ -83,7 +84,6 @@ export async function renderVideoFilter(options: VideoFilterOptions): Promise<Vi
 	const {
 		ALL_FORMATS,
 		BlobSource,
-		BufferTarget,
 		EncodedAudioPacketSource,
 		EncodedPacketSink,
 		Input,
@@ -97,7 +97,11 @@ export async function renderVideoFilter(options: VideoFilterOptions): Promise<Vi
 	} = mediabunny
 
 	const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(options.source) })
+	// Every frame is re-encoded, so the output grows with the length of the clip
+	// and belongs on disk rather than in one heap buffer.
+	const sink = await createRenderSink(`filter.${options.format}`)
 	let output: InstanceType<typeof Output> | null = null
+	let handedOver = false
 	const onAbort = () => {
 		void output?.cancel()
 	}
@@ -131,8 +135,10 @@ export async function renderVideoFilter(options: VideoFilterOptions): Promise<Vi
 
 		output = new Output({
 			format:
-				options.format === 'mp4' ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(),
-			target: new BufferTarget(),
+				options.format === 'mp4'
+					? new Mp4OutputFormat({ fastStart: sink.streaming ? false : 'in-memory' })
+					: new WebMOutputFormat(),
+			target: sink.target,
 		})
 
 		const videoSource = new VideoSampleSource({
@@ -232,9 +238,8 @@ export async function renderVideoFilter(options: VideoFilterOptions): Promise<Vi
 		options.onProgress?.({ phase: 'finishing', ratio: 0.99, framesDone, framesTotal })
 		await output.finalize()
 
-		const buffer = (output.target as InstanceType<typeof BufferTarget>).buffer
-		if (!buffer) throw new Error('The encoder produced no file.')
-		const blob = new Blob([buffer], { type: options.format === 'mp4' ? 'video/mp4' : 'video/webm' })
+		const blob = await sink.finish(options.format === 'mp4' ? 'video/mp4' : 'video/webm')
+		handedOver = true
 		options.onProgress?.({ phase: 'finishing', ratio: 1, framesDone, framesTotal })
 
 		return {
@@ -251,10 +256,11 @@ export async function renderVideoFilter(options: VideoFilterOptions): Promise<Vi
 		}
 	} catch (error) {
 		if (signal.aborted) throw new VideoFilterCancelled()
-		throw error
+		throw describeRenderFailure(error)
 	} finally {
 		signal.removeEventListener('abort', onAbort)
 		input.dispose()
+		if (!handedOver) void sink.discard()
 	}
 }
 
