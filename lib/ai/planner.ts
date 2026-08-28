@@ -46,6 +46,7 @@ import {
 	type Storyboard,
 } from './storyboard'
 import { ARC_KIT, arcsForTopic, isArcId, type ArcId, type BeatRole } from './arcs'
+import { affinityScore, promptSignals } from './scene-affinity'
 import {
 	MOTION_SCENE_KIT,
 	anchorMotionScenes,
@@ -79,6 +80,7 @@ import {
 	resolveArtDirection,
 	seededChoice,
 	seededIndex,
+	seededWeightedChoice,
 	type TemplateId,
 } from './variation'
 
@@ -725,6 +727,11 @@ type BriefContent = {
 	years: TimelineEvent[]
 	quoted: string[]
 	solid: boolean
+	/**
+	 * The brief reduced to the words that could name a subject, computed once
+	 * because every motion beat scores the whole library against it.
+	 */
+	signals: Set<string>
 	copy: CopyContext
 	/** Cursors into the brief, so no two scenes quote the same line. */
 	cursor: { fragment: number; showcase: number; list: number; statement: number }
@@ -823,6 +830,16 @@ function motionKicker(content: BriefContent, role: BeatRole, ordinal: number): s
 }
 
 /**
+ * How hard a matched subject tilts the draw.
+ *
+ * Each idea a template shares with the brief multiplies its odds by roughly
+ * this much. Five was picked by hand: low enough that a two-word coincidence
+ * cannot lock a film onto one piece, high enough that a genuine subject match
+ * wins most of the time against a pool of two dozen.
+ */
+const AFFINITY_WEIGHT = 5
+
+/**
  * Draws one motion piece for a beat.
  *
  * This is where a generation stops repeating itself. The pool for a beat is
@@ -868,7 +885,22 @@ function motionScene(content: BriefContent, role: BeatRole, ordinal: number, anc
 		unusedFamily.length > 0 ? unusedFamily : notAdjacent.length > 0 ? notAdjacent : fresh.length > 0 ? fresh : eligible
 	if (pool.length === 0) return null
 
-	const chosen = seededChoice(content.seed, `motion-${role}-${ordinal}-${content.usedMotion.size}`, pool)
+	/**
+	 * Subject beats chance, but does not replace it.
+	 *
+	 * Every survivor is still reachable - the weight floor in
+	 * `seededWeightedChoice` guarantees it - so a brief that mentions nothing the
+	 * library knows about draws exactly as it did before. What a match buys is
+	 * odds: a piece whose subject the brief names three times is drawn far more
+	 * often than one it never mentions, which is what makes "birth to death"
+	 * find the settling sand and the turning pages rather than the price table.
+	 */
+	const chosen = seededWeightedChoice(
+		content.seed,
+		`motion-${role}-${ordinal}-${content.usedMotion.size}`,
+		pool,
+		(id: MotionSceneType) => 1 + affinityScore(id, content.signals) * AFFINITY_WEIGHT,
+	)
 	content.usedMotion.add(chosen)
 	content.usedFamilies.add(MOTION_SCENE_KIT[chosen].family)
 	content.lastFamily = MOTION_SCENE_KIT[chosen].family
@@ -1433,6 +1465,7 @@ export function planStoryboard(rawPrompt: string, options: StoryboardPlanOptions
 		years,
 		quoted,
 		solid: dimension === 'three',
+		signals: promptSignals([prompt, subject, ...nouns].join(' ')),
 		copy: { seed: creativeSeed, subject, topic, arc: house.arc },
 		cursor: { fragment: 0, showcase: 0, list: 0, statement: 0 },
 		usedMotion: new Set<MotionSceneType>(),

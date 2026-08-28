@@ -2581,7 +2581,14 @@ const ParticleField: React.FC<{ count?: number; color?: string; speed?: number; 
 /*  Scene library - only the scenes a storyboard uses are emitted             */
 /* -------------------------------------------------------------------------- */
 
-const SCENES: Record<SceneType, string> = {
+/**
+ * Every scene's emitted source, classic and motion alike.
+ *
+ * Exported so the library audit can compare the two halves against each other -
+ * a classic scene and a motion scene that draw the same composition are as much
+ * a duplicate as two motion scenes that do.
+ */
+export const SCENES: Record<SceneType, string> = {
 	...MOTION_SCENE_SOURCE,
 	title: `
 /**
