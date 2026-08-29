@@ -18,6 +18,18 @@
  */
 
 import type { ComponentType, SVGProps } from 'react'
+import { HSL_BANDS } from './adjust'
+import { VOICE_PRESETS } from './audio-fx'
+import { BLEND_MODES } from './blend'
+import { BORDER_STYLES } from './border'
+import { CANVAS_BACKDROPS } from './canvas-bg'
+import { EFFECTS } from './effects'
+import { INPAINT_MODES } from './inpaint'
+import { MASK_SHAPES, MASK_TREATMENTS } from './mask'
+import { MOTION_PRESETS } from './motion'
+import { SPLIT_LAYOUTS } from './split-screen'
+import { TEXT_ANIMATIONS, TEXT_STYLES } from './text-fx'
+import { TRANSITIONS } from './transitions'
 import {
 	IconBolt,
 	IconCaptions,
@@ -28,6 +40,8 @@ import {
 	IconFilm,
 	IconForward,
 	IconGauge,
+	IconGrid,
+	IconHistory,
 	IconLayers,
 	IconLink,
 	IconMerge,
@@ -39,24 +53,42 @@ import {
 	IconSliders,
 	IconSparkle,
 	IconSun,
+	IconTrash,
 	IconType,
 	IconVolume,
 	IconVolumeOff,
 	IconWand,
 	IconWaveform,
 	IconZoomIn,
+	IconZoomOut,
 } from '../../components/Icons'
 
 export type IconComponent = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>
 
-export type ToolCategory = 'levels' | 'timing' | 'transform' | 'color' | 'overlay' | 'export' | 'restore' | 'ai'
+export type ToolCategory =
+	| 'levels'
+	| 'timing'
+	| 'transform'
+	| 'color'
+	| 'effects'
+	| 'motion'
+	| 'compose'
+	| 'text'
+	| 'overlay'
+	| 'export'
+	| 'restore'
+	| 'ai'
 
 export const CATEGORIES: Array<{ id: ToolCategory; label: string; blurb: string }> = [
 	{ id: 'ai', label: 'AI & background', blurb: 'Detect the person, swap what is behind them' },
 	{ id: 'levels', label: 'Audio levels & channels', blurb: 'Fix, balance and shape the sound' },
 	{ id: 'timing', label: 'Silence & timing', blurb: 'Trim, speed, loop and cut' },
 	{ id: 'transform', label: 'Visual transform', blurb: 'Rotate, crop, resize, reframe' },
-	{ id: 'color', label: 'Color & filters', blurb: 'Grade, stylise, sharpen' },
+	{ id: 'color', label: 'Color & filters', blurb: 'Grade, correct, stylise, sharpen' },
+	{ id: 'effects', label: 'Effects', blurb: 'Glitch, retro, distort, light and stylise' },
+	{ id: 'motion', label: 'Motion & camera', blurb: 'Ken Burns pushes, pans, shakes and spins' },
+	{ id: 'compose', label: 'Compose & layout', blurb: 'Blend, split screen, transitions, canvas' },
+	{ id: 'text', label: 'Text & titles', blurb: 'Styled, timed and animated titles' },
 	{ id: 'overlay', label: 'Overlays & branding', blurb: 'Watermarks, text, captions' },
 	{ id: 'export', label: 'Export & format', blurb: 'Convert, compress, extract' },
 	{ id: 'restore', label: 'Restoration', blurb: 'Clean-up and repair' },
@@ -94,7 +126,7 @@ export type ParamSpec =
 	 */
 	| { type: 'tone'; key: string; label: string; default: string; hint?: string }
 
-export type SecondaryFileSpec = { key: string; label: string; accept: string; hint: string; kind: 'image' | 'audio' | 'video' | 'media' }
+export type SecondaryFileSpec = { key: string; label: string; accept: string; hint: string; kind: 'image' | 'audio' | 'video' | 'media' | 'data' }
 
 export type HandlerId =
 	| 'mono-stereo'
@@ -158,6 +190,27 @@ export type HandlerId =
 	| 'background-replace'
 	| 'color-tone'
 	| 'chroma-overlay'
+	| 'adjust'
+	| 'video-effect'
+	| 'camera-motion'
+	| 'shape-mask'
+	| 'blend-overlay'
+	| 'canvas-background'
+	| 'border-frame'
+	| 'animated-text'
+	| 'remove-object'
+	| 'retouch'
+	| 'enhance'
+	| 'lut-import'
+	| 'auto-reframe'
+	| 'reverse-video'
+	| 'transition'
+	| 'split-screen'
+	| 'reverb'
+	| 'echo'
+	| 'equalizer'
+	| 'voice-changer'
+	| 'beat-detect'
 
 export type ToolDef = {
 	id: string
@@ -172,7 +225,7 @@ export type ToolDef = {
 	secondaryFile?: SecondaryFileSpec
 	/** tools that operate over an open-ended batch of files instead of the one loaded clip */
 	multiFile?: { label: string; accept: string; hint: string }
-	outputKind: 'video' | 'audio' | 'image'
+	outputKind: 'video' | 'audio' | 'image' | 'file'
 	/** why it's fast: shown as a small badge when the tool never re-encodes the picture */
 	losslessVideo?: boolean
 	/**
@@ -203,6 +256,111 @@ const POSITION_OPTIONS = [
 	{ value: 'bottom-center', label: 'Bottom center' },
 	{ value: 'center', label: 'Center' },
 ]
+
+/* --------------------------------------------------------------------------
+   Option lists derived from the engines themselves.
+
+   Every one of these is built from the array the engine already exports, so a
+   look, a transition or a layout can never appear in the picker without an
+   implementation behind it - and can never be implemented and then silently
+   left out of the UI. The one place a new effect has to be added is the
+   catalogue in `effects.ts`.
+   -------------------------------------------------------------------------- */
+
+const EFFECT_OPTIONS = EFFECTS.map((effect) => ({ value: effect.id, label: effect.label }))
+const MOTION_OPTIONS = MOTION_PRESETS.map((preset) => ({ value: preset.id, label: preset.label }))
+const TRANSITION_OPTIONS = TRANSITIONS.map((entry) => ({ value: entry.id, label: entry.label }))
+const BLEND_OPTIONS = BLEND_MODES.map((mode) => ({ value: mode.id, label: mode.label }))
+const MASK_SHAPE_OPTIONS = MASK_SHAPES.map((shape) => ({ value: shape.id, label: shape.label }))
+const MASK_TREATMENT_OPTIONS = MASK_TREATMENTS.map((treatment) => ({ value: treatment.id, label: treatment.label }))
+const TEXT_STYLE_OPTIONS = TEXT_STYLES.map((style) => ({ value: style.id, label: style.label }))
+const TEXT_ANIMATION_OPTIONS = TEXT_ANIMATIONS.map((animation) => ({ value: animation.id, label: animation.label }))
+const HSL_BAND_OPTIONS = HSL_BANDS.map((band) => ({ value: band.id, label: band.label }))
+const VOICE_OPTIONS = VOICE_PRESETS.map((preset) => ({ value: preset.id, label: preset.label }))
+const INPAINT_OPTIONS = INPAINT_MODES.map((mode) => ({ value: mode.id, label: mode.label }))
+const BORDER_OPTIONS = BORDER_STYLES.map((style) => ({ value: style.id, label: style.label }))
+const CANVAS_BACKDROP_OPTIONS = CANVAS_BACKDROPS.map((backdrop) => ({ value: backdrop.id, label: backdrop.label }))
+const SPLIT_LAYOUT_OPTIONS = SPLIT_LAYOUTS.map((layout) => ({ value: layout.id, label: `${layout.label} (${layout.panels} clips)` }))
+
+const EASING_OPTIONS = [
+	{ value: 'ease-in-out', label: 'Ease in and out' },
+	{ value: 'ease-out', label: 'Ease out' },
+	{ value: 'ease-in', label: 'Ease in' },
+	{ value: 'linear', label: 'Linear' },
+]
+
+const OVERLAY_FIT_OPTIONS = [
+	{ value: 'cover', label: 'Fill the frame (crop)' },
+	{ value: 'contain', label: 'Fit inside (letterbox)' },
+	{ value: 'stretch', label: 'Stretch to fit' },
+]
+
+const OVERLAY_PLACEMENT_OPTIONS = [{ value: 'fill', label: 'Across the whole frame' }, ...POSITION_OPTIONS]
+
+/**
+ * The effects that get a card of their own.
+ *
+ * Everything in `effects.ts` is reachable through the one "Video Effects"
+ * tool, but the dozen people actually search for by name should be findable
+ * by that name - so each of these becomes a tool whose effect is fixed and
+ * whose only control is how strong it is. The definition is generated rather
+ * than written out fourteen times, because the only thing that differs
+ * between them is the id.
+ */
+const FEATURED_EFFECTS = [
+	'glitch',
+	'vhs',
+	'old-film',
+	'pixelate',
+	'halftone',
+	'sketch',
+	'neon',
+	'thermal',
+	'night-vision',
+	'kaleidoscope',
+	'zoom-blur',
+	'bloom',
+	'dream',
+	'light-leak',
+] as const
+
+function featuredEffectTools(): ToolDef[] {
+	return FEATURED_EFFECTS.flatMap((id) => {
+		const effect = EFFECTS.find((entry) => entry.id === id)
+		if (!effect) return []
+		const params: ParamSpec[] = [
+			// A single-option select rather than a hidden constant: the runner
+			// reads the effect out of the params like any other tool, so these
+			// cards and the full picker share one code path.
+			{ type: 'select', key: 'effect', label: 'Effect', default: effect.id, options: [{ value: effect.id, label: effect.label }] },
+			{ type: 'slider', key: 'intensity', label: 'Intensity', min: 0, max: 100, step: 1, default: effect.defaultIntensity, unit: '%' },
+		]
+		if (effect.animated) {
+			params.push({ type: 'slider', key: 'speed', label: 'Speed', min: 0.1, max: 4, step: 0.1, default: 1, unit: 'x' })
+		}
+		if (effect.usesAngle) {
+			params.push({ type: 'slider', key: 'angle', label: 'Angle', min: 0, max: 360, step: 1, default: 0, unit: '°' })
+		}
+		if (effect.usesColors) {
+			params.push({ type: 'color', key: 'colorA', label: 'First colour', default: '#ff2d95' })
+			params.push({ type: 'color', key: 'colorB', label: 'Second colour', default: '#22d3ee' })
+		}
+		return [
+			{
+				id: `effect-${effect.id}`,
+				name: effect.label,
+				short: effect.blurb,
+				category: 'effects' as ToolCategory,
+				status: 'ready' as ToolStatus,
+				icon: IconSparkle,
+				handler: 'video-effect' as HandlerId,
+				outputKind: 'video' as const,
+				preview: true,
+				params,
+			},
+		]
+	})
+}
 
 export const TOOLS: ToolDef[] = [
 	/* --------------------------------------------------------- ai & background */
@@ -1150,6 +1308,450 @@ export const TOOLS: ToolDef[] = [
 		outputKind: 'video',
 		losslessVideo: true,
 		params: [{ type: 'slider', key: 'semitones', label: 'Shift', min: -12, max: 12, step: 0.5, default: 0, unit: 'st' }],
+	},
+	/* ------------------------------------------------------- colour correction */
+	{
+		id: 'adjust',
+		name: 'Adjust',
+		short: 'The correction desk: exposure, white balance, the four tonal regions, vibrance, clarity.',
+		category: 'color',
+		status: 'ready',
+		icon: IconSliders,
+		handler: 'adjust',
+		outputKind: 'video',
+		preview: true,
+		note: 'Exposure and contrast are worked out in linear light and everything else in display space, which is the order a colourist would use.',
+		params: [
+			{ type: 'slider', key: 'exposure', label: 'Exposure', min: -3, max: 3, step: 0.05, default: 0, unit: 'EV', hint: 'Stops. +1 is twice the light.' },
+			{ type: 'slider', key: 'contrast', label: 'Contrast', min: -1, max: 1, step: 0.01, default: 0 },
+			{ type: 'slider', key: 'temperature', label: 'Temperature', min: -1, max: 1, step: 0.01, default: 0, hint: 'Right is warmer, left is cooler.' },
+			{ type: 'slider', key: 'tint', label: 'Tint', min: -1, max: 1, step: 0.01, default: 0, hint: 'Right is magenta, left is green.' },
+			{ type: 'slider', key: 'highlights', label: 'Highlights', min: -1, max: 1, step: 0.01, default: 0 },
+			{ type: 'slider', key: 'shadows', label: 'Shadows', min: -1, max: 1, step: 0.01, default: 0 },
+			{ type: 'slider', key: 'whites', label: 'Whites', min: -1, max: 1, step: 0.01, default: 0 },
+			{ type: 'slider', key: 'blacks', label: 'Blacks', min: -1, max: 1, step: 0.01, default: 0 },
+			{ type: 'slider', key: 'gamma', label: 'Midtones', min: -1, max: 1, step: 0.01, default: 0 },
+			{ type: 'slider', key: 'fade', label: 'Fade', min: 0, max: 1, step: 0.01, default: 0, hint: 'Lifts the black point for a matte, film-print falloff.' },
+			{ type: 'slider', key: 'vibrance', label: 'Vibrance', min: -1, max: 1, step: 0.01, default: 0, hint: 'Saturation that leaves already-vivid colour alone.' },
+			{ type: 'slider', key: 'saturation', label: 'Saturation', min: -1, max: 1, step: 0.01, default: 0 },
+			{ type: 'slider', key: 'hue', label: 'Hue rotate', min: -180, max: 180, step: 1, default: 0, unit: '°' },
+			{ type: 'slider', key: 'clarity', label: 'Clarity', min: -1, max: 1, step: 0.01, default: 0, hint: 'Midtone local contrast - texture, not global contrast.' },
+			{ type: 'slider', key: 'sharpness', label: 'Sharpen', min: 0, max: 1, step: 0.01, default: 0 },
+		],
+	},
+	{
+		id: 'white-balance',
+		name: 'White Balance',
+		short: 'Two dials to take the colour cast out of a shot lit by the wrong light.',
+		category: 'color',
+		status: 'ready',
+		icon: IconSun,
+		handler: 'adjust',
+		outputKind: 'video',
+		preview: true,
+		params: [
+			{ type: 'slider', key: 'temperature', label: 'Temperature', min: -1, max: 1, step: 0.01, default: 0, hint: 'Right for tungsten indoors, left for shade outdoors.' },
+			{ type: 'slider', key: 'tint', label: 'Tint', min: -1, max: 1, step: 0.01, default: 0, hint: 'Right takes out green, left takes out magenta.' },
+		],
+	},
+	{
+		id: 'hsl-color',
+		name: 'HSL Colour',
+		short: 'Change one colour family without touching the rest - skin, sky, foliage.',
+		category: 'color',
+		status: 'ready',
+		icon: IconPalette,
+		handler: 'adjust',
+		outputKind: 'video',
+		preview: true,
+		note: 'Grey has no hue to belong to a band, so unsaturated parts of the frame are left alone however far these are pushed.',
+		params: [
+			{ type: 'select', key: 'band', label: 'Colour family', default: 'orange', options: HSL_BAND_OPTIONS },
+			{ type: 'slider', key: 'bandHue', label: 'Hue shift', min: -1, max: 1, step: 0.01, default: 0 },
+			{ type: 'slider', key: 'bandSat', label: 'Saturation', min: -1, max: 1, step: 0.01, default: 0 },
+			{ type: 'slider', key: 'bandLum', label: 'Brightness', min: -1, max: 1, step: 0.01, default: 0 },
+			{ type: 'slider', key: 'bandWidth', label: 'Range', min: 5, max: 50, step: 1, default: 18, unit: '%', hint: 'How much of the colour wheel either side counts as this family.' },
+		],
+	},
+	{
+		id: 'lut-import',
+		name: 'Import a LUT (.cube)',
+		short: 'Apply a colourist’s .cube file - a show LUT, a film emulation, a look you were sent.',
+		category: 'color',
+		status: 'ready',
+		icon: IconFile,
+		handler: 'lut-import',
+		outputKind: 'video',
+		preview: true,
+		note: 'Both 3D cubes and 1D per-channel curves are read, and a non-standard DOMAIN_MIN/MAX is honoured rather than clipped.',
+		secondaryFile: { key: 'lut', label: 'The .cube file', accept: '.cube,text/plain', hint: 'The interchange format Resolve and every LUT pack export.', kind: 'data' },
+		params: [{ type: 'slider', key: 'strength', label: 'Strength', min: 0, max: 100, step: 1, default: 100, unit: '%' }],
+	},
+
+	/* ---------------------------------------------------------------- effects */
+	{
+		id: 'video-effects',
+		name: 'Video Effects',
+		short: 'Thirty-six looks - glitch, VHS, halftone, kaleidoscope, neon, bloom and the rest.',
+		category: 'effects',
+		status: 'ready',
+		icon: IconSparkle,
+		handler: 'video-effect',
+		outputKind: 'video',
+		preview: true,
+		params: [
+			{ type: 'select', key: 'effect', label: 'Effect', default: 'glitch', options: EFFECT_OPTIONS },
+			{ type: 'slider', key: 'intensity', label: 'Intensity', min: 0, max: 100, step: 1, default: 55, unit: '%' },
+			{ type: 'slider', key: 'speed', label: 'Speed', min: 0.1, max: 4, step: 0.1, default: 1, unit: 'x', hint: 'Only does anything for the effects that move.' },
+			{ type: 'slider', key: 'angle', label: 'Angle', min: 0, max: 360, step: 1, default: 0, unit: '°', hint: 'Used by the split, halftone and directional-blur effects.' },
+			{ type: 'color', key: 'colorA', label: 'First colour', default: '#ff2d95' },
+			{ type: 'color', key: 'colorB', label: 'Second colour', default: '#22d3ee' },
+		],
+	},
+	...featuredEffectTools(),
+	{
+		id: 'shape-mask',
+		name: 'Shape Mask',
+		short: 'Keep one shape sharp and blur, darken, drain or block everything outside it.',
+		category: 'effects',
+		status: 'ready',
+		icon: IconEye,
+		handler: 'shape-mask',
+		outputKind: 'video',
+		preview: true,
+		params: [
+			{ type: 'select', key: 'shape', label: 'Shape', default: 'circle', options: MASK_SHAPE_OPTIONS },
+			{ type: 'select', key: 'treatment', label: 'Outside the shape', default: 'blur', options: MASK_TREATMENT_OPTIONS },
+			{ type: 'slider', key: 'centerX', label: 'Position across', min: 0, max: 100, step: 1, default: 50, unit: '%' },
+			{ type: 'slider', key: 'centerY', label: 'Position down', min: 0, max: 100, step: 1, default: 50, unit: '%' },
+			{ type: 'slider', key: 'size', label: 'Size', min: 5, max: 200, step: 1, default: 55, unit: '%' },
+			{ type: 'slider', key: 'ratio', label: 'Height', min: 10, max: 200, step: 1, default: 100, unit: '%', hint: '100% is round; below that the shape is squashed.' },
+			{ type: 'slider', key: 'rotation', label: 'Rotation', min: -180, max: 180, step: 1, default: 0, unit: '°' },
+			{ type: 'slider', key: 'feather', label: 'Feather', min: 0, max: 100, step: 1, default: 30, unit: '%' },
+			{ type: 'slider', key: 'strength', label: 'Strength', min: 0, max: 100, step: 1, default: 80, unit: '%' },
+			{ type: 'toggle', key: 'invert', label: 'Swap which side is treated', default: false },
+			{ type: 'color', key: 'color', label: 'Fill colour', default: '#000000', hint: 'Only used by the "paint it flat" treatment.' },
+		],
+	},
+
+	/* ----------------------------------------------------------------- motion */
+	{
+		id: 'camera-motion',
+		name: 'Camera Motion',
+		short: 'Eighteen moves - Ken Burns pushes, pans, whips, spins, handheld drift and shakes.',
+		category: 'motion',
+		status: 'ready',
+		icon: IconZoomIn,
+		handler: 'camera-motion',
+		outputKind: 'video',
+		preview: true,
+		note: 'Every move is given exactly the zoom it needs to keep its own edges out of shot, so nothing ever slides a black bar into frame.',
+		params: [
+			{ type: 'select', key: 'preset', label: 'Move', default: 'ken-burns', options: MOTION_OPTIONS },
+			{ type: 'slider', key: 'amount', label: 'Amount', min: 0, max: 100, step: 1, default: 60, unit: '%' },
+			{ type: 'select', key: 'easing', label: 'Easing', default: 'ease-in-out', options: EASING_OPTIONS },
+			{ type: 'slider', key: 'seconds', label: 'Over', min: 0.5, max: 120, step: 0.1, default: 5, unit: 's', maxFrom: 'durationSeconds', defaultFrom: 'durationSeconds', hint: 'A looping move treats this as the length of one cycle.' },
+			{ type: 'toggle', key: 'reverse', label: 'Run the move backwards', default: false },
+		],
+	},
+	{
+		id: 'reverse-video',
+		name: 'Reverse',
+		short: 'Plays the whole clip, picture and sound, backwards.',
+		category: 'timing',
+		status: 'ready',
+		icon: IconHistory,
+		handler: 'reverse-video',
+		outputKind: 'video',
+		note: 'Decoded in spans rather than all at once, so a long clip cannot exhaust memory.',
+		params: [{ type: 'toggle', key: 'includeAudio', label: 'Reverse the sound too', default: true }],
+	},
+
+	/* -------------------------------------------------------- compose & layout */
+	{
+		id: 'add-transition',
+		name: 'Add a Transition',
+		short: 'Joins this clip to another one with a dissolve, wipe, push, iris, flash or glitch.',
+		category: 'compose',
+		status: 'ready',
+		icon: IconMerge,
+		handler: 'transition',
+		outputKind: 'video',
+		note: 'The two clips overlap, so the result is shorter than the two of them added together by exactly the length of the transition.',
+		secondaryFile: { key: 'second', label: 'The clip to cut to', accept: 'video/*', hint: 'It is letterboxed onto this clip’s frame rather than stretched.', kind: 'video' },
+		params: [
+			{ type: 'select', key: 'transition', label: 'Transition', default: 'dissolve', options: TRANSITION_OPTIONS },
+			{ type: 'slider', key: 'seconds', label: 'Length', min: 0.2, max: 4, step: 0.1, default: 1, unit: 's' },
+		],
+	},
+	{
+		id: 'split-screen',
+		name: 'Split Screen',
+		short: 'Two, three or four clips playing at once in one frame.',
+		category: 'compose',
+		status: 'ready',
+		icon: IconGrid,
+		handler: 'split-screen',
+		outputKind: 'video',
+		note: 'The result runs as long as the longest clip; a panel that has finished holds its last frame rather than going black.',
+		multiFile: { label: 'The clips to lay out', accept: 'video/*', hint: 'In panel order. The loaded clip is not used - add every panel here.' },
+		params: [
+			{ type: 'select', key: 'layout', label: 'Layout', default: 'side-by-side', options: SPLIT_LAYOUT_OPTIONS },
+			{ type: 'select', key: 'aspect', label: 'Output shape', default: '16:9', options: [{ value: '16:9', label: '16:9 widescreen' }, { value: '9:16', label: '9:16 vertical' }, { value: '1:1', label: '1:1 square' }, { value: '4:5', label: '4:5 portrait' }] },
+			{ type: 'select', key: 'fit', label: 'Fill each panel by', default: 'cover', options: [{ value: 'cover', label: 'Cropping to fill' }, { value: 'contain', label: 'Fitting inside' }] },
+			{ type: 'slider', key: 'gap', label: 'Gap', min: 0, max: 6, step: 0.1, default: 0.8, unit: '%' },
+			{ type: 'slider', key: 'radius', label: 'Corner rounding', min: 0, max: 6, step: 0.1, default: 0, unit: '%' },
+			{ type: 'color', key: 'background', label: 'Background', default: '#0b0b10' },
+		],
+	},
+	{
+		id: 'blend-overlay',
+		name: 'Blend an Overlay',
+		short: 'Lay a clip or an image over this one with any of seventeen blend modes.',
+		category: 'compose',
+		status: 'ready',
+		icon: IconLayers,
+		handler: 'blend-overlay',
+		outputKind: 'video',
+		preview: true,
+		note: 'Screen for light leaks and flares, multiply for textures, lighten for dust and scratch plates.',
+		secondaryFile: { key: 'overlay', label: 'The clip or image to blend', accept: 'video/*,image/*', hint: 'A still is held for the whole clip; a video plays along with it.', kind: 'media' },
+		params: [
+			{ type: 'select', key: 'mode', label: 'Blend mode', default: 'screen', options: BLEND_OPTIONS },
+			{ type: 'slider', key: 'opacity', label: 'Opacity', min: 0, max: 100, step: 1, default: 70, unit: '%' },
+			{ type: 'select', key: 'placement', label: 'Placement', default: 'fill', options: OVERLAY_PLACEMENT_OPTIONS },
+			{ type: 'select', key: 'fit', label: 'Fit', default: 'cover', options: OVERLAY_FIT_OPTIONS },
+			{ type: 'slider', key: 'scale', label: 'Size', min: 5, max: 100, step: 1, default: 35, unit: '%', hint: 'Only used when the overlay is anchored to a corner rather than filling.' },
+			{ type: 'slider', key: 'startAt', label: 'Starts at', min: 0, max: 600, step: 0.1, default: 0, unit: 's', maxFrom: 'durationSeconds' },
+			{ type: 'toggle', key: 'loop', label: 'Loop it to the end', default: true },
+		],
+	},
+	{
+		id: 'canvas-background',
+		name: 'Canvas & Reframe',
+		short: 'Change the shape of the frame without cropping - the rest is a blurred blow-up, a colour or your own image.',
+		category: 'compose',
+		status: 'ready',
+		icon: IconLayers,
+		handler: 'canvas-background',
+		outputKind: 'video',
+		preview: true,
+		note: 'Nothing is thrown away: the whole picture is kept and given a backdrop, which is the opposite of what Aspect Crop does.',
+		secondaryFile: { key: 'plate', label: 'Backdrop image', accept: 'image/*', hint: 'Only needed when the backdrop is set to an uploaded image.', kind: 'image' },
+		params: [
+			{ type: 'select', key: 'aspect', label: 'Output shape', default: '9:16', options: [{ value: '9:16', label: '9:16 vertical' }, { value: '1:1', label: '1:1 square' }, { value: '4:5', label: '4:5 portrait' }, { value: '16:9', label: '16:9 widescreen' }, { value: '4:3', label: '4:3 classic' }, { value: '2:1', label: '2:1 cinematic' }] },
+			{ type: 'select', key: 'backdrop', label: 'Backdrop', default: 'blur', options: CANVAS_BACKDROP_OPTIONS },
+			{ type: 'slider', key: 'blurStrength', label: 'Blur', min: 10, max: 100, step: 1, default: 70, unit: '%' },
+			{ type: 'slider', key: 'dim', label: 'Dim the backdrop', min: 0, max: 80, step: 1, default: 25, unit: '%' },
+			{ type: 'slider', key: 'foregroundScale', label: 'Picture size', min: 40, max: 100, step: 1, default: 100, unit: '%' },
+			{ type: 'color', key: 'color', label: 'Colour', default: '#0b0b10' },
+			{ type: 'color', key: 'colorB', label: 'Second colour', default: '#1f2937', hint: 'The far end of the gradient.' },
+		],
+	},
+	{
+		id: 'auto-reframe',
+		name: 'Auto Reframe',
+		short: 'Crops to a new shape with a window that follows the person, instead of a fixed centre crop.',
+		category: 'ai',
+		status: 'ready',
+		icon: IconPerson,
+		handler: 'auto-reframe',
+		outputKind: 'video',
+		note: 'The person model is downloaded once and kept in this browser. With nobody in frame it follows the moving part of the picture instead.',
+		params: [
+			{ type: 'select', key: 'aspect', label: 'Crop to', default: '9:16', options: ASPECT_OPTIONS },
+			{ type: 'slider', key: 'steadiness', label: 'Steadiness', min: 0, max: 100, step: 1, default: 60, unit: '%', hint: 'Higher holds the framing longer and moves less often.' },
+			{ type: 'toggle', key: 'motionOnly', label: 'Skip the person model, follow motion only', default: false },
+			{ type: 'select', key: 'model', label: 'Model', default: 'balanced', options: [{ value: 'balanced', label: 'Balanced - faster' }, { value: 'precise', label: 'Precise - slower' }] },
+		],
+	},
+
+	/* ------------------------------------------------------------ text & frame */
+	{
+		id: 'animated-text',
+		name: 'Animated Title',
+		short: 'A styled, timed title with an in and an out - outlined, boxed, glowing, typed or karaoke.',
+		category: 'text',
+		status: 'ready',
+		icon: IconType,
+		handler: 'animated-text',
+		outputKind: 'video',
+		preview: true,
+		params: [
+			{ type: 'text', key: 'content', label: 'Text', default: 'Your title here', placeholder: 'Type the title' },
+			{ type: 'select', key: 'style', label: 'Style', default: 'outline', options: TEXT_STYLE_OPTIONS },
+			{ type: 'select', key: 'animation', label: 'Animation', default: 'fade', options: TEXT_ANIMATION_OPTIONS },
+			{ type: 'select', key: 'position', label: 'Position', default: 'bottom-center', options: POSITION_OPTIONS },
+			{ type: 'slider', key: 'fontSize', label: 'Size', min: 2, max: 20, step: 0.5, default: 7, unit: '%', hint: 'A percentage of the frame height, so it looks the same at any resolution.' },
+			{ type: 'select', key: 'weight', label: 'Weight', default: '600', options: [{ value: '400', label: 'Regular' }, { value: '600', label: 'Semibold' }, { value: '800', label: 'Heavy' }] },
+			{ type: 'color', key: 'color', label: 'Text colour', default: '#ffffff' },
+			{ type: 'color', key: 'accent', label: 'Accent colour', default: '#0b0b10', hint: 'The outline, glow, box or karaoke fill.' },
+			{ type: 'slider', key: 'startAt', label: 'Appears at', min: 0, max: 600, step: 0.1, default: 0, unit: 's', maxFrom: 'durationSeconds' },
+			{ type: 'slider', key: 'seconds', label: 'Stays for', min: 0.2, max: 600, step: 0.1, default: 3, unit: 's', maxFrom: 'durationSeconds' },
+			{ type: 'slider', key: 'animateSeconds', label: 'In and out take', min: 0.1, max: 3, step: 0.05, default: 0.5, unit: 's' },
+			{ type: 'slider', key: 'maxWidth', label: 'Wrap at', min: 20, max: 100, step: 1, default: 80, unit: '%' },
+			{ type: 'slider', key: 'offsetY', label: 'Nudge up or down', min: -40, max: 40, step: 1, default: 0, unit: '%' },
+			{ type: 'slider', key: 'rotation', label: 'Rotation', min: -30, max: 30, step: 1, default: 0, unit: '°' },
+			{ type: 'toggle', key: 'uppercase', label: 'Upper case', default: false },
+		],
+	},
+	{
+		id: 'border-frame',
+		name: 'Border & Frame',
+		short: 'A band, a shadow, a glow or a polaroid edge around the picture - without cropping it.',
+		category: 'overlay',
+		status: 'ready',
+		icon: IconLayers,
+		handler: 'border-frame',
+		outputKind: 'video',
+		preview: true,
+		note: 'The picture is scaled down by exactly the width of the frame, so a border never eats the edge of the shot.',
+		params: [
+			{ type: 'select', key: 'style', label: 'Style', default: 'solid', options: BORDER_OPTIONS },
+			{ type: 'slider', key: 'thickness', label: 'Thickness', min: 0, max: 20, step: 0.2, default: 3, unit: '%' },
+			{ type: 'slider', key: 'radius', label: 'Corner rounding', min: 0, max: 20, step: 0.2, default: 0, unit: '%' },
+			{ type: 'slider', key: 'opacity', label: 'Opacity', min: 0, max: 100, step: 1, default: 100, unit: '%' },
+			{ type: 'color', key: 'color', label: 'Colour', default: '#ffffff' },
+			{ type: 'color', key: 'colorB', label: 'Second colour', default: '#0b0b10' },
+		],
+	},
+
+	/* ------------------------------------------------------------- restoration */
+	{
+		id: 'video-enhance',
+		name: 'Enhance & Denoise',
+		short: 'Edge-preserving denoise, deblocking on the codec’s own 8-pixel grid, then masked sharpening.',
+		category: 'restore',
+		status: 'ready',
+		icon: IconWand,
+		handler: 'enhance',
+		outputKind: 'video',
+		preview: true,
+		note: 'This is restoration, not super-resolution: it cleans up what was recorded, it does not invent detail that was not.',
+		params: [
+			{ type: 'slider', key: 'denoise', label: 'Denoise', min: 0, max: 100, step: 1, default: 40, unit: '%' },
+			{ type: 'slider', key: 'deblock', label: 'Deblock', min: 0, max: 100, step: 1, default: 30, unit: '%', hint: 'For footage that has been compressed hard.' },
+			{ type: 'slider', key: 'sharpen', label: 'Sharpen', min: 0, max: 100, step: 1, default: 35, unit: '%' },
+			{ type: 'slider', key: 'saturation', label: 'Colour recovery', min: 0, max: 60, step: 1, default: 0, unit: '%' },
+			{ type: 'select', key: 'upscale', label: 'Output size', default: '1', options: [{ value: '1', label: 'Leave it as it is' }, { value: '1.5', label: '1.5x larger' }, { value: '2', label: '2x larger' }] },
+		],
+	},
+	{
+		id: 'watermark-remove',
+		name: 'Remove an Object',
+		short: 'Fill in, blur or pixelate a rectangle - a burnt-in logo, a timecode, a number plate.',
+		category: 'restore',
+		status: 'ready',
+		icon: IconTrash,
+		handler: 'remove-object',
+		outputKind: 'video',
+		preview: true,
+		note: 'The fill reconstructs the region from its own edges. Over flat backgrounds it is invisible; over detailed texture it will smear.',
+		params: [
+			{ type: 'select', key: 'mode', label: 'What to do', default: 'fill', options: INPAINT_OPTIONS },
+			{ type: 'slider', key: 'x', label: 'Left edge', min: 0, max: 95, step: 0.5, default: 70, unit: '%' },
+			{ type: 'slider', key: 'y', label: 'Top edge', min: 0, max: 95, step: 0.5, default: 80, unit: '%' },
+			{ type: 'slider', key: 'width', label: 'Width', min: 2, max: 100, step: 0.5, default: 22, unit: '%' },
+			{ type: 'slider', key: 'height', label: 'Height', min: 2, max: 100, step: 0.5, default: 12, unit: '%' },
+			{ type: 'slider', key: 'feather', label: 'Blend the edge', min: 0, max: 100, step: 1, default: 45, unit: '%' },
+			{ type: 'slider', key: 'strength', label: 'Strength', min: 10, max: 100, step: 1, default: 70, unit: '%', hint: 'How hard the blur or pixelation is.' },
+			{ type: 'toggle', key: 'matchGrain', label: 'Put the grain back over the fill', default: true },
+		],
+	},
+	{
+		id: 'retouch',
+		name: 'Retouch',
+		short: 'Skin smoothing that keeps the eyelashes, plus tone evening and a lift on eyes and teeth.',
+		category: 'ai',
+		status: 'ready',
+		icon: IconPerson,
+		handler: 'retouch',
+		outputKind: 'video',
+		preview: true,
+		note: 'The filter is bilateral and runs only on skin, found in chroma - so it works across skin tones and leaves everything that is not skin alone.',
+		params: [
+			{ type: 'slider', key: 'smooth', label: 'Smooth', min: 0, max: 100, step: 1, default: 45, unit: '%' },
+			{ type: 'slider', key: 'even', label: 'Even out the tone', min: 0, max: 100, step: 1, default: 25, unit: '%' },
+			{ type: 'slider', key: 'brighten', label: 'Brighten', min: 0, max: 100, step: 1, default: 15, unit: '%' },
+			{ type: 'slider', key: 'warmth', label: 'Warmth', min: -100, max: 100, step: 1, default: 10, unit: '%' },
+			{ type: 'slider', key: 'eyes', label: 'Eyes and teeth', min: 0, max: 100, step: 1, default: 25, unit: '%' },
+			{ type: 'slider', key: 'radius', label: 'Smoothing radius', min: 0, max: 100, step: 1, default: 50, unit: '%' },
+		],
+	},
+
+	/* ------------------------------------------------------------ audio effects */
+	{
+		id: 'reverb',
+		name: 'Reverb',
+		short: 'Puts the sound in a room - eight comb filters and four allpasses, per channel.',
+		category: 'levels',
+		status: 'ready',
+		icon: IconWaveform,
+		handler: 'reverb',
+		outputKind: 'video',
+		params: [
+			{ type: 'slider', key: 'size', label: 'Room size', min: 0, max: 100, step: 1, default: 55, unit: '%' },
+			{ type: 'slider', key: 'damping', label: 'Damping', min: 0, max: 100, step: 1, default: 55, unit: '%', hint: 'How fast the top end dies away - a soft room against a tiled one.' },
+			{ type: 'slider', key: 'wet', label: 'Mix', min: 0, max: 100, step: 1, default: 30, unit: '%' },
+			{ type: 'slider', key: 'preDelayMs', label: 'Pre-delay', min: 0, max: 200, step: 1, default: 20, unit: 'ms' },
+			{ type: 'slider', key: 'width', label: 'Width', min: 0, max: 100, step: 1, default: 100, unit: '%' },
+		],
+	},
+	{
+		id: 'echo-delay',
+		name: 'Echo',
+		short: 'Repeats, with feedback - straight or bouncing between the channels.',
+		category: 'levels',
+		status: 'ready',
+		icon: IconWaveform,
+		handler: 'echo',
+		outputKind: 'video',
+		params: [
+			{ type: 'slider', key: 'delayMs', label: 'Delay', min: 20, max: 1500, step: 10, default: 320, unit: 'ms' },
+			{ type: 'slider', key: 'feedback', label: 'Feedback', min: 0, max: 92, step: 1, default: 35, unit: '%' },
+			{ type: 'slider', key: 'wet', label: 'Mix', min: 0, max: 100, step: 1, default: 35, unit: '%' },
+			{ type: 'toggle', key: 'pingPong', label: 'Bounce left to right', default: false },
+		],
+	},
+	{
+		id: 'equalizer',
+		name: 'Equaliser',
+		short: 'Five bands: shelves at the ends, bells in the middle.',
+		category: 'levels',
+		status: 'ready',
+		icon: IconSliders,
+		handler: 'equalizer',
+		outputKind: 'video',
+		params: [
+			{ type: 'slider', key: 'low', label: '80 Hz', min: -18, max: 18, step: 0.5, default: 0, unit: 'dB' },
+			{ type: 'slider', key: 'lowMid', label: '250 Hz', min: -18, max: 18, step: 0.5, default: 0, unit: 'dB' },
+			{ type: 'slider', key: 'mid', label: '1 kHz', min: -18, max: 18, step: 0.5, default: 0, unit: 'dB' },
+			{ type: 'slider', key: 'highMid', label: '3.5 kHz', min: -18, max: 18, step: 0.5, default: 0, unit: 'dB' },
+			{ type: 'slider', key: 'high', label: '10 kHz', min: -18, max: 18, step: 0.5, default: 0, unit: 'dB' },
+		],
+	},
+	{
+		id: 'voice-changer',
+		name: 'Voice Changer',
+		short: 'Nine characters - chipmunk, deep, robot, telephone, megaphone, alien, whisper, cave, old radio.',
+		category: 'levels',
+		status: 'ready',
+		icon: IconMic,
+		handler: 'voice-changer',
+		outputKind: 'video',
+		params: [{ type: 'select', key: 'preset', label: 'Character', default: 'deep', options: VOICE_OPTIONS }],
+	},
+	{
+		id: 'beat-markers',
+		name: 'Find the Beat',
+		short: 'Marks every beat and estimates the tempo, so cuts can be placed on them.',
+		category: 'levels',
+		status: 'ready',
+		icon: IconBolt,
+		handler: 'beat-detect',
+		outputKind: 'file',
+		note: 'Nothing about the clip is changed - this writes out a list of times and a tempo.',
+		params: [{ type: 'slider', key: 'sensitivity', label: 'Sensitivity', min: 0, max: 100, step: 1, default: 55, unit: '%' }],
 	},
 ]
 
