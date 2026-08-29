@@ -497,6 +497,79 @@ headers up. Where isolation is unavailable (Safari today), or where the WASM
 bundle itself cannot be fetched, the studio says so and switches to NVIDIA cloud
 transcription; the Write and Import paths still work either way.
 
+## The Tools Studio
+
+`/tools` is a full editing bench that runs entirely in the tab. Nothing is
+uploaded: the clip is decoded with [mediabunny](https://mediabunny.dev), every
+frame goes through a WebGL2 shader or a 2D canvas pass, and the result is
+encoded straight back out through WebCodecs. A tool is a `ToolDef` in
+[`lib/tools/registry.ts`](lib/tools/registry.ts) — a category, a pitch and a
+list of parameters — and one generic panel renders whichever fields it
+declares, so the catalogue is data and the engines are shared.
+
+### What is in it
+
+| Group | Tools |
+| --- | --- |
+| **Colour** | Adjust (exposure, white balance, highlights/shadows/whites/blacks, gamma, fade, vibrance, clarity), White Balance, HSL Colour, 79 graded looks, **import any `.cube` LUT**, auto colour, grayscale, sepia, invert, blur, sharpen, vignette |
+| **Effects** | 40 effects — glitch, VHS, old film, CRT, TV static, pixelate, mosaic, halftone, crosshatch, sketch, edge, neon, emboss, posterize, threshold, comic, oil paint, duotone, thermal, night vision, hologram, kaleidoscope, mirrors, twirl, ripple, wave, fisheye, bulge, shake, zoom/spin/directional blur, bloom, soft focus, bokeh, star filter, light leak — plus shape masks in eleven shapes |
+| **Motion** | 18 camera moves: Ken Burns in and out, pans, tilts, whip pan, diagonal push, spin-in, slow rotate, bounce, pulse, shake, handheld, sway, drift |
+| **Compose** | 17 transitions between two clips, split screen in seven layouts, 17 blend modes, picture-in-picture, canvas reframe with a blurred blow-up, chroma-key overlay, merge |
+| **AI** | Background replace, auto reframe that follows the subject, retouch (skin smoothing, tone evening, eyes and teeth) |
+| **Text** | Animated titles: eight styles, nine animations, timed in and out, measured wrapping |
+| **Timing** | Cut silence, trim, split, speed, slow motion, time-lapse, loop, freeze frame, speed ramp, scene split, **reverse** |
+| **Transform** | Rotate, flip, crop, aspect crop, resize, frame rate, letterbox, borders and frames |
+| **Restoration** | Enhance and denoise (edge-preserving denoise, deblocking, masked sharpening), remove an object, stabilise, auto-crop bars, declick, spectral denoise |
+| **Audio** | Reverb, echo, five-band EQ, nine voice characters, beat detection, gain, normalise, LUFS, fades, ducking, compressor, limiter, de-esser, noise gate, pitch shift, stereo tools |
+| **Export** | Format convert, compress, GIF, thumbnail, metadata, batch export to a zip |
+
+Every visual tool that cannot be judged from its sliders offers a **single-frame
+preview** that goes through the identical engine the export does, so what you
+see is what renders.
+
+### How it fits together
+
+```
+registry.ts   the catalogue: what each card is and what it asks for
+runners.ts    the only place that turns a tool's params into an engine call
+frame-ops.ts  one draw pipeline: crop -> rotate -> scale -> filter -> passes
+video-filter.ts  decode -> frame-ops -> encode, with a per-frame hook
+```
+
+`frame-ops.ts` has four seams, and every visual engine hangs off one of them:
+an **underlay** that paints the backdrop before the picture lands on it, a
+**transform** applied while the frame is still at native resolution (so a
+push-in reads real detail), an ordered list of **passes** over the finished
+frame, and an **overlay** on top. Engines that own a resource — a compiled
+shader, a decoded second clip, a segmentation model — hand back a `dispose`
+that the runner releases in a `finally`, whether the render finished, failed or
+was cancelled.
+
+Everything falls back. Each shader has a CPU path that implements the same
+maths, and the result card says when one was used rather than pretending
+otherwise.
+
+### Checking it
+
+```bash
+npm run toolkit:check          # maths, then a real Chrome driving the real page
+npm run toolkit:check:maths    # offline only: no browser, no network
+npm run tools:check            # the AI background, colour looks and chroma key
+```
+
+The offline half settles everything arithmetic can settle: that a neutral
+adjustment is the identity, that +1 EV is a doubling of *linear* light, that no
+camera move can slide its own edge into frame, that a `.cube` parses
+red-fastest, that the split-screen cells tile the frame exactly, that an echo
+lands on the sample it was asked for and a 120 bpm click track reads as 120 bpm.
+
+The browser half imports a clip, opens ten tools, sets their controls the way a
+person would, runs them, and re-opens each finished file to measure its pixels:
+desaturating has to come back grey, night vision has to come back green, a
+magenta title has to put magenta on the frame, a 9:16 reframe has to come back
+1080x1920, and a side-by-side montage has to have the first clip on the left and
+the second on the right.
+
 ## Deploy to GitHub + Vercel
 
 ```bash
@@ -713,6 +786,32 @@ lib/
     sfx.ts              the sound-effect catalogue and the per-sentence scheduler
     video-source.ts     duration, display size, fps and audio-track probing
     style-presets.ts    the six caption looks and the studio font kit
+  tools/
+    registry.ts         the catalogue: every tool, its category and its params
+    runners.ts          the one switch from a tool's params to an engine call
+    frame-ops.ts        the shared draw pipeline and its four pass seams
+    video-filter.ts     decode -> frame-ops -> encode, with a per-frame hook
+    frame-reader.ts     forward-only frame access, for the multi-clip tools
+    adjust.ts           exposure, white balance, tonal regions, HSL, clarity
+    color-tone.ts       79 graded looks, baked into lookup cubes
+    lut.ts              .cube import, 3D and 1D, domain-aware
+    effects.ts          40 effects behind one shader and one CPU fallback
+    motion.ts           18 camera moves, each covered so no edge enters frame
+    mask.ts             shape masks with feathering and five treatments
+    blend.ts            17 blend modes for a second clip or a still
+    transitions.ts      17 transitions, two clips overlapped and encoded
+    split-screen.ts     two to four clips in seven layouts
+    canvas-bg.ts        reframe onto a new aspect over a blurred blow-up
+    border.ts           frames and borders that inset rather than cover
+    text-fx.ts          animated titles: measured wrapping, timed in and out
+    retouch.ts          bilateral skin smoothing, masked in chroma
+    enhance.ts          denoise, deblock on the codec's grid, masked sharpen
+    inpaint.ts          object removal by diffusion from the region's edges
+    track.ts            auto reframe: subject tracking with a dead band
+    reverse.ts          backwards playback, decoded in memory-bounded spans
+    audio-fx.ts         reverb, echo, five-band EQ, voice presets, beat detect
+    audio-ops.ts        gain, gates, dynamics, loudness, pitch, stereo
+    segmentation.ts     the person model: loading, polarity, temporal smoothing
 samples/                the uploadable examples
 scripts/
   generate-audio-assets.mjs   560-SFX deterministic WAV library + verifier
@@ -724,6 +823,8 @@ scripts/
   preview-stills.mjs    PNG contact sheet from any composition
   inspect-media.mjs     track/duration check without a system FFmpeg
   sync-samples.mjs      samples -> public/samples (runs on predev/prebuild)
+  check-editor-toolkit.cjs  the toolkit suite: maths offline, then a real Chrome
+  check-tools-effects.cjs   the AI background, colour looks and chroma key
 ```
 
 ## How browser rendering works
