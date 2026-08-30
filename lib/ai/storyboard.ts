@@ -21,6 +21,8 @@ import {
 	type MusicId,
 	type PaletteId,
 } from './kit'
+import type { ArcId } from './arcs'
+import { MOTION_SCENE_IDS, isMotionSceneType, type MotionSceneType } from './motion-scenes'
 import {
 	creativeFingerprint,
 	normalizeAvoidFingerprints,
@@ -93,8 +95,13 @@ export type SceneType =
 	| 'globe3d'
 	| 'terrain3d'
 	| 'carousel3d'
+	/**
+	 * The motion-graphics library. A hundred pieces of design that all read the
+	 * same props, so any of them can carry any beat the planner hands them.
+	 */
+	| MotionSceneType
 
-export const SCENE_TYPES: SceneType[] = [
+export const CLASSIC_SCENE_TYPES: SceneType[] = [
 	'title',
 	'statement',
 	'timeline',
@@ -112,6 +119,8 @@ export const SCENE_TYPES: SceneType[] = [
 	'terrain3d',
 	'carousel3d',
 ]
+
+export const SCENE_TYPES: SceneType[] = [...CLASSIC_SCENE_TYPES, ...MOTION_SCENE_IDS]
 
 /** Scene types that mount a WebGL canvas. */
 export const THREE_SCENE_TYPES: SceneType[] = ['object3d', 'globe3d', 'terrain3d']
@@ -242,7 +251,26 @@ export type Carousel3dScene = Base & {
 	items: GalleryItem[]
 }
 
+/**
+ * One motion-graphics card.
+ *
+ * Deliberately one shape for every motion renderer: the planner should be able to
+ * swap the piece a beat resolves to without rewriting the content, and a
+ * renderer should be able to take what it needs and derive the rest.
+ */
+export type MotionScene = Base & {
+	type: MotionSceneType
+	kicker: string
+	headline: string
+	caption: string
+	lines: string[]
+	items: GalleryItem[]
+	stats: StatItem[]
+	icon: IconId
+}
+
 export type Scene =
+	| MotionScene
 	| TitleScene
 	| StatementScene
 	| TimelineScene
@@ -338,10 +366,69 @@ function record(value: unknown): Record<string, unknown> {
 	return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {}
 }
 
+/**
+ * Copy lines a motion scene can lay out.
+ *
+ * The director may send `lines`, or a `bullets`/`points` array, or nothing at
+ * all - the renderers derive what they need either way, so this only has to
+ * clean up whatever did arrive.
+ */
+function motionLines(source: Record<string, unknown>): string[] {
+	const raw = list(source.lines ?? source.bullets ?? source.points ?? source.captions)
+	return raw
+		.map((item) => (typeof item === 'string' ? text(item, '', 90) : ''))
+		.filter((item) => item.length > 0)
+		.slice(0, 8)
+}
+
 function normalizeScene(raw: unknown, subject: string): Scene | null {
 	const source = record(raw)
 	const type = pickEnum(source.type, SCENE_TYPES, 'statement')
 	const seconds = clampNumber(source.seconds, MIN_SCENE_SECONDS, 30, 0)
+
+	if (isMotionSceneType(type)) {
+		const defaults: IconId[] = ['spark', 'layers', 'target', 'bolt', 'globe', 'check']
+		const items = list(source.items ?? source.cards ?? source.steps)
+			.map((rawItem, itemIndex) => {
+				const item = record(rawItem)
+				const title = text(item.title ?? item.label, '', 60)
+				if (!title) return null
+				return {
+					title,
+					detail: text(item.detail, '', 110),
+					icon: icon(item.icon, defaults[itemIndex % defaults.length]),
+				}
+			})
+			.filter((item): item is GalleryItem => item !== null)
+			.slice(0, 6)
+		const stats = list(source.stats ?? source.figures)
+			.map((rawStat) => {
+				const stat = record(rawStat)
+				const label = text(stat.label, '', 46)
+				const value = clampNumber(stat.value, -1_000_000_000, 1_000_000_000, Number.NaN)
+				if (!label || !Number.isFinite(value)) return null
+				return {
+					value,
+					prefix: text(stat.prefix, '', 4),
+					suffix: text(stat.suffix, '', 6),
+					label,
+					decimals: Math.round(clampNumber(stat.decimals, 0, 2, Number.isInteger(value) ? 0 : 1)),
+				}
+			})
+			.filter((stat): stat is StatItem => stat !== null)
+			.slice(0, 4)
+		return {
+			type,
+			seconds,
+			kicker: text(source.kicker, '', 60),
+			headline: text(source.headline ?? source.text, subject, 96),
+			caption: text(source.caption ?? source.subline ?? source.footnote, '', 150),
+			lines: motionLines(source),
+			items,
+			stats,
+			icon: icon(source.icon, 'spark'),
+		}
+	}
 
 	switch (type) {
 		case 'title':
@@ -635,6 +722,8 @@ export type NormalizeStoryboardOptions = {
 	avoidDesignFingerprints?: readonly string[]
 	/** House styles the caller has recently shipped, never reused back to back. */
 	avoidTemplates?: readonly TemplateId[]
+	/** Story shapes the caller has recently shipped, never reused back to back. */
+	avoidArcs?: readonly ArcId[]
 	/** False unless the user asked for 3D in this chat. Defaults to false. */
 	allowThreeDimensional?: boolean
 }
@@ -693,6 +782,7 @@ export function normalizeStoryboard(
 		descriptor,
 		avoidFingerprints: avoided,
 		avoidTemplates: settings.avoidTemplates,
+		avoidArcs: settings.avoidArcs,
 	})
 	let creativeProfile = normalizeCreativeProfile(source.creativeProfile, resolved.profile)
 	let designFingerprint = creativeFingerprint(creativeProfile, descriptor)

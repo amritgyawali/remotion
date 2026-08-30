@@ -54,6 +54,29 @@ import {
 	type VideoFilterQuality,
 } from './video-filter'
 import { cutFileName, freezeFramePlan, loopPlan, renderCutVideo, speedPlan, speedRampPlan, trimPlan } from './plan-ops'
+import { bakeToneLut, DEFAULT_TONE_ID, resolveFinish, toneById, trimRecipe, type ToneFinish } from './color-tone'
+import { bandCenterById, createAdjustProcessor, isNeutralAdjust, type AdjustSettings } from './adjust'
+import { applyEcho, applyEqualizer, applyReverb, applyVoicePreset, detectBeats, type VoicePresetId } from './audio-fx'
+import { prepareBlendOverlay, type BlendFit, type BlendMode, type BlendPlacement } from './blend'
+import { borderInset, createBorderPass, type BorderSettings, type BorderStyle } from './border'
+import { prepareCanvasBackground, type CanvasBackdrop } from './canvas-bg'
+import { createEffectProcessor, effectById } from './effects'
+import { createEnhanceProcessor, isNeutralEnhance, type EnhanceSettings } from './enhance'
+import { createInpaintPass, type InpaintMode } from './inpaint'
+import { blendLutTowardIdentity, readCubeLutFile } from './lut'
+import { createMaskPass, type MaskShape, type MaskTreatment } from './mask'
+import { createMotionPlan, motionPresetById, type MotionEasing, type MotionPresetId } from './motion'
+import { createRetouchProcessor, isNeutralRetouch, type RetouchSettings } from './retouch'
+import { renderReversed } from './reverse'
+import { renderSplitScreen, splitFileName, type SplitLayoutId } from './split-screen'
+import { createTitlePass, type TextAnimationId, type TextStyleId } from './text-fx'
+import { planAutoReframe } from './track'
+import { renderTransition, transitionFileName, type TransitionId } from './transitions'
+import { createToneProcessor, type ToneProcessor } from './tone-renderer'
+import { prepareBackgroundReplace, type BackgroundMode, type BackgroundReplaceParams } from './background-runner'
+import type { PlateFit } from './background-replace'
+import { prepareChromaOverlay, type ChromaOverlayParams, type OverlayFit, type OverlayPlacement } from './chroma-overlay'
+import type { SegmentationModelId } from './segmentation'
 import { mergeClips, mergeFileName } from './merge'
 import { detectSceneCuts } from './scene-detect'
 import { buildZip, type ZipEntry } from './zip-writer'
@@ -119,6 +142,67 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
 	return { r: (parsed >> 16) & 0xff, g: (parsed >> 8) & 0xff, b: parsed & 0xff }
 }
 
+/**
+ * Turns the colour-tone tool's sliders into a baked cube and the shader that
+ * applies it. The trims are folded into the recipe *before* baking rather
+ * than being extra shader uniforms, so warming a look by 20% costs the same
+ * as not warming it.
+ */
+function buildToneProcessor(params: RunParams): ToneProcessor {
+	const tone = toneById(str(params, 'tone', DEFAULT_TONE_ID)) ?? toneById(DEFAULT_TONE_ID)!
+	const strength = num(params, 'strength', 100) / 100
+	const recipe = trimRecipe(tone.recipe, {
+		warmth: num(params, 'warmth', 0) / 100,
+		exposure: num(params, 'exposure', 0) / 100,
+		saturation: num(params, 'saturationTrim', 0) / 100,
+		contrast: num(params, 'contrastTrim', 0) / 100,
+	})
+	const finish = resolveFinish(
+		tone,
+		{
+			grain: num(params, 'grain', 0) / 100,
+			vignette: num(params, 'vignette', 0) / 100,
+			bloom: num(params, 'bloom', 0) / 100,
+		},
+		strength,
+	)
+	return createToneProcessor({ lut: bakeToneLut(recipe), strength, finish })
+}
+
+function readChromaOverlayParams(params: RunParams): ChromaOverlayParams {
+	return {
+		keyColor: str(params, 'keyColor', '#00b140'),
+		autoKey: bool(params, 'autoKey', true),
+		tolerance: num(params, 'tolerance', 30),
+		smoothing: num(params, 'smoothing', 12),
+		despill: num(params, 'despill', 60),
+		opacity: num(params, 'opacity', 100),
+		scale: num(params, 'scale', 35),
+		placement: str(params, 'placement', 'fill') as OverlayPlacement,
+		fit: str(params, 'fit', 'cover') as OverlayFit,
+		startAt: num(params, 'startAt', 0),
+		loop: bool(params, 'loop', true),
+		showMatte: bool(params, 'showMatte', false),
+	}
+}
+
+function readBackgroundParams(params: RunParams): BackgroundReplaceParams {
+	return {
+		mode: str(params, 'mode', 'upload') as BackgroundMode,
+		color: str(params, 'color', '#0b0f1a'),
+		fit: str(params, 'fit', 'cover') as PlateFit,
+		blurPercent: num(params, 'blur', 4),
+		model: str(params, 'model', 'balanced') as SegmentationModelId,
+		feather: num(params, 'feather', 10),
+		matte: num(params, 'matte', 55),
+		edgeShift: num(params, 'edgeShift', 0),
+		edgeClean: num(params, 'edgeClean', 35),
+		lightWrap: num(params, 'lightWrap', 25),
+		smoothing: num(params, 'smoothing', 60),
+		showMatte: bool(params, 'showMatte', false),
+	}
+}
+
 async function probeFile(file: File): Promise<CaptionVideoSource> {
 	return probeVideo({ file })
 }
@@ -179,6 +263,33 @@ export async function runTool(tool: ToolDef, ctx: RunContext): Promise<RunResult
 		'pitch-shift': (buffer) => pitchShift(buffer, num(ctx.params, 'semitones', 0)),
 		declick: (buffer) => declickAudio(buffer, { sensitivity: num(ctx.params, 'sensitivity', 6) }),
 		'spectral-denoise': (buffer) => spectralDenoise(buffer, { strength: num(ctx.params, 'strength', 55) / 100 }),
+		reverb: (buffer) =>
+			applyReverb(buffer, {
+				size: num(ctx.params, 'size', 55) / 100,
+				damping: num(ctx.params, 'damping', 55) / 100,
+				wet: num(ctx.params, 'wet', 30) / 100,
+				preDelayMs: num(ctx.params, 'preDelayMs', 20),
+				width: num(ctx.params, 'width', 100) / 100,
+			}),
+		echo: (buffer) =>
+			applyEcho(buffer, {
+				delayMs: num(ctx.params, 'delayMs', 320),
+				feedback: num(ctx.params, 'feedback', 35) / 100,
+				wet: num(ctx.params, 'wet', 35) / 100,
+				pingPong: bool(ctx.params, 'pingPong', false),
+			}),
+		equalizer: (buffer) =>
+			applyEqualizer(buffer, {
+				low: num(ctx.params, 'low', 0),
+				lowMid: num(ctx.params, 'lowMid', 0),
+				mid: num(ctx.params, 'mid', 0),
+				highMid: num(ctx.params, 'highMid', 0),
+				high: num(ctx.params, 'high', 0),
+			}),
+		// The pitch shifter is handed in rather than imported by `audio-fx.ts`,
+		// so the effects rack does not depend on the phase vocoder in the repair
+		// module just to make a voice deeper.
+		'voice-changer': (buffer) => applyVoicePreset(buffer, str(ctx.params, 'preset', 'deep') as VoicePresetId, pitchShift),
 	}
 
 	if (handler in audioTransformHandlers) {
@@ -561,6 +672,261 @@ export async function runTool(tool: ToolDef, ctx: RunContext): Promise<RunResult
 		}
 	}
 
+	if (handler === 'color-tone') {
+		const processor = buildToneProcessor(ctx.params)
+		try {
+			const result = await renderVideoFilter({
+				source: ctx.file,
+				params: { tonePass: processor },
+				audio: 'copy',
+				format: ctx.output.format,
+				quality: ctx.output.quality,
+				signal: ctx.signal,
+				onProgress: (p) => ctx.onProgress({ phase: p.phase, ratio: p.ratio }),
+			})
+			const tone = toneById(str(ctx.params, 'tone', DEFAULT_TONE_ID))
+			return {
+				outputs: [
+					{
+						blob: result.blob,
+						url: result.url,
+						name: filterFileName(baseName, result.format, tone ? tone.id : 'graded'),
+						sizeInBytes: result.sizeInBytes,
+						kind: 'video',
+						meta: tone
+							? `${tone.name} at ${Math.round(num(ctx.params, 'strength', 100))}%${processor.degraded ? ' - graded on the CPU, without the optical effects' : ''}`
+							: undefined,
+					},
+				],
+			}
+		} finally {
+			processor.dispose()
+		}
+	}
+
+	if (handler === 'background-replace') {
+		ctx.onProgress({ phase: 'preparing the person model', ratio: 0 })
+		const prepared = await prepareBackgroundReplace({
+			params: readBackgroundParams(ctx.params),
+			probe: ctx.probe,
+			plateFile: ctx.secondaryFile,
+			signal: ctx.signal,
+			// The model is a one-off download that can be sixteen megabytes, so it
+			// gets its own slice of the progress bar rather than a frozen 0%.
+			onProgress: (p) =>
+				ctx.onProgress({
+					phase: p.phase === 'model' ? 'downloading the person model' : 'starting the person model',
+					ratio: p.ratio * 0.12,
+				}),
+		})
+		try {
+			const result = await renderVideoFilter({
+				source: ctx.file,
+				params: {},
+				audio: 'copy',
+				format: ctx.output.format,
+				quality: ctx.output.quality,
+				perFrame: prepared.perFrame,
+				signal: ctx.signal,
+				onProgress: (p) => ctx.onProgress({ phase: p.phase, ratio: 0.12 + p.ratio * 0.88 }),
+			})
+			return {
+				outputs: [
+					{
+						blob: result.blob,
+						url: result.url,
+						name: filterFileName(baseName, result.format, 'background'),
+						sizeInBytes: result.sizeInBytes,
+						kind: 'video',
+						meta: prepared.summary,
+					},
+				],
+			}
+		} finally {
+			prepared.dispose()
+		}
+	}
+
+	if (handler === 'chroma-overlay') {
+		ctx.onProgress({ phase: 'reading the overlay clip', ratio: 0 })
+		const prepared = await prepareChromaOverlay({
+			params: readChromaOverlayParams(ctx.params),
+			overlayFile: ctx.secondaryFile,
+			signal: ctx.signal,
+		})
+		try {
+			const result = await renderVideoFilter({
+				source: ctx.file,
+				params: {},
+				audio: 'copy',
+				format: ctx.output.format,
+				quality: ctx.output.quality,
+				perFrame: prepared.perFrame,
+				signal: ctx.signal,
+				onProgress: (p) => ctx.onProgress({ phase: p.phase, ratio: p.ratio }),
+			})
+			return {
+				outputs: [
+					{
+						blob: result.blob,
+						url: result.url,
+						name: filterFileName(baseName, result.format, 'overlay'),
+						sizeInBytes: result.sizeInBytes,
+						kind: 'video',
+						meta: prepared.summary,
+					},
+				],
+			}
+		} finally {
+			prepared.dispose()
+		}
+	}
+
+	if (handler === 'beat-detect') {
+		ctx.onProgress({ phase: 'decoding', ratio: 0 })
+		const decoded = await decodeWholeTrack({ source: ctx.file, signal: ctx.signal })
+		if (!decoded) throw new Error('That file has no audio track to find a beat in.')
+		ctx.onProgress({ phase: 'listening for the beat', ratio: 0.7 })
+		const analysis = detectBeats(decoded.buffer, num(ctx.params, 'sensitivity', 55) / 100)
+		if (analysis.beats.length === 0) {
+			throw new Error('No beats were found at this sensitivity - raise it, or this track may have no steady rhythm.')
+		}
+		// A plain text marker list, one time per line: importable into every
+		// editor that takes markers, and readable without one.
+		const lines = [
+			`# ${ctx.file.name}`,
+			`# ${analysis.beats.length} beats${analysis.bpm ? `, about ${analysis.bpm} bpm` : ', no steady tempo found'}`,
+			...analysis.beats.map((seconds) => seconds.toFixed(3)),
+		]
+		const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
+		return {
+			outputs: [
+				{
+					blob,
+					url: URL.createObjectURL(blob),
+					name: `${baseName.replace(/\.[a-z0-9]+$/i, '')}-beats.txt`,
+					sizeInBytes: blob.size,
+					kind: 'file',
+					meta: analysis.bpm
+						? `${analysis.beats.length} beats, about ${analysis.bpm} bpm (${Math.round(analysis.confidence * 100)}% of the gaps agree)`
+						: `${analysis.beats.length} beats, but no steady tempo`,
+				},
+			],
+		}
+	}
+
+	if (handler === 'reverse-video') {
+		const result = await renderReversed({
+			source: ctx.file,
+			format: ctx.output.format,
+			quality: ctx.output.quality,
+			includeAudio: ctx.probe.hasAudio && bool(ctx.params, 'includeAudio', true),
+			signal: ctx.signal,
+			onProgress: (p) => ctx.onProgress({ phase: p.phase, ratio: p.ratio }),
+		})
+		return {
+			outputs: [
+				{
+					blob: result.blob,
+					url: result.url,
+					name: filterFileName(baseName, result.format, 'reversed'),
+					sizeInBytes: result.sizeInBytes,
+					kind: 'video',
+				},
+			],
+		}
+	}
+
+	if (handler === 'transition') {
+		if (!ctx.secondaryFile) throw new Error('Choose the clip to cut to first.')
+		const result = await renderTransition({
+			first: ctx.file,
+			second: ctx.secondaryFile,
+			transition: str(ctx.params, 'transition', 'dissolve') as TransitionId,
+			transitionSeconds: num(ctx.params, 'seconds', 1),
+			format: ctx.output.format,
+			quality: ctx.output.quality,
+			signal: ctx.signal,
+			onProgress: (p) => ctx.onProgress({ phase: p.phase, ratio: p.ratio }),
+		})
+		return {
+			outputs: [
+				{
+					blob: result.blob,
+					url: result.url,
+					name: transitionFileName(baseName, result.format),
+					sizeInBytes: result.sizeInBytes,
+					kind: 'video',
+					meta: `${result.durationSeconds.toFixed(1)}s - the two clips overlap, so this is shorter than both of them together`,
+				},
+			],
+		}
+	}
+
+	if (handler === 'split-screen') {
+		// The loaded clip is deliberately not one of the panels: a montage's
+		// running order is the order the files were added, and quietly making
+		// whatever happens to be open into panel one would fight that.
+		if (ctx.batchFiles.length === 0) throw new Error('Add the clips for each panel first.')
+		const result = await renderSplitScreen({
+			clips: ctx.batchFiles,
+			layout: str(ctx.params, 'layout', 'side-by-side') as SplitLayoutId,
+			aspect: str(ctx.params, 'aspect', '16:9'),
+			gap: num(ctx.params, 'gap', 0.8),
+			background: str(ctx.params, 'background', '#0b0b10'),
+			fit: str(ctx.params, 'fit', 'cover') as 'cover' | 'contain',
+			radius: num(ctx.params, 'radius', 0),
+			format: ctx.output.format,
+			quality: ctx.output.quality,
+			signal: ctx.signal,
+			onProgress: (p) => ctx.onProgress({ phase: p.phase, ratio: p.ratio }),
+		})
+		return {
+			outputs: [
+				{
+					blob: result.blob,
+					url: result.url,
+					name: splitFileName(result.format),
+					sizeInBytes: result.sizeInBytes,
+					kind: 'video',
+					meta: `${result.panels} panels at ${result.width}x${result.height}`,
+				},
+			],
+		}
+	}
+
+	const advanced = await buildAdvancedVisual(handler, ctx)
+	if (advanced) {
+		try {
+			const result = await renderVideoFilter({
+				source: ctx.file,
+				params: advanced.params,
+				audio: 'copy',
+				format: ctx.output.format,
+				quality: ctx.output.quality,
+				perFrame: advanced.perFrame,
+				signal: ctx.signal,
+				onProgress: (p) => ctx.onProgress({ phase: p.phase, ratio: p.ratio }),
+			})
+			return {
+				outputs: [
+					{
+						blob: result.blob,
+						url: result.url,
+						name: filterFileName(baseName, result.format, tool.id),
+						sizeInBytes: result.sizeInBytes,
+						kind: 'video',
+						meta: advanced.summary,
+					},
+				],
+			}
+		} finally {
+			// Shaders, scratch canvases, decoded overlays and model handles all
+			// live here; a cancelled or failed render must release them too.
+			advanced.dispose()
+		}
+	}
+
 	const visualParams = await buildVisualParams(handler, ctx)
 	if (visualParams) {
 		const result = await renderVideoFilter({
@@ -578,6 +944,340 @@ export async function runTool(tool: ToolDef, ctx: RunContext): Promise<RunResult
 	}
 
 	throw new Error(`"${tool.name}" doesn't have a working engine yet.`)
+}
+
+/* ==========================================================================
+   The pass-based tools.
+
+   Everything in `buildVisualParams` below is pure data: a crop rectangle, a
+   filter string, a number. These are not. Each one builds something that owns
+   a resource - a compiled shader and its textures, a scratch canvas, a decoded
+   overlay clip, a segmentation model - and every one of those has to be
+   released whether the render finishes, fails or is cancelled.
+
+   So they get their own builder, which hands back a `dispose` alongside the
+   parameters, and both the renderer and the preview wrap it in a `finally`.
+   Keeping them separate from the data-only path means the fifteen tools that
+   genuinely have nothing to clean up are not made to carry a lifecycle they
+   do not need.
+   ========================================================================== */
+
+/** Enough of a run or a preview to build a pass from. */
+type VisualContext = {
+	file: File
+	probe: CaptionVideoSource
+	params: RunParams
+	secondaryFile: File | null
+	signal: AbortSignal
+	onProgress?: (progress: RunProgress) => void
+}
+
+type AdvancedVisual = {
+	params: FrameOpsParams
+	perFrame?: PerFrameHook
+	/** shown on the finished card, or under the preview, when there is something to say */
+	summary?: string
+	dispose(): void
+}
+
+const NO_FINISH: Required<ToneFinish> = {
+	grain: 0,
+	grainSize: 1,
+	vignette: 0,
+	bloom: 0,
+	halation: 0,
+	softness: 0,
+	chroma: 0,
+}
+
+function readAdjustSettings(params: RunParams): AdjustSettings {
+	return {
+		exposure: num(params, 'exposure', 0),
+		contrast: num(params, 'contrast', 0),
+		temperature: num(params, 'temperature', 0),
+		tint: num(params, 'tint', 0),
+		highlights: num(params, 'highlights', 0),
+		shadows: num(params, 'shadows', 0),
+		whites: num(params, 'whites', 0),
+		blacks: num(params, 'blacks', 0),
+		gamma: num(params, 'gamma', 0),
+		fade: num(params, 'fade', 0),
+		vibrance: num(params, 'vibrance', 0),
+		saturation: num(params, 'saturation', 0),
+		hue: num(params, 'hue', 0),
+		clarity: num(params, 'clarity', 0),
+		sharpness: num(params, 'sharpness', 0),
+		band: {
+			center: bandCenterById(str(params, 'band', 'orange')),
+			width: num(params, 'bandWidth', 18) / 100,
+			hue: num(params, 'bandHue', 0),
+			saturation: num(params, 'bandSat', 0),
+			luminance: num(params, 'bandLum', 0),
+		},
+	}
+}
+
+async function buildAdvancedVisual(handler: HandlerId, ctx: VisualContext): Promise<AdvancedVisual | null> {
+	const fps = Math.round(ctx.probe.fps) || 30
+	const noop = () => {}
+
+	switch (handler) {
+		case 'adjust': {
+			const settings = readAdjustSettings(ctx.params)
+			if (isNeutralAdjust(settings)) {
+				throw new Error('Nothing is adjusted yet - move at least one slider before running this.')
+			}
+			const processor = createAdjustProcessor(settings)
+			return {
+				params: { passes: [processor] },
+				dispose: () => processor.dispose(),
+				summary: processor.degraded ? 'Adjusted on the CPU - the same maths, just slower.' : undefined,
+			}
+		}
+
+		case 'video-effect': {
+			const id = str(ctx.params, 'effect', 'glitch')
+			const effect = effectById(id)
+			if (!effect) throw new Error(`"${id}" is not an effect this build knows about.`)
+			const processor = createEffectProcessor({
+				effect: id,
+				intensity: num(ctx.params, 'intensity', effect.defaultIntensity) / 100,
+				speed: num(ctx.params, 'speed', 1),
+				angle: num(ctx.params, 'angle', 0),
+				colorA: hexToRgb(str(ctx.params, 'colorA', '#ff2d95')),
+				colorB: hexToRgb(str(ctx.params, 'colorB', '#22d3ee')),
+				fps,
+			})
+			return {
+				params: { passes: [processor] },
+				dispose: () => processor.dispose(),
+				summary: processor.degraded
+					? `${effect.label} rendered on the CPU - correct, but far slower over a whole clip.`
+					: effect.label,
+			}
+		}
+
+		case 'camera-motion': {
+			const preset = str(ctx.params, 'preset', 'ken-burns') as MotionPresetId
+			const plan = createMotionPlan({
+				preset,
+				amount: num(ctx.params, 'amount', 60) / 100,
+				easing: str(ctx.params, 'easing', 'ease-in-out') as MotionEasing,
+				durationSeconds: num(ctx.params, 'seconds', ctx.probe.durationInSeconds),
+				fps,
+				reverse: bool(ctx.params, 'reverse', false),
+			})
+			return {
+				params: {},
+				// The move is per-frame by definition, so it rides the same patch
+				// seam stabilisation and picture-in-picture use.
+				perFrame: async (frameIndex) => ({ patch: { transform: plan(frameIndex) } }),
+				dispose: noop,
+				summary: motionPresetById(preset)?.label,
+			}
+		}
+
+		case 'shape-mask': {
+			const pass = createMaskPass({
+				shape: str(ctx.params, 'shape', 'circle') as MaskShape,
+				centerX: num(ctx.params, 'centerX', 50) / 100,
+				centerY: num(ctx.params, 'centerY', 50) / 100,
+				size: num(ctx.params, 'size', 55) / 100,
+				ratio: num(ctx.params, 'ratio', 100) / 100,
+				rotation: num(ctx.params, 'rotation', 0),
+				feather: num(ctx.params, 'feather', 30) / 100,
+				invert: bool(ctx.params, 'invert', false),
+				treatment: str(ctx.params, 'treatment', 'blur') as MaskTreatment,
+				strength: num(ctx.params, 'strength', 80) / 100,
+				color: str(ctx.params, 'color', '#000000'),
+			})
+			return { params: { passes: [pass] }, dispose: () => pass.dispose() }
+		}
+
+		case 'border-frame': {
+			const settings: BorderSettings = {
+				style: str(ctx.params, 'style', 'solid') as BorderStyle,
+				thickness: num(ctx.params, 'thickness', 3),
+				radius: num(ctx.params, 'radius', 0),
+				color: str(ctx.params, 'color', '#ffffff'),
+				colorB: str(ctx.params, 'colorB', '#0b0b10'),
+				opacity: num(ctx.params, 'opacity', 100),
+			}
+			// The inset is what keeps the frame from covering the picture; it is
+			// computed against the source size because that is the frame the
+			// transform is applied in.
+			const transform = borderInset(settings, ctx.probe.width, ctx.probe.height)
+			return { params: { passes: [createBorderPass(settings)], transform }, dispose: noop }
+		}
+
+		case 'animated-text': {
+			const content = str(ctx.params, 'content', '')
+			if (!content.trim()) throw new Error('Type the title text first.')
+			const pass = createTitlePass({
+				content,
+				fontSize: num(ctx.params, 'fontSize', 7),
+				weight: Number(str(ctx.params, 'weight', '600')) as 400 | 600 | 800,
+				italic: bool(ctx.params, 'italic', false),
+				uppercase: bool(ctx.params, 'uppercase', false),
+				letterSpacing: num(ctx.params, 'letterSpacing', 0),
+				lineHeight: num(ctx.params, 'lineHeight', 1.25),
+				color: str(ctx.params, 'color', '#ffffff'),
+				accent: str(ctx.params, 'accent', '#0b0b10'),
+				style: str(ctx.params, 'style', 'outline') as TextStyleId,
+				animation: str(ctx.params, 'animation', 'fade') as TextAnimationId,
+				position: str(ctx.params, 'position', 'bottom-center') as AnchorPosition,
+				offsetX: num(ctx.params, 'offsetX', 0) / 100,
+				offsetY: num(ctx.params, 'offsetY', 0) / 100,
+				rotation: num(ctx.params, 'rotation', 0),
+				opacity: num(ctx.params, 'opacity', 100) / 100,
+				startAt: num(ctx.params, 'startAt', 0),
+				durationSeconds: num(ctx.params, 'seconds', 3),
+				animateSeconds: num(ctx.params, 'animateSeconds', 0.5),
+				maxWidth: num(ctx.params, 'maxWidth', 80) / 100,
+				fps,
+			})
+			return { params: { passes: [pass] }, dispose: noop }
+		}
+
+		case 'remove-object': {
+			const pass = createInpaintPass({
+				mode: str(ctx.params, 'mode', 'fill') as InpaintMode,
+				region: {
+					x: num(ctx.params, 'x', 70) / 100,
+					y: num(ctx.params, 'y', 80) / 100,
+					width: num(ctx.params, 'width', 22) / 100,
+					height: num(ctx.params, 'height', 12) / 100,
+				},
+				feather: num(ctx.params, 'feather', 45) / 100,
+				strength: num(ctx.params, 'strength', 70) / 100,
+				matchGrain: bool(ctx.params, 'matchGrain', true),
+			})
+			return { params: { passes: [pass] }, dispose: () => pass.dispose() }
+		}
+
+		case 'retouch': {
+			const settings: RetouchSettings = {
+				smooth: num(ctx.params, 'smooth', 45) / 100,
+				even: num(ctx.params, 'even', 25) / 100,
+				brighten: num(ctx.params, 'brighten', 15) / 100,
+				warmth: num(ctx.params, 'warmth', 10) / 100,
+				clarityEyes: num(ctx.params, 'eyes', 25) / 100,
+				radius: num(ctx.params, 'radius', 50) / 100,
+			}
+			if (isNeutralRetouch(settings)) throw new Error('Every retouch slider is at zero - move one before running this.')
+			const processor = createRetouchProcessor(settings)
+			return {
+				params: { passes: [processor] },
+				dispose: () => processor.dispose(),
+				summary: processor.degraded ? 'Retouched on the CPU - a plain blur on skin, not the edge-preserving one.' : undefined,
+			}
+		}
+
+		case 'enhance': {
+			const settings: EnhanceSettings = {
+				denoise: num(ctx.params, 'denoise', 40) / 100,
+				deblock: num(ctx.params, 'deblock', 30) / 100,
+				sharpen: num(ctx.params, 'sharpen', 35) / 100,
+				saturation: num(ctx.params, 'saturation', 0) / 100,
+			}
+			if (isNeutralEnhance(settings)) throw new Error('Every enhance slider is at zero - move one before running this.')
+			const processor = createEnhanceProcessor(settings)
+			const upscale = Number(str(ctx.params, 'upscale', '1'))
+			return {
+				params: {
+					passes: [processor],
+					targetWidth: upscale > 1 ? Math.round(ctx.probe.width * upscale) : null,
+				},
+				dispose: () => processor.dispose(),
+				summary: processor.degraded ? 'Cleaned up on the CPU - the same filters, just slower.' : undefined,
+			}
+		}
+
+		case 'lut-import': {
+			if (!ctx.secondaryFile) throw new Error('Choose the .cube file first.')
+			const parsed = await readCubeLutFile(ctx.secondaryFile)
+			const strength = Math.min(100, Math.max(0, num(ctx.params, 'strength', 100))) / 100
+			// The fade toward the identity is done on the table rather than in the
+			// shader, so an imported LUT behaves exactly like a built-in look.
+			const processor = createToneProcessor({
+				lut: blendLutTowardIdentity(parsed.lut, strength),
+				strength: 1,
+				finish: NO_FINISH,
+			})
+			return {
+				params: { tonePass: processor },
+				dispose: () => processor.dispose(),
+				summary: `${parsed.title} - ${parsed.lut.size} points per axis${parsed.sourceDimensions === 1 ? ', expanded from a 1D curve' : ''}${
+					processor.degraded ? ', applied on the CPU' : ''
+				}`,
+			}
+		}
+
+		case 'canvas-background': {
+			const prepared = await prepareCanvasBackground({
+				params: {
+					aspect: str(ctx.params, 'aspect', '9:16'),
+					backdrop: str(ctx.params, 'backdrop', 'blur') as CanvasBackdrop,
+					blurStrength: num(ctx.params, 'blurStrength', 70),
+					dim: num(ctx.params, 'dim', 25),
+					color: str(ctx.params, 'color', '#0b0b10'),
+					colorB: str(ctx.params, 'colorB', '#1f2937'),
+					foregroundScale: num(ctx.params, 'foregroundScale', 100),
+				},
+				probe: ctx.probe,
+				plateFile: ctx.secondaryFile,
+				signal: ctx.signal,
+			})
+			return { params: prepared.params, perFrame: prepared.perFrame, summary: prepared.summary, dispose: prepared.dispose }
+		}
+
+		case 'blend-overlay': {
+			const prepared = await prepareBlendOverlay({
+				params: {
+					mode: str(ctx.params, 'mode', 'screen') as BlendMode,
+					opacity: num(ctx.params, 'opacity', 70),
+					placement: str(ctx.params, 'placement', 'fill') as BlendPlacement,
+					fit: str(ctx.params, 'fit', 'cover') as BlendFit,
+					scale: num(ctx.params, 'scale', 35),
+					startAt: num(ctx.params, 'startAt', 0),
+					loop: bool(ctx.params, 'loop', true),
+				},
+				overlayFile: ctx.secondaryFile,
+				signal: ctx.signal,
+			})
+			return { params: {}, perFrame: prepared.perFrame, summary: prepared.summary, dispose: prepared.dispose }
+		}
+
+		case 'auto-reframe': {
+			const { w, h } = parseAspect(str(ctx.params, 'aspect', '9:16'))
+			ctx.onProgress?.({ phase: 'looking for the subject', ratio: 0 })
+			const plan = await planAutoReframe({
+				source: ctx.file,
+				aspectW: w,
+				aspectH: h,
+				fps,
+				steadiness: num(ctx.params, 'steadiness', 60) / 100,
+				model: str(ctx.params, 'model', 'balanced') as SegmentationModelId,
+				motionOnly: bool(ctx.params, 'motionOnly', false),
+				signal: ctx.signal,
+				onProgress: (progress) => ctx.onProgress?.({ phase: progress.phase, ratio: progress.ratio * 0.35 }),
+				onModelProgress: (progress) =>
+					ctx.onProgress?.({
+						phase: progress.phase === 'model' ? 'downloading the person model' : 'starting the person model',
+						ratio: progress.ratio * 0.1,
+					}),
+			})
+			return {
+				params: { crop: plan.crop },
+				perFrame: async (frameIndex) => ({ cropOffset: plan.offsets[frameIndex] ?? { dx: 0, dy: 0 } }),
+				summary: plan.summary,
+				dispose: noop,
+			}
+		}
+
+		default:
+			return null
+	}
 }
 
 /** Builds the shared `FrameOpsParams` for every video-filter-backed tool. */
@@ -683,6 +1383,160 @@ async function buildVisualParams(handler: HandlerId, ctx: RunContext): Promise<F
 		default:
 			return null
 	}
+}
+
+/* ==========================================================================
+   Previews.
+
+   Two of the tools here cannot be judged from their sliders - a background
+   swap and a colour grade both have to be *seen* - and both would otherwise
+   be judged by rendering the whole clip, changing one number and rendering it
+   again. So one frame is put through the identical engine instead, at a
+   capped width, which takes about as long as it takes to decode that frame.
+
+   This is deliberately not a second implementation: it builds the same
+   processors and the same per-frame hook the render does, and hands them to
+   `extractThumbnail`, which runs the same `drawFrame`. A preview that could
+   disagree with the export would be worse than no preview.
+   ========================================================================== */
+
+export type PreviewContext = {
+	file: File
+	probe: CaptionVideoSource
+	params: RunParams
+	secondaryFile: File | null
+	/** where in the clip to sample; clamped into the clip by the caller */
+	atSeconds: number
+	signal: AbortSignal
+	onProgress?: (progress: RunProgress) => void
+}
+
+export type PreviewResult = {
+	blob: Blob
+	url: string
+	width: number
+	height: number
+	/** what the preview actually did, when that is worth saying */
+	note?: string
+}
+
+/** Preview frames are capped here: past this they cost more than they teach. */
+const PREVIEW_MAX_WIDTH = 720
+
+export async function previewTool(tool: ToolDef, ctx: PreviewContext): Promise<PreviewResult> {
+	const handler = tool.handler as HandlerId | undefined
+	if (!handler) throw new Error(`"${tool.name}" has nothing to preview.`)
+
+	const targetWidth = Math.min(PREVIEW_MAX_WIDTH, ctx.probe.width)
+	const atSeconds = Math.max(0, Math.min(ctx.probe.durationInSeconds - 0.05, ctx.atSeconds))
+
+	if (handler === 'color-tone') {
+		const processor = buildToneProcessor(ctx.params)
+		try {
+			ctx.onProgress?.({ phase: 'grading a frame', ratio: 0.5 })
+			const still = await extractThumbnail({
+				source: ctx.file,
+				atSeconds,
+				params: { targetWidth, tonePass: processor },
+				signal: ctx.signal,
+			})
+			return {
+				...still,
+				note: processor.degraded ? 'Graded on the CPU - bloom, halation and diffusion need WebGL2.' : undefined,
+			}
+		} finally {
+			processor.dispose()
+		}
+	}
+
+	if (handler === 'background-replace') {
+		ctx.onProgress?.({ phase: 'preparing the person model', ratio: 0.05 })
+		const prepared = await prepareBackgroundReplace({
+			params: readBackgroundParams(ctx.params),
+			probe: ctx.probe,
+			plateFile: ctx.secondaryFile,
+			signal: ctx.signal,
+			onProgress: (p) =>
+				ctx.onProgress?.({
+					phase: p.phase === 'model' ? 'downloading the person model' : 'starting the person model',
+					ratio: p.ratio * 0.8,
+				}),
+		})
+		try {
+			ctx.onProgress?.({ phase: 'compositing a frame', ratio: 0.9 })
+			const still = await extractThumbnail({
+				source: ctx.file,
+				atSeconds,
+				params: { targetWidth },
+				perFrame: prepared.perFrame,
+				signal: ctx.signal,
+			})
+			return {
+				...still,
+				note: prepared.degraded ? 'Composited without a GPU - no light wrap or fringe clean-up.' : undefined,
+			}
+		} finally {
+			prepared.dispose()
+		}
+	}
+
+	if (handler === 'chroma-overlay') {
+		ctx.onProgress?.({ phase: 'keying a frame', ratio: 0.5 })
+		const prepared = await prepareChromaOverlay({
+			params: readChromaOverlayParams(ctx.params),
+			overlayFile: ctx.secondaryFile,
+			signal: ctx.signal,
+		})
+		try {
+			const still = await extractThumbnail({
+				source: ctx.file,
+				atSeconds,
+				params: { targetWidth },
+				perFrame: prepared.perFrame,
+				signal: ctx.signal,
+			})
+			return {
+				...still,
+				note: prepared.degraded ? 'Keyed on the CPU - correct, but far slower over a whole clip.' : undefined,
+			}
+		} finally {
+			prepared.dispose()
+		}
+	}
+
+	const advanced = await buildAdvancedVisual(handler, ctx)
+	if (advanced) {
+		try {
+			ctx.onProgress?.({ phase: 'rendering a frame', ratio: 0.6 })
+			const still = await extractThumbnail({
+				source: ctx.file,
+				atSeconds,
+				// A tool that sets its own output size - the canvas reframe, an
+				// upscale - has already decided how big the frame is, and capping
+				// it here would preview a different picture from the one the
+				// export produces.
+				params: advanced.params.targetWidth ? advanced.params : { ...advanced.params, targetWidth },
+				perFrame: advanced.perFrame,
+				signal: ctx.signal,
+			})
+			return { ...still, note: advanced.summary }
+		} finally {
+			advanced.dispose()
+		}
+	}
+
+	const visualParams = await buildVisualParams(handler, {
+		file: ctx.file,
+		probe: ctx.probe,
+		params: ctx.params,
+		secondaryFile: ctx.secondaryFile,
+		batchFiles: [],
+		output: { format: 'mp4', quality: 'draft' },
+		signal: ctx.signal,
+		onProgress: () => {},
+	})
+	if (!visualParams) throw new Error(`"${tool.name}" cannot be previewed a frame at a time.`)
+	return extractThumbnail({ source: ctx.file, atSeconds, params: { ...visualParams, targetWidth }, signal: ctx.signal })
 }
 
 export type { AudioOutputFormat }

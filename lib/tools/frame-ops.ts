@@ -65,9 +65,78 @@ export type FrameOpsParams = {
 	watermark?: WatermarkSpec | null
 	text?: TextOverlaySpec | null
 	chromaKey?: ChromaKeySpec | null
+	/**
+	 * Whole-frame passes that own their own pixels.
+	 *
+	 * Everything else here is a description of what to do; these two are the
+	 * thing that does it, because both are per-pixel work that belongs on the
+	 * GPU (`background-replace.ts` and `tone-renderer.ts` each hold a shader and
+	 * its textures) and neither can be expressed as canvas state. They run in
+	 * this order - the new backdrop is in place before the grade sees the
+	 * frame, so the subject and the background are graded as one picture.
+	 */
+	backgroundPass?: FramePass | null
+	tonePass?: FramePass | null
+	/**
+	 * Stacked onto the finished picture, after the grade and after the vignette,
+	 * the way a watermark is - because that is what it is. The chroma-key
+	 * overlay lives here rather than in `watermark` because it has to key its
+	 * own source per frame and place the result itself.
+	 */
+	overlayPass?: FramePass | null
+	/**
+	 * Paints the frame's backdrop *before* the picture is drawn onto it.
+	 *
+	 * Every other pass here repaints a finished frame; this one owns what is
+	 * underneath it, which is the only way a blurred-canvas reframe can work -
+	 * the backdrop has to exist before the letterboxed picture lands on top of
+	 * it. A pass that runs here takes over from `padColor`: it is handed a
+	 * frame-sized context and is expected to cover it, because nothing else
+	 * clears the canvas between frames.
+	 */
+	underlayPass?: FramePass | null
+	/**
+	 * Whole-frame passes, in order, run after the grade and before the
+	 * sharpen/vignette finish.
+	 *
+	 * The three named slots above each exist because something has to happen at
+	 * one specific point in the pipeline. This is the general case: the
+	 * adjustment desk, the effects rack, shape masks, retouch, restoration,
+	 * borders and titles are all "repaint the finished frame", they compose in
+	 * whatever order the caller lists them, and giving each of them a named
+	 * field of its own would be eight fields that only ever hold one value.
+	 */
+	passes?: FramePass[] | null
+	/**
+	 * A per-frame affine move of the picture inside its own frame.
+	 *
+	 * This is the seam every "the camera moves" tool hangs off - Ken Burns
+	 * zooms, pans, spins, shakes, bounces and drifts are all the same three
+	 * numbers changing over time, so they share one implementation and one
+	 * place to get the sampling right. It is applied while the picture is
+	 * still being scaled out of the native-resolution crop, so a zoom-in reads
+	 * real source detail rather than magnifying an already-downscaled frame.
+	 */
+	transform?: FrameTransform | null
 	/** `contain` letterboxes/pillarboxes onto `padColor` instead of stretching to fill */
 	fit?: 'fill' | 'contain'
 	padColor?: string
+}
+
+export type FrameTransform = {
+	/** 1 leaves the framing alone; 1.2 is a 20% push in */
+	scale: number
+	/** clockwise, in degrees, about the centre of the frame */
+	rotateDeg: number
+	/** fraction of the output width/height to slide by, after the zoom */
+	offsetX: number
+	offsetY: number
+	/** 0-1; anything below 1 lets `padColor` show through */
+	opacity?: number
+}
+
+export type FramePass = {
+	apply(ctx: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D, width: number, height: number, frameIndex: number): void
 }
 
 export type ChromaKeyBackground =
@@ -197,7 +266,7 @@ function drawVignette(ctx: Ctx2D, width: number, height: number, strength: numbe
 	ctx.restore()
 }
 
-function anchorPoint(
+export function anchorPoint(
 	position: AnchorPosition,
 	frameWidth: number,
 	frameHeight: number,
@@ -327,6 +396,7 @@ export function drawFrame(
 	params: FrameOpsParams,
 	dims: FrameOpsDims,
 	cropOffset: { dx: number; dy: number } = { dx: 0, dy: 0 },
+	frameIndex = 0,
 ): void {
 	const rotate = params.rotate ?? 0
 	const crop = { x: dims.crop.x + cropOffset.dx, y: dims.crop.y + cropOffset.dy, width: dims.crop.width, height: dims.crop.height }
@@ -339,8 +409,16 @@ export function drawFrame(
 	rotationCtx.restore()
 
 	const contain = params.fit === 'contain'
+	const transform = params.transform ?? null
+	// A moved or shrunk picture no longer covers the canvas, and the canvas is
+	// reused frame after frame - without a fill, last frame's edges stay behind
+	// as a smear. The underlay pass, when there is one, is that fill.
+	const needsGround = contain || transform !== null
 	destCtx.save()
-	if (contain) {
+	if (params.underlayPass) {
+		destCtx.filter = 'none'
+		params.underlayPass.apply(destCtx, dims.width, dims.height, frameIndex)
+	} else if (needsGround) {
 		destCtx.filter = 'none'
 		destCtx.fillStyle = params.padColor ?? '#000000'
 		destCtx.fillRect(0, 0, dims.width, dims.height)
@@ -348,6 +426,13 @@ export function drawFrame(
 	const filter = buildCssFilter(params)
 	destCtx.filter = filter || 'none'
 	destCtx.translate(dims.width / 2, dims.height / 2)
+	if (transform) {
+		destCtx.globalAlpha = transform.opacity ?? 1
+		destCtx.translate(transform.offsetX * dims.width, transform.offsetY * dims.height)
+		if (transform.rotateDeg) destCtx.rotate((transform.rotateDeg * Math.PI) / 180)
+		const zoom = transform.scale > 0 ? transform.scale : 1
+		if (zoom !== 1) destCtx.scale(zoom, zoom)
+	}
 	destCtx.scale(params.flipH ? -1 : 1, params.flipV ? -1 : 1)
 	if (contain) {
 		const scale = Math.min(dims.width / dims.rotatedWidth, dims.height / dims.rotatedHeight)
@@ -361,8 +446,14 @@ export function drawFrame(
 	destCtx.filter = 'none'
 
 	if (params.chromaKey) applyChromaKey(destCtx, dims.width, dims.height, params.chromaKey)
+	if (params.backgroundPass) params.backgroundPass.apply(destCtx, dims.width, dims.height, frameIndex)
+	if (params.tonePass) params.tonePass.apply(destCtx, dims.width, dims.height, frameIndex)
+	if (params.passes) {
+		for (const pass of params.passes) pass.apply(destCtx, dims.width, dims.height, frameIndex)
+	}
 	if (params.sharpenAmount) applySharpen(destCtx, dims.width, dims.height, params.sharpenAmount)
 	if (params.vignette) drawVignette(destCtx, dims.width, dims.height, params.vignette)
+	if (params.overlayPass) params.overlayPass.apply(destCtx, dims.width, dims.height, frameIndex)
 	if (params.watermark) drawWatermark(destCtx, dims.width, dims.height, params.watermark)
 	if (params.text) drawText(destCtx, dims.width, dims.height, params.text)
 }

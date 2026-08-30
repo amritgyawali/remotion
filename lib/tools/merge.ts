@@ -16,6 +16,7 @@
 import { computeFrameDims, drawFrame, type FrameOpsDims } from './frame-ops'
 import { resampleChannel } from './audio-ops'
 import { decodeWholeTrack } from './av-remux'
+import { createRenderSink, describeRenderFailure } from '../media/render-sink'
 
 export type MergeFormat = 'mp4' | 'webm'
 export type MergeQuality = 'draft' | 'high' | 'max'
@@ -63,7 +64,6 @@ export async function mergeClips(args: {
 		ALL_FORMATS,
 		AudioBufferSource,
 		BlobSource,
-		BufferTarget,
 		Input,
 		Mp4OutputFormat,
 		Output,
@@ -77,7 +77,11 @@ export async function mergeClips(args: {
 
 	const inputA = new Input({ formats: ALL_FORMATS, source: new BlobSource(args.first) })
 	const inputB = new Input({ formats: ALL_FORMATS, source: new BlobSource(args.second) })
+	// Two clips end to end make a file bigger than either of them; it goes to
+	// disk as it is written rather than being grown in one heap buffer.
+	const sink = await createRenderSink(`merge.${args.format}`)
 	let output: InstanceType<typeof Output> | null = null
+	let handedOver = false
 	const onAbort = () => {
 		void output?.cancel()
 	}
@@ -112,8 +116,11 @@ export async function mergeClips(args: {
 		if (!videoCodec) throw new Error('This browser cannot encode video. Try Chrome or Edge on a desktop.')
 
 		output = new Output({
-			format: args.format === 'mp4' ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(),
-			target: new BufferTarget(),
+			format:
+				args.format === 'mp4'
+					? new Mp4OutputFormat({ fastStart: sink.streaming ? false : 'in-memory' })
+					: new WebMOutputFormat(),
+			target: sink.target,
 		})
 		const videoSource = new VideoSampleSource({
 			codec: videoCodec,
@@ -215,9 +222,8 @@ export async function mergeClips(args: {
 		args.onProgress?.({ phase: 'finishing', ratio: 0.99 })
 		await output.finalize()
 
-		const buffer = (output.target as InstanceType<typeof BufferTarget>).buffer
-		if (!buffer) throw new Error('The encoder produced no file.')
-		const blob = new Blob([buffer], { type: args.format === 'mp4' ? 'video/mp4' : 'video/webm' })
+		const blob = await sink.finish(args.format === 'mp4' ? 'video/mp4' : 'video/webm')
+		handedOver = true
 		args.onProgress?.({ phase: 'finishing', ratio: 1 })
 
 		const totalFrames = framesFromA + framesFromB
@@ -233,8 +239,9 @@ export async function mergeClips(args: {
 		}
 	} catch (error) {
 		if (signal.aborted) throw new MergeCancelled()
-		throw error
+		throw describeRenderFailure(error)
 	} finally {
+		if (!handedOver) void sink.discard()
 		signal.removeEventListener('abort', onAbort)
 		inputA.dispose()
 		inputB.dispose()

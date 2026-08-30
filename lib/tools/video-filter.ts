@@ -21,22 +21,45 @@
 
 import { computeFrameDims, drawFrame, type CropRect, type FrameOpsDims, type FrameOpsParams, type WatermarkSpec } from './frame-ops'
 import { encodeGif, type GifFrame } from './gif-encoder'
+import { createRenderSink, describeRenderFailure } from '../media/render-sink'
 
 export type VideoFilterFormat = 'mp4' | 'webm'
 export type VideoFilterQuality = 'draft' | 'high' | 'max'
 
 /**
+ * The decoded frame, handed to the per-frame hook before anything is drawn.
+ *
+ * A hook that only needs to know *when* it is (stabilisation, picture-in-
+ * picture) ignores this; a hook that has to look at the picture itself - the
+ * background remover, which must run a segmentation model over it - would
+ * otherwise have to decode the whole clip a second time to get at it.
+ */
+export type SourceFrameAccess = {
+	width: number
+	height: number
+	/** Draws this frame into `ctx`, scaled to `width` x `height`. */
+	drawTo(ctx: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D, width: number, height: number): void
+}
+
+/**
  * Called once per output frame, before it is drawn. This is the seam
- * stabilisation and picture-in-picture hook into the render loop without
- * either of them needing their own copy of it: stabilisation returns a
- * `cropOffset` that nudges this frame back onto a smoothed camera path;
- * picture-in-picture returns an `overlay` (built the same way a watermark
- * is) with that instant's frame from the second clip already drawn into it.
+ * stabilisation, picture-in-picture and background replacement hook into the
+ * render loop without any of them needing their own copy of it: stabilisation
+ * returns a `cropOffset` that nudges this frame back onto a smoothed camera
+ * path; picture-in-picture returns an `overlay` (built the same way a
+ * watermark is) with that instant's frame from the second clip already drawn
+ * into it; anything else returns a `patch` of frame parameters that apply to
+ * this frame alone.
  */
 export type PerFrameHook = (
 	frameIndex: number,
 	timestampSeconds: number,
-) => Promise<{ cropOffset?: { dx: number; dy: number }; overlay?: WatermarkSpec | null }>
+	frame: SourceFrameAccess,
+) => Promise<{
+	cropOffset?: { dx: number; dy: number }
+	overlay?: WatermarkSpec | null
+	patch?: Partial<FrameOpsParams>
+}>
 
 export type VideoFilterOptions = {
 	source: Blob
@@ -83,7 +106,6 @@ export async function renderVideoFilter(options: VideoFilterOptions): Promise<Vi
 	const {
 		ALL_FORMATS,
 		BlobSource,
-		BufferTarget,
 		EncodedAudioPacketSource,
 		EncodedPacketSink,
 		Input,
@@ -97,7 +119,11 @@ export async function renderVideoFilter(options: VideoFilterOptions): Promise<Vi
 	} = mediabunny
 
 	const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(options.source) })
+	// Every frame is re-encoded, so the output grows with the length of the clip
+	// and belongs on disk rather than in one heap buffer.
+	const sink = await createRenderSink(`filter.${options.format}`)
 	let output: InstanceType<typeof Output> | null = null
+	let handedOver = false
 	const onAbort = () => {
 		void output?.cancel()
 	}
@@ -131,8 +157,10 @@ export async function renderVideoFilter(options: VideoFilterOptions): Promise<Vi
 
 		output = new Output({
 			format:
-				options.format === 'mp4' ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(),
-			target: new BufferTarget(),
+				options.format === 'mp4'
+					? new Mp4OutputFormat({ fastStart: sink.streaming ? false : 'in-memory' })
+					: new WebMOutputFormat(),
+			target: sink.target,
 		})
 
 		const videoSource = new VideoSampleSource({
@@ -184,9 +212,21 @@ export async function renderVideoFilter(options: VideoFilterOptions): Promise<Vi
 				for await (const sample of sink.samples()) {
 					assertLive(signal)
 					const timestampSeconds = index / fps
-					const extra = options.perFrame ? await options.perFrame(index, timestampSeconds) : undefined
+					const extra = options.perFrame
+						? await options.perFrame(index, timestampSeconds, {
+								width: sourceWidth,
+								height: sourceHeight,
+								drawTo: (target, width, height) => sample.draw(target as CanvasRenderingContext2D, 0, 0, width, height),
+							})
+						: undefined
 					const frameParams: FrameOpsParams =
-						extra?.overlay !== undefined ? { ...options.params, watermark: extra.overlay } : options.params
+						extra?.patch || extra?.overlay !== undefined
+							? {
+									...options.params,
+									...(extra.patch ?? {}),
+									...(extra.overlay !== undefined ? { watermark: extra.overlay } : {}),
+								}
+							: options.params
 
 					drawFrame(
 						ctx,
@@ -194,6 +234,7 @@ export async function renderVideoFilter(options: VideoFilterOptions): Promise<Vi
 						frameParams,
 						dims,
 						extra?.cropOffset,
+						index,
 					)
 					sample.close()
 
@@ -232,9 +273,8 @@ export async function renderVideoFilter(options: VideoFilterOptions): Promise<Vi
 		options.onProgress?.({ phase: 'finishing', ratio: 0.99, framesDone, framesTotal })
 		await output.finalize()
 
-		const buffer = (output.target as InstanceType<typeof BufferTarget>).buffer
-		if (!buffer) throw new Error('The encoder produced no file.')
-		const blob = new Blob([buffer], { type: options.format === 'mp4' ? 'video/mp4' : 'video/webm' })
+		const blob = await sink.finish(options.format === 'mp4' ? 'video/mp4' : 'video/webm')
+		handedOver = true
 		options.onProgress?.({ phase: 'finishing', ratio: 1, framesDone, framesTotal })
 
 		return {
@@ -251,10 +291,11 @@ export async function renderVideoFilter(options: VideoFilterOptions): Promise<Vi
 		}
 	} catch (error) {
 		if (signal.aborted) throw new VideoFilterCancelled()
-		throw error
+		throw describeRenderFailure(error)
 	} finally {
 		signal.removeEventListener('abort', onAbort)
 		input.dispose()
+		if (!handedOver) void sink.discard()
 	}
 }
 
@@ -265,6 +306,12 @@ export async function extractThumbnail(args: {
 	source: Blob
 	atSeconds: number
 	params?: FrameOpsParams
+	/**
+	 * Run for this one frame, exactly as it would be during a render - which is
+	 * what lets a still preview of the background remover or a colour grade go
+	 * through the identical code path as the export it is previewing.
+	 */
+	perFrame?: PerFrameHook
 	signal: AbortSignal
 }): Promise<ThumbnailResult> {
 	assertLive(args.signal)
@@ -285,11 +332,25 @@ export async function extractThumbnail(args: {
 		const canvas = new OffscreenCanvas(dims.width, dims.height)
 		const ctx = canvas.getContext('2d')
 		if (!ctx) throw new Error('This browser has no 2D canvas context to draw frames with.')
+		const extra = args.perFrame
+			? await args.perFrame(0, Math.max(0, args.atSeconds), {
+					width: sourceWidth,
+					height: sourceHeight,
+					drawTo: (target, width, height) => sample.draw(target as CanvasRenderingContext2D, 0, 0, width, height),
+				})
+			: undefined
 		drawFrame(
 			ctx,
 			(c, sx, sy, sw, sh, dx, dy, dw, dh) => sample.draw(c as CanvasRenderingContext2D, sx, sy, sw, sh, dx, dy, dw, dh),
-			args.params ?? {},
+			extra?.patch || extra?.overlay !== undefined
+				? {
+						...(args.params ?? {}),
+						...(extra.patch ?? {}),
+						...(extra.overlay !== undefined ? { watermark: extra.overlay } : {}),
+					}
+				: (args.params ?? {}),
 			dims,
+			extra?.cropOffset,
 		)
 		sample.close()
 

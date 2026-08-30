@@ -27,6 +27,7 @@ import {
 	IconVault,
 	IconWaveform,
 } from '../Icons'
+import RemoteVideoField from '../RemoteVideoField'
 
 const PHASE_LABEL: Record<AnalysisProgress['phase'], string> = {
 	decoding: 'Listening to the audio',
@@ -211,6 +212,8 @@ export default function SilenceSourcePanel({
 							</div>
 						</div>
 					)}
+
+					<RemoteVideoField onFile={(file) => onVideoFiles([file])} disabled={busy} />
 
 					{analysisError ? (
 						<div className="notice notice--error" style={{ marginTop: 10 }}>

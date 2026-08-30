@@ -20,6 +20,7 @@
  */
 
 import { applyGainDb } from './audio-ops'
+import { createRenderSink, describeRenderFailure } from '../media/render-sink'
 
 export type AudioOutputFormat = 'mp4' | 'webm'
 export type AudioOnlyFormat = 'wav' | 'webm'
@@ -207,7 +208,6 @@ export async function remuxWithAudioEdit(options: RemuxOptions): Promise<RemuxRe
 		ALL_FORMATS,
 		AudioBufferSource,
 		BlobSource,
-		BufferTarget,
 		EncodedPacketSink,
 		EncodedAudioPacketSource,
 		EncodedVideoPacketSource,
@@ -220,7 +220,12 @@ export async function remuxWithAudioEdit(options: RemuxOptions): Promise<RemuxRe
 	} = mediabunny
 
 	const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(options.source) })
+	// Streamed to disk rather than grown in memory: the picture is copied packet
+	// for packet, so the output is as big as the input, and a long clip would ask
+	// the browser for a contiguous buffer it cannot give.
+	const sink = await createRenderSink(`remux.${options.format}`)
 	let output: InstanceType<typeof Output> | null = null
+	let handedOver = false
 	const onAbort = () => {
 		void output?.cancel()
 	}
@@ -236,8 +241,11 @@ export async function remuxWithAudioEdit(options: RemuxOptions): Promise<RemuxRe
 		const containerFormat = await pickContainerForVideoCodec(mediabunny, videoCodec, options.format)
 
 		output = new Output({
-			format: containerFormat === 'mp4' ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(),
-			target: new BufferTarget(),
+			format:
+				containerFormat === 'mp4'
+					? new Mp4OutputFormat({ fastStart: sink.streaming ? false : 'in-memory' })
+					: new WebMOutputFormat(),
+			target: sink.target,
 		})
 
 		if (options.metadata) {
@@ -355,18 +363,18 @@ export async function remuxWithAudioEdit(options: RemuxOptions): Promise<RemuxRe
 		videoSource.close()
 		await output.finalize()
 
-		const buffer = (output.target as InstanceType<typeof BufferTarget>).buffer
-		if (!buffer) throw new Error('The encoder produced no file.')
-		const blob = new Blob([buffer], { type: containerFormat === 'mp4' ? 'video/mp4' : 'video/webm' })
+		const blob = await sink.finish(containerFormat === 'mp4' ? 'video/mp4' : 'video/webm')
+		handedOver = true
 		options.onProgress?.({ phase: 'finishing', ratio: 1 })
 
 		return { blob, url: URL.createObjectURL(blob), format: containerFormat, sizeInBytes: blob.size }
 	} catch (error) {
 		if (signal.aborted) throw new RemuxCancelled()
-		throw error
+		throw describeRenderFailure(error)
 	} finally {
 		signal.removeEventListener('abort', onAbort)
 		input.dispose()
+		if (!handedOver) void sink.discard()
 	}
 }
 
