@@ -4,6 +4,23 @@ import { basename, normalizePath, stripCommonRoot } from './path-utils'
 import type { SourceFile, VirtualProject } from './types'
 
 export const CODE_EXTENSIONS = ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.cjs', '.css', '.json']
+
+/**
+ * Types a picker might report for a source file. A `.tsx` has no registered
+ * type anywhere, so browsers hand back `text/plain`, an empty string, or
+ * `application/octet-stream` depending on the platform and the provider.
+ */
+export const CODE_MIME_TYPES = [
+	'text/plain',
+	'text/javascript',
+	'application/javascript',
+	'application/json',
+	'text/css',
+]
+
+/** Types that are definitely not source, whatever the filename says. */
+const BINARY_TYPE_PREFIXES = ['image/', 'video/', 'audio/', 'font/']
+const BINARY_TYPES = ['application/pdf', 'application/zip', 'application/x-zip-compressed']
 export const MAX_FILE_BYTES = 2 * 1024 * 1024
 export const MAX_FILES = 200
 
@@ -75,6 +92,49 @@ function finalize(name: string, rawFiles: SourceFile[]): VirtualProject {
 	return { name, entry: pickEntry(files), files }
 }
 
+/**
+ * Bytes that decoded as text rather than as a mislabelled binary. `File.text()`
+ * always decodes UTF-8 and substitutes U+FFFD for what it cannot read, so a
+ * dense run of replacement characters - or any NUL - means this was never
+ * source code.
+ */
+function looksLikeSourceText(contents: string): boolean {
+	if (contents.trim().length === 0) return false
+	if (contents.includes('\u0000')) return false
+	const replacements = contents.split('\uFFFD').length - 1
+	return replacements / contents.length < 0.01
+}
+
+/**
+ * The name to file recovered bytes under. A share sheet that renames
+ * `Video.tsx` to `Video.tsx.txt` gets the suffix taken back off; one that drops
+ * the extension entirely gets `.tsx`, which is what an unlabelled Remotion
+ * composition almost always is.
+ */
+function recoveredPath(path: string): string {
+	const withoutTxt = path.replace(/\.txt$/i, '')
+	if (isCodeFile(withoutTxt)) return withoutTxt
+	return `${withoutTxt || 'composition'}.tsx`
+}
+
+/**
+ * A single picked file whose extension did not survive the trip. Android's
+ * Storage Access Framework, iOS share sheets and cloud providers all rename or
+ * strip a `.tsx` on the way through, which would otherwise fail as "no code
+ * files found" even though the bytes are a perfectly good composition. Obvious
+ * binaries are refused on their reported type; everything else has to decode as
+ * text before it is accepted.
+ */
+async function recoverSourceFile(file: File): Promise<SourceFile | null> {
+	const type = (file.type || '').toLowerCase()
+	if (BINARY_TYPE_PREFIXES.some((prefix) => type.startsWith(prefix))) return null
+	if (BINARY_TYPES.includes(type)) return null
+
+	const source = await readTextFile(file)
+	if (!looksLikeSourceText(source.contents)) return null
+	return { ...source, path: recoveredPath(source.path) }
+}
+
 async function readTextFile(file: File): Promise<SourceFile> {
 	if (file.size > MAX_FILE_BYTES) {
 		throw new Error(`${file.name} is larger than 2 MB.`)
@@ -105,6 +165,13 @@ export async function projectFromFiles(fileList: File[]): Promise<VirtualProject
 	for (const file of fileList) {
 		if (!isCodeFile(file.name)) continue
 		files.push(await readTextFile(file))
+	}
+
+	// Nothing matched by name: one file, picked on a phone, whose extension the
+	// picker rewrote. Read it and let the contents decide.
+	if (files.length === 0 && fileList.length === 1) {
+		const recovered = await recoverSourceFile(fileList[0])
+		if (recovered) files.push(recovered)
 	}
 
 	const name =

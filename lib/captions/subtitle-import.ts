@@ -34,6 +34,7 @@
  * karaoke styles from its own timestamps rather than from an estimate.
  */
 
+import { pickerAccept } from '../file-picker'
 import { cueFromTokens, makeCue, timeWords } from './cues'
 import type { CaptionCue, CaptionToken } from './types'
 
@@ -59,25 +60,15 @@ const SUBTITLE_MIME_TYPES = [
 export const SUBTITLE_ACCEPT = [...SUBTITLE_EXTENSIONS, ...SUBTITLE_MIME_TYPES].join(',')
 
 /**
- * True where an `accept` list is more likely to hide the user's file than to
- * help them find it - phones and tablets, whose pickers filter by system type
- * and know no type for a subtitle. Safe to call during SSR, where it is false;
- * call it from an effect so the attribute is only relaxed after hydration.
+ * Phones and tablets filter the picker by system type and know no type for a
+ * subtitle, so the filter has to come off there. That rule is shared with the
+ * source upload in the main studio, which hits the same wall with `.tsx`.
  */
-export function isRestrictiveFilePicker(): boolean {
-	if (typeof navigator === 'undefined') return false
-	const data = (navigator as Navigator & { userAgentData?: { mobile?: boolean } }).userAgentData
-	if (data?.mobile === true) return true
-	const ua = navigator.userAgent || ''
-	if (/Android|iPhone|iPod|Windows Phone/i.test(ua)) return true
-	// iPadOS reports itself as a Mac; the touch points give it away.
-	if (/iPad/i.test(ua)) return true
-	return /Macintosh/i.test(ua) && navigator.maxTouchPoints > 1
-}
+export { isRestrictiveFilePicker } from '../file-picker'
 
 /** What to put on the file input right now: no filter where a filter would hide everything. */
 export function subtitleAccept(): string | undefined {
-	return isRestrictiveFilePicker() ? undefined : SUBTITLE_ACCEPT
+	return pickerAccept(SUBTITLE_ACCEPT)
 }
 
 /**

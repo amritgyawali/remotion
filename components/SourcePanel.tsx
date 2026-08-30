@@ -1,8 +1,9 @@
 'use client'
 
-import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from 'react'
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { SAMPLES, type SampleDefinition } from '../lib/samples'
-import { CODE_EXTENSIONS } from '../lib/project'
+import { isRestrictiveFilePicker } from '../lib/file-picker'
+import { CODE_EXTENSIONS, CODE_MIME_TYPES } from '../lib/project'
 import type { VirtualProject } from '../lib/types'
 import AiCreator, {
 	type AiChatMessage,
@@ -19,7 +20,12 @@ import {
 	IconUpload,
 } from './Icons'
 
-const ACCEPT = [...CODE_EXTENSIONS, '.zip'].join(',')
+/**
+ * The desktop filter. The MIME types are in it because a few desktop pickers
+ * match on type rather than on suffix, and because `text/plain` is what a
+ * browser reports for a hand-saved `.tsx`.
+ */
+const ACCEPT = [...CODE_EXTENSIONS, '.zip', ...CODE_MIME_TYPES].join(',')
 
 const BADGE_CLASS: Record<string, string> = {
 	'ai-starter': 'badge--accent',
@@ -78,6 +84,19 @@ export default function SourcePanel({
 	const inputRef = useRef<HTMLInputElement>(null)
 	const [dragging, setDragging] = useState(false)
 	const [showSamples, setShowSamples] = useState(false)
+	/**
+	 * Phones and tablets resolve `accept` against the system type database, and
+	 * no mobile OS has a type for `.tsx` - so the desktop filter greys out every
+	 * composition there and the picker becomes unusable. Render the desktop
+	 * filter, which is also what the server sends, then drop it after hydration
+	 * on the platforms that need it. `projectFromFiles` validates what comes
+	 * back, so nothing is let through that the studio cannot compile.
+	 */
+	const [accept, setAccept] = useState<string | undefined>(ACCEPT)
+
+	useEffect(() => {
+		if (isRestrictiveFilePicker()) setAccept(undefined)
+	}, [])
 
 	const handleDrop = useCallback(
 		(event: React.DragEvent<HTMLElement>) => {
@@ -89,12 +108,18 @@ export default function SourcePanel({
 		[onFiles],
 	)
 
+	/*
+	 * Kept out of the layout rather than display:none - iOS Safari ignores a
+	 * programmatic click on an input it considers hidden. No `capture`
+	 * attribute either: it forces the camera on Android, and no camera
+	 * produces a Remotion composition.
+	 */
 	const filePicker = (
 		<input
 			ref={inputRef}
 			type="file"
 			className="sr-only"
-			accept={ACCEPT}
+			accept={accept}
 			multiple
 			onChange={(event) => {
 				const files = Array.from(event.target.files ?? [])
@@ -125,7 +150,7 @@ export default function SourcePanel({
 				<IconUpload size={20} />
 			</span>
 			<span className="dropzone-title">Drop a .tsx file or a .zip project</span>
-			<span className="dropzone-hint">or click to browse - it compiles here, never uploaded</span>
+			<span className="dropzone-hint">or tap to browse - it compiles here, never uploaded</span>
 		</div>
 	)
 
@@ -240,7 +265,7 @@ export default function SourcePanel({
 							</span>
 							<span>
 								<strong>Upload a file</strong>
-								<small>Drop a .tsx composition or a zipped project anywhere on this page.</small>
+								<small>Tap to pick a .tsx composition or a zipped project, or drop one on this page.</small>
 							</span>
 						</button>
 
