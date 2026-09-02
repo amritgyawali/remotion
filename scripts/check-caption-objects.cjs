@@ -106,9 +106,14 @@ const sprite = require('../lib/captions/object-sprite.ts')
 const session = require('../lib/captions/session.ts')
 const auto = require('../lib/captions/object-auto.ts')
 const cutout = require('../lib/captions/object-cutout.ts')
+const fetcher = require('../lib/captions/object-fetch.ts')
 const objectsRoute = require('../app/api/captions/objects/route.ts')
 const keywordsRoute = require('../app/api/captions/keywords/route.ts')
 const imagesRoute = require('../app/api/captions/images/route.ts')
+// The search engine itself, which is a library rather than a route: Next only
+// lets a route file export its handlers, and the rules worth checking - what
+// counts as a watermark, which providers are reachable - are not handlers.
+const imageSearch = require('../lib/captions/image-search.ts')
 
 const PUBLIC_ROOT = path.join(__dirname, '..', 'public')
 
@@ -1030,6 +1035,160 @@ function checkCutout() {
 	)
 }
 
+/* ================== 11b. the harder pictures, and the last resort */
+
+/**
+ * The three things the first version of the cut-out could not do.
+ *
+ * A studio backdrop is a gradient, not a colour; one tolerance cannot serve
+ * both a logo on flat white and a bottle on a lit sweep; and a word that has no
+ * cut-out anywhere still needs a picture. Each check below is one of those.
+ */
+function checkHarderPictures() {
+	console.log('\nHarder pictures, and the last resort')
+
+	const SIZE = 64
+	const inSquare = (x, y) => x >= 22 && x < 42 && y >= 22 && y < 42
+
+	// A backdrop that ramps from 210 at the top to 250 at the bottom. Neighbours
+	// differ by well under a step, but the top and bottom are 40 apart - which is
+	// further than the flat tolerance reaches, so only a fill that walks the ramp
+	// takes all of it.
+	const ramp = (y) => 210 + Math.round((y / (SIZE - 1)) * 40)
+	const onGradient = rgba(SIZE, SIZE, (x, y) =>
+		inSquare(x, y) ? [220, 40, 40, 255] : [ramp(y), ramp(y), ramp(y), 255],
+	)
+
+	const flatOnly = cutout.knockoutBackground(onGradient, { tolerance: 4, stepTolerance: 0, feather: 0 })
+	const walked = cutout.knockoutBackground(onGradient, { tolerance: 4, stepTolerance: 5, feather: 0 })
+	check(
+		'a fill that cannot step leaves most of a gradient behind',
+		flatOnly.removedRatio < 0.5,
+		flatOnly.removedRatio,
+	)
+	check('one that can step takes the whole ramp', walked.removedRatio > 0.85, walked.removedRatio)
+	check('and still stops at the subject', alphaAt(walked.image, 32, 32) === 255)
+	check('both corners of the ramp are gone', alphaAt(walked.image, 0, 0) === 0 && alphaAt(walked.image, 0, SIZE - 1) === 0)
+
+	// The leash: a smooth ramp that runs all the way through the middle of the
+	// picture is not a background with an object on it, and walking it end to end
+	// would leave nothing. The fill is allowed to wander, but not that far.
+	const allRamp = rgba(SIZE, SIZE, (x, y) => {
+		const value = Math.round((y / (SIZE - 1)) * 255)
+		return [value, value, value, 255]
+	})
+	const swallowed = cutout.prepareObjectImage(allRamp)
+	check('a picture that is nothing but a ramp is refused', swallowed.usable === false, swallowed.note)
+	check('and refused for the right reason - a band, not a rectangle', /band/.test(swallowed.note), swallowed.note)
+
+	// The other side of that rule. A subject cropped so it runs off the bottom of
+	// the frame is the ordinary case in a tight product shot, and it must still
+	// cut out: it leaves one whole edge of the border behind, and one edge is a
+	// quarter of it.
+	const bleeding = rgba(SIZE, SIZE, (x, y) =>
+		x >= 18 && x < 46 && y >= 30 ? [220, 40, 40, 255] : [255, 255, 255, 255],
+	)
+	const cropped = cutout.prepareObjectImage(bleeding)
+	check('a subject that runs off one edge still cuts out', cropped.usable === true, cropped.note)
+	check('and keeps the part that touches the edge', alphaAt(cropped.image, 14, cropped.image.height - 1) === 255)
+
+	// The escalation. This background is 30 units from its own border colour -
+	// too far for the gentlest attempt, comfortably inside the boldest.
+	const dappled = rgba(SIZE, SIZE, (x, y) => {
+		if (inSquare(x, y)) return [220, 40, 40, 255]
+		const mottle = (x + y) % 2 === 0 ? 225 : 255
+		return [mottle, mottle, mottle, 255]
+	})
+	const gentle = cutout.knockoutBackground(dappled, { tolerance: 3, stepTolerance: 0, feather: 0 })
+	check('the gentlest setting cannot take a mottled background', gentle.knockedOut === false, gentle.removedRatio)
+
+	const escalated = cutout.prepareObjectImage(dappled)
+	check('but the escalation does', escalated.usable === true, escalated.note)
+	check('and reports which attempt managed it', escalated.attempt !== null && escalated.attempt.tolerance > 0, escalated.attempt)
+	check('by the route it took', escalated.route === 'knockout', escalated.route)
+
+	// An easy picture must not be cut with a bold setting just because a bold
+	// setting exists: the gentlest one that works is the one that gets used.
+	const easy = cutout.prepareObjectImage(
+		rgba(SIZE, SIZE, (x, y) => (inSquare(x, y) ? [220, 40, 40, 255] : [255, 255, 255, 255])),
+	)
+	check('an easy picture is cut with the gentlest attempt', easy.attempt && easy.attempt.tolerance === 9, easy.attempt)
+
+	// A caller's own tolerance is honoured exactly - the escalation is a default,
+	// not an override of somebody's slider.
+	const pinned = cutout.prepareObjectImage(dappled, { tolerance: 3, stepTolerance: 0 })
+	check('an explicit tolerance is not escalated past', pinned.usable === false, pinned.note)
+
+	/* ------------------------------- the soft edge ------------------------- */
+
+	const solid = rgba(SIZE, SIZE, () => [90, 140, 200, 255])
+	const soft = cutout.softenEdges(solid, 8)
+	check('a softened edge leaves the middle alone', alphaAt(soft, 32, 32) === 255)
+	check('and takes the very corner to nothing', alphaAt(soft, 0, 0) === 0, alphaAt(soft, 0, 0))
+	check('the corner is rounded, not chamfered', alphaAt(soft, 1, 1) < alphaAt(soft, 1, 32), {
+		corner: alphaAt(soft, 1, 1),
+		edge: alphaAt(soft, 1, 32),
+	})
+	let rising = true
+	for (let x = 1; x < 8; x++) if (alphaAt(soft, x, 32) < alphaAt(soft, x - 1, 32)) rising = false
+	check('and the ramp only ever climbs inward', rising)
+	check('softening never touches the original buffer', solid.data[3] === 255)
+
+	/* ----------------------------- the last resort ------------------------- */
+
+	let seed = 11
+	const random = () => {
+		seed = (seed * 1664525 + 1013904223) >>> 0
+		return (seed >>> 16) & 0xff
+	}
+	const photograph = rgba(SIZE, SIZE, () => [random(), random(), random(), 255])
+
+	const refused = cutout.prepareObjectImage(photograph)
+	check('a photograph is still refused by default', refused.usable === false, refused.note)
+	check('and says so by its route', refused.route === 'none', refused.route)
+
+	const kept = cutout.prepareObjectImage(photograph, { allowPhoto: true })
+	check('the last resort keeps it', kept.usable === true, kept.note)
+	check('and flags it as a photograph, not a cut-out', kept.fallback === true && kept.route === 'photo', kept.route)
+	check('with its middle intact', alphaAt(kept.image, 32, 32) === 255)
+	check('and its edge softened into the frame', alphaAt(kept.image, 0, 0) === 0, alphaAt(kept.image, 0, 0))
+	check(
+		'a picture that cuts out is never given the last resort treatment',
+		cutout.prepareObjectImage(
+			rgba(SIZE, SIZE, (x, y) => (inSquare(x, y) ? [220, 40, 40, 255] : [255, 255, 255, 255])),
+			{ allowPhoto: true },
+		).fallback === false,
+	)
+
+	/* ------------------------- the order candidates are spent in ------------ */
+
+	const candidate = (id, tier, alphaHint) => ({
+		id,
+		title: id,
+		url: `https://example.org/${id}.png`,
+		width: 512,
+		height: 512,
+		mime: 'image/png',
+		source: 'commons',
+		tier,
+		credit: id,
+		pageUrl: null,
+		alphaHint,
+	})
+	const ordered = fetcher.orderCandidates([
+		candidate('icon', 'icon', 1),
+		candidate('photo', 'photo', 0.05),
+		candidate('open-weak', 'open', 0.3),
+		candidate('web', 'web', 0.95),
+		candidate('open-strong', 'open', 0.9),
+	])
+	check(
+		'transparency is spent first and the pictogram last',
+		ordered.map((entry) => entry.id).join(',') === 'open-strong,open-weak,web,photo,icon',
+		ordered.map((entry) => entry.id),
+	)
+}
+
 /* ================================ 12. three times the size of the head */
 
 function checkHeadMultiple() {
@@ -1140,6 +1299,53 @@ async function checkNewRoutes() {
 	// has to refuse the same things.
 	const download = (url) =>
 		imagesRoute.GET(new Request(`http://localhost/api/captions/images?url=${encodeURIComponent(url)}`))
+
+	// Provenance. A watermark is not something to detect in the pixels after the
+	// fact - it is something to not go and fetch, so the test is on the host and
+	// on a title that advertises itself as a preview.
+	const suspect = (url, title = 'a mango', pageUrl = null) =>
+		imageSearch.looksWatermarked({ url, title, pageUrl })
+	for (const host of ['shutterstock.com', 'www.alamy.com', 'pngitem.com', 'img.freepik.com']) {
+		check(`a picture from ${host} is refused`, suspect(`https://${host}/mango.png`) === true)
+	}
+	check(
+		'and so is one whose page is on such a host',
+		suspect('https://cdn.example.org/mango.png', 'a mango', 'https://www.dreamstime.com/mango') === true,
+	)
+	check(
+		'a title that says it is the watermarked one is refused',
+		suspect('https://example.org/mango.png', 'Mango preview image with watermark') === true,
+	)
+	check(
+		'while an ordinary open-licence picture is not',
+		suspect('https://upload.wikimedia.org/mango.png', 'Mango on a white background') === false,
+	)
+
+	// The same refusal at the download door: a candidate list is data, and
+	// nothing stops a caller asking for an address the search never offered.
+	check(
+		'the picture proxy refuses a watermarking host outright',
+		(await download('https://www.shutterstock.com/image/mango.jpg')).status === 403,
+	)
+
+	// Which providers this deployment can reach, so the panel can say why the
+	// search is narrow rather than leaving the user to guess.
+	const withoutKeys = imageSearch.configuredProviders()
+	check(
+		'the keyless providers are always in the ladder',
+		imageSearch.KEYLESS.every((source) => withoutKeys.includes(source)),
+		withoutKeys,
+	)
+	const hadKey = process.env.PIXABAY_API_KEY
+	process.env.PIXABAY_API_KEY = 'test-key'
+	const withKey = imageSearch.configuredProviders()
+	if (hadKey === undefined) delete process.env.PIXABAY_API_KEY
+	else process.env.PIXABAY_API_KEY = hadKey
+	check('and a configured key adds its provider', withKey.includes('pixabay'), withKey)
+	check(
+		'which is reported as unavailable again once the key goes',
+		imageSearch.configuredProviders().includes('pixabay') === (hadKey !== undefined && hadKey !== ''),
+	)
 
 	check('a download with no address is refused', (await imagesRoute.GET(new Request('http://localhost/api/captions/images'))).status === 400)
 	for (const [label, url] of [
@@ -1345,8 +1551,16 @@ async function checkStudio() {
 	const running = await reachable(`${BASE}/captions`)
 	const server = running ? null : await startServer()
 	const { openBrowser, ensureBrowser } = require('@remotion/renderer')
-	await ensureBrowser()
-	const browser = await openBrowser('chrome', { chromiumOptions: { headless: !HEADFUL } })
+	// Remotion fetches its own headless shell by default, which is right on a
+	// developer's machine and impossible on a build host whose egress is
+	// allow-listed. REMOTION_BROWSER_EXECUTABLE points at one that is already
+	// there instead - any Chromium will do, this only drives a page.
+	const executable = process.env.REMOTION_BROWSER_EXECUTABLE || null
+	if (!executable) await ensureBrowser()
+	const browser = await openBrowser('chrome', {
+		browserExecutable: executable,
+		chromiumOptions: { headless: !HEADFUL },
+	})
 
 	try {
 		const page = await browser.newPage({ context: null, logLevel: 'error', indent: false, pageIndex: 0 })
@@ -1919,6 +2133,7 @@ async function main() {
 	checkSession()
 	checkKeywords()
 	checkCutout()
+	checkHarderPictures()
 	checkHeadMultiple()
 	await checkRoute()
 	await checkNewRoutes()

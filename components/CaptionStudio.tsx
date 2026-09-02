@@ -262,6 +262,7 @@ const IDLE_AUTO: ObjectAutoState = {
 	error: null,
 	target: 0,
 	misses: [],
+	photos: [],
 	finished: false,
 }
 
@@ -2141,13 +2142,14 @@ export default function CaptionStudio() {
 				setObjectAuto((current) => ({
 					...current,
 					misses: plan.misses,
+					photos: plan.photos,
 					ratio: 0.52,
 					message: `Placing ${plan.shots.length} pictures behind the speaker`,
 				}))
 
 				if (plan.shots.length === 0) {
 					throw new Error(
-						'No usable cut-out could be found for anything said in this clip, so there is nothing to place. Try the art pack below, or drop in your own PNG for a line.',
+						'No picture could be found for anything said in this clip - not a cut-out, not a shape in the art pack, not even a photograph - so there is nothing to place. Try the art pack below, or drop in your own PNG for a line.',
 					)
 				}
 
