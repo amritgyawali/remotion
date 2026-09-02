@@ -497,6 +497,128 @@ headers up. Where isolation is unavailable (Safari today), or where the WASM
 bundle itself cannot be fetched, the studio says so and switches to NVIDIA cloud
 transcription; the Write and Import paths still work either way.
 
+### Put an object behind the speaker
+
+The **Objects** panel (key `3`) is the other half of a captioned edit: the
+person is cut out of every frame and a picture is placed *behind their head*,
+timed to the word that chose it, while the subtitles stay a live layer at the
+bottom.
+
+1. **Plan objects.** The shot list is a pure function of the transcript. The
+   keyword matcher in `lib/captions/object-library.ts` reads each cue's own
+   words against a catalogue of 65 concrete objects from the studio's CC0
+   visual pack - rocket, laptop, trophy, confetti, bar chart - so the thing on
+   screen is always traceable to something the speaker actually said. A line
+   about nothing gets nothing: an unrelated shape behind someone's head is
+   worse than an empty frame. When `NVIDIA_API_KEY` is set,
+   `/api/captions/objects` then refines those choices with a language model,
+   which is what catches the objects a line only *implies* - "we finally
+   shipped it" becomes a package. The model may only choose ids from the
+   catalogue it was handed, every pick is re-validated against the transcript,
+   and a failed or rate-limited request costs nothing because the local plan is
+   already complete.
+2. **Or use your own.** Any shot can be swapped for another catalogue object or
+   for a PNG you upload; the bytes go into the same IndexedDB vault the clip
+   lives in, so an uploaded object survives a refresh.
+3. **Or use a 3D model.** `npm run assets:3d` builds 1,200 original CC0 GLB
+   models, and the panel will put one on a slow turntable behind the speaker,
+   rendered with three.js into a transparent sprite and re-rendered per frame.
+   The 3D runtime is loaded only when a plan actually contains a model. The
+   pack is generated rather than committed, so on a fresh checkout the panel
+   says how to build it instead of failing half way through a bake.
+4. **Bake.** The clip is decoded once, the objects are composited in, and the
+   video is re-encoded. The audio track is copied packet for packet, so every
+   caption timing survives exactly. The original is parked in the vault
+   *before* the first frame is encoded, and one press puts it back.
+
+**The composite is one draw, not a shader.** Writing the mix out is what makes
+this cheap. Compositing the person over a *plate* that is the frame with an
+object painted on it -
+
+    out   = mix(plate, frame, a)              // a = the person's matte
+    plate = over(object, frame)               // = o.rgb·o.a + frame·(1-o.a)
+    out   = frame·(a + (1-a)(1-o.a)) + o.rgb·o.a·(1-a)
+
+— is *exactly* the frame with the object drawn over it at an effective alpha of
+`o.a · (1 - a)`. The frame is never read. So there is no plate to build, no
+frame texture to upload, no full-frame shader pass and no read-back: the whole
+composite is one ordinary source-over draw of a small object layer whose alpha
+has been multiplied by one minus the matte (`destination-out`, natively, in
+canvas 2D). Three things follow. The work is proportional to the object rather
+than to the frame - **22% of the frame on a typical shot**, and a 4K clip costs
+what a 1080p one does plus the blit. There is no GPU path to diverge from, so a
+machine without WebGL renders the same picture as everything else. And a
+segmentation error anywhere the object is not cannot show up at all, because
+those pixels are never touched.
+
+Two passes are added on top, and both are about reading as *behind* rather than
+pasted: the speaker casts a soft **contact shadow** onto the object (the matte
+again, blurred and offset - the cheapest cue that separates two planes), and
+the object **spills light** around the silhouette, confined to the band where
+the matte is neither fully in nor fully out.
+
+**The model runs as rarely as it can.** Segmentation is the expensive part of a
+bake, so it is skipped entirely outside a shot, and *inside* one it only runs
+when the picture has actually changed: the frame the model would be given is
+compared with the last one it saw - an absolute difference over a subsampled
+copy of a 256-wide image - and the previous mask is reused while the shot is
+still. A hard ceiling on consecutive reuses means a slow drift can never
+accumulate. On a talking head this **skips the model on around three quarters
+of the frames that carry an object**, and it cannot change a frame the model
+would have agreed with.
+
+**Finding the head, and keeping it steady.** The crown is the first row whose
+*run* of subject pixels crosses a fraction of the frame width - one stray pixel
+of hair or a mis-segmented lamp sits above almost every real head - and the
+horizontal centre is averaged over the top sixth of the subject's height, so it
+tracks a turning head without chasing a curl. That point is then filtered, and
+not with a blend: a blend has one setting and two jobs, and damping it enough
+to kill a still speaker's wobble makes it visibly trail a real head turn. A
+[one-euro filter](https://gery.casiez.net/1euro/) moves its own cutoff with the
+measured speed instead. `npm run objects:check` tunes a plain blend until it
+suppresses *exactly* as much jitter and then measures both through a head turn:
+the filter lags less than half as far. That comparison is the reason the filter
+is there, so it is a test rather than a claim.
+
+**Placement knows what else is on screen.** Objects are sized against the
+speaker's head by default rather than against the frame, so a cut between a
+wide shot and a close-up does not change how big the object looks next to the
+person it belongs to - with the head measurement clamped, because one frame
+where the mask finds a doorway would otherwise throw a two-metre rocket across
+the picture. And the object is kept out of the band the captions own, measured
+from the caption style itself (its distance from the edge, plus the height its
+lines occupy), so restyling the subtitles moves the boundary with them. An
+object that cannot fit hangs off the open edge rather than covering the text.
+
+**Which objects, when.** Choices are scored by the matcher's confidence times
+how distinctive the word is *in this transcript* - inverse document frequency
+over the cues, because the corpus that matters is this video. A clip that says
+"rocket" in half its lines gets a rocket once, not eight times; the line that
+mentions money once is the one worth a picture. A minimum quiet between objects
+then stops a dense passage becoming a slideshow, and when two objects want the
+same moment the better-scoring one takes it rather than queueing behind a weak
+first match.
+
+Everything drawn is a pure function of the clip's own clock - the entrance and
+exit ease, the float, the spin, the turntable's angle - so a re-bake reproduces
+the same frames, and the still preview at 3.2s is exactly the video at 3.2s.
+The preview button runs the identical per-frame hook the bake runs; there is no
+second compositing path that could disagree with the first. When a bake
+finishes the panel reports what it actually did - how many frames carried an
+object, how many of them skipped the model, how much of each frame was
+repainted, and how long it took - because a claim about speed that nobody
+measures is a claim about nothing.
+
+`npm run objects:check` verifies the lot: the catalogue resolves to real files,
+the matcher picks the thing a sentence is about, the planner never overlaps,
+strobes or slideshows, the head anchor survives a speck above the head and an
+empty frame, the filter beats the blend it replaced, the repaint rectangle
+stays a fraction of the picture, and then a real browser records a clip,
+imports subtitles, plans the objects, renders a still, bakes the video, reads
+the optimisations back out of the panel's own report, and puts the original
+back - 153 checks, no network. `npm run objects:check:maths` is the offline
+half on its own.
+
 ## The Tools Studio
 
 `/tools` is a full editing bench that runs entirely in the tab. Nothing is
@@ -766,7 +888,7 @@ components/
   RenderPanel.tsx       audio, engine, quality preset, format, scale, progress, output
   PlayerCanvas.tsx      dynamic({ ssr: false }) wrapper around @remotion/player
   CaptionStudio.tsx     subtitle state machine: video -> transcript -> cues -> render
-  captions/             source, design, sound and export panels, cue track, player
+  captions/             source, design, objects, sound and export panels, cue track, player
   captions/controls.tsx the sliders, switches and segmented controls both panels use
 lib/
   compiler.ts           sucrase + a tiny CommonJS module graph, runs in the tab
@@ -783,6 +905,15 @@ lib/
     transcribe.ts       on-device Whisper: model download, resample, word timings
     cues.ts             grouping, retiming, editing, .srt/.vtt in and out
     composition-source.ts  writes the captioned-video .tsx the studio compiles
+    object-library.ts   the 65 flat objects a spoken word can choose, and the matcher
+    object-models.ts    the generated GLB pack's catalogue and its spoken vocabulary
+    object-plan.ts      one choice per cue -> a shot list with a floor and a ceiling
+    object-director.ts  the keyword plan, then the language model's refinement of it
+    object-anchor.ts    the top of the speaker's head, one-euro filtered, placed
+    object-compositor.ts one small draw: the frame is never read, only the object
+    object-sprite.ts    rasterising an object at the size it is drawn, and drawing it
+    object-3d.ts        one GLB on a turntable, rendered to a transparent sprite
+    object-render.ts    the per-frame hook, the still preview and the bake
     sfx.ts              the sound-effect catalogue and the per-sentence scheduler
     video-source.ts     duration, display size, fps and audio-track probing
     style-presets.ts    the six caption looks and the studio font kit
@@ -825,6 +956,8 @@ scripts/
   sync-samples.mjs      samples -> public/samples (runs on predev/prebuild)
   check-editor-toolkit.cjs  the toolkit suite: maths offline, then a real Chrome
   check-tools-effects.cjs   the AI background, colour looks and chroma key
+  check-caption-objects.cjs the object layer: catalogue, matcher, planner, anchor,
+                            then a real Chrome that plans, previews and bakes
 ```
 
 ## How browser rendering works

@@ -7589,3 +7589,115 @@ textarea::placeholder {
 		grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
 	}
 }
+
+/* ------------------------------------------------- subtitle studio: objects
+
+   The shot list in the Objects panel. Each row is a button - clicking it
+   selects the shot and parks the playhead in the middle of it - with a
+   secondary hit area for removing that one object, which is why the row is a
+   grid rather than a flex line: the delete target has to keep its own column
+   at every width instead of being squeezed out by a long object name.        */
+
+.object-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 10px;
+}
+
+.object-shots {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	max-height: 260px;
+	overflow-y: auto;
+	padding-right: 2px;
+}
+
+.object-shot {
+	display: grid;
+	grid-template-columns: 34px 1fr 22px;
+	align-items: center;
+	gap: 10px;
+	width: 100%;
+	padding: 8px 9px;
+	border-radius: var(--radius-sm);
+	border: 1px solid var(--border);
+	background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+	text-align: left;
+	cursor: pointer;
+	transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+
+.object-shot:hover:not(:disabled) {
+	border-color: var(--border-hover);
+}
+
+.object-shot[data-active='true'] {
+	border-color: var(--accent);
+	background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.object-shot:disabled {
+	opacity: 0.55;
+	cursor: default;
+}
+
+.object-shot-thumb {
+	display: grid;
+	place-items: center;
+	width: 34px;
+	height: 34px;
+	border-radius: var(--radius-sm);
+	border: 1px solid var(--border);
+	/* A dark tile: every object in the pack is drawn in bright strokes on
+	   nothing, and on a light panel they would be invisible. */
+	background: #101322;
+	color: var(--text-tertiary);
+	overflow: hidden;
+}
+
+.object-shot-thumb img {
+	width: 30px;
+	height: 30px;
+	object-fit: contain;
+}
+
+.object-shot-body {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.object-shot-name {
+	color: var(--text);
+	font-size: 12.5px;
+	font-weight: 500;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.object-shot-meta {
+	color: var(--text-tertiary);
+	font-size: 11px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.object-shot-drop {
+	display: grid;
+	place-items: center;
+	width: 22px;
+	height: 22px;
+	border-radius: 6px;
+	color: var(--text-tertiary);
+	transition: color var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+
+.object-shot-drop:hover {
+	color: var(--red);
+	background: color-mix(in srgb, var(--red) 16%, transparent);
+}

@@ -38,8 +38,9 @@ const GROUPS: Array<{ title: string; items: Shortcut[] }> = [
 		items: [
 			{ keys: ['1'], label: 'Open the Design panel' },
 			{ keys: ['2'], label: 'Open the Sound panel' },
-			{ keys: ['3'], label: 'Open the Tools panel' },
-			{ keys: ['4'], label: 'Open the Render panel' },
+			{ keys: ['3'], label: 'Open the Objects panel' },
+			{ keys: ['4'], label: 'Open the Tools panel' },
+			{ keys: ['5'], label: 'Open the Render panel' },
 			{ keys: ['Ctrl', 'Z'], label: 'Undo the last caption edit' },
 			{ keys: ['Ctrl', 'Shift', 'Z'], label: 'Redo' },
 			{ keys: ['Ctrl', 'S'], label: 'Save this session to the browser now' },

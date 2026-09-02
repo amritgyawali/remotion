@@ -30,6 +30,8 @@
     "toolkit:check": "node scripts/check-editor-toolkit.cjs",
     "toolkit:check:maths": "node scripts/check-editor-toolkit.cjs --maths-only",
     "captions:check": "node scripts/check-captions.cjs",
+    "objects:check": "node scripts/check-caption-objects.cjs",
+    "objects:check:maths": "node scripts/check-caption-objects.cjs --maths-only",
     "silence:check": "node scripts/check-silence-render.cjs",
     "silence:check:maths": "node scripts/check-silence-render.cjs --maths-only",
     "fonts:check": "node scripts/check-devanagari-glyphs.mjs",

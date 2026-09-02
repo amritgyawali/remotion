@@ -29,6 +29,11 @@ import {
 	updateCue,
 } from '../lib/captions/cues'
 import { captionProject, captionSourceFor, downloadFileName, planComposition } from '../lib/captions/project'
+import { directObjects } from '../lib/captions/object-director'
+import { loadModelCatalog } from '../lib/captions/object-models'
+import { objectAssetById, objectAssetSrc } from '../lib/captions/object-library'
+import { bakeObjectVideo, describeObjectRender, renderObjectStill } from '../lib/captions/object-render'
+import { captionSafeArea, type ObjectSettings, type ObjectShot } from '../lib/captions/object-plan'
 import { cuesToAss } from '../lib/captions/ass'
 import { isCaptionFontId } from '../lib/captions/fonts'
 import {
@@ -91,14 +96,18 @@ import type {
 } from '../lib/captions/types'
 import type { CompileResult, RenderSettings, VirtualProject } from '../lib/types'
 import {
+	CAPTION_OBJECT_BLOB_PREFIX,
+	CAPTION_ORIGINAL_BLOB_ID,
 	CAPTION_SESSION_KEY,
 	CAPTION_SESSION_VERSION,
 	CAPTION_VIDEO_BLOB_ID,
+	DEFAULT_OBJECT_PLAN,
 	normalizeCaptionSession,
 	videoFactsOf,
 	videoFromFacts,
 	type CaptionPanelTab,
 	type CaptionSession,
+	type StoredObjectPlan,
 } from '../lib/captions/session'
 import {
 	readBlob,
@@ -109,6 +118,7 @@ import {
 import { useAutosave, useRestoredSnapshot } from '../lib/persist/use-vault'
 import { sendToStudio, useIncomingHandoff } from '../lib/handoff'
 import CaptionDesignPanel from './captions/CaptionDesignPanel'
+import CaptionObjectPanel, { type ObjectActions } from './captions/CaptionObjectPanel'
 import CaptionExportPanel from './captions/CaptionExportPanel'
 import CaptionSoundPanel from './captions/CaptionSoundPanel'
 import CaptionToolsPanel, { type ToolsActions } from './captions/CaptionToolsPanel'
@@ -124,6 +134,7 @@ import {
 	IconDownload,
 	IconFilm,
 	IconKeyboard,
+	IconLayers,
 	IconScissors,
 	IconSliders,
 	IconSpinner,
@@ -173,6 +184,7 @@ function hasCaptionSessionWork(session: CaptionSession): boolean {
 			!session.polish ||
 			!session.restoreEnglish ||
 			session.tab !== 'design' ||
+			session.objects.shots.length > 0 ||
 			JSON.stringify(session.sound) !== DEFAULT_SOUND_SIGNATURE ||
 			JSON.stringify(session.style) !== DEFAULT_STYLE_SIGNATURE ||
 			JSON.stringify(session.layout) !== DEFAULT_LAYOUT_SIGNATURE ||
@@ -232,11 +244,20 @@ const CAPTION_PANES: Array<{ id: CaptionPane; label: string; icon: typeof IconFi
 ]
 
 /** Number keys, in the order the panel tabs are drawn. */
+/**
+ * Objects are composited from the clip's own decoded frames, which means the
+ * bytes have to be here. A pasted https:// address is a source the player can
+ * stream but the encoder cannot open, so both entry points say the same thing.
+ */
+const NEEDS_LOCAL_FILE =
+	'Objects need the clip’s own bytes. Drop the video file into the studio rather than pasting an address, and this works.'
+
 const PANEL_KEYS: Record<string, CaptionPanelTab> = {
 	'1': 'design',
 	'2': 'sound',
-	'3': 'tools',
-	'4': 'export',
+	'3': 'objects',
+	'4': 'tools',
+	'5': 'export',
 }
 
 /**
@@ -327,6 +348,31 @@ export default function CaptionStudio() {
 	/** true while a file is being dragged over the preview */
 	const [dragOverStage, setDragOverStage] = useState(false)
 
+	/**
+	 * The object layer.
+	 *
+	 * One piece of state holds the whole thing - the shot list, the cut-out
+	 * settings and whether it has been burned in - because those three are
+	 * saved, restored and thrown away together. Everything beside it is
+	 * transient: what a plan pass said, what the preview drew, how far a bake
+	 * has got. None of that belongs in a snapshot.
+	 */
+	const [objectPlan, setObjectPlan] = useState<StoredObjectPlan>(DEFAULT_OBJECT_PLAN)
+	const [objectPlanning, setObjectPlanning] = useState(false)
+	const [objectPlanNotice, setObjectPlanNotice] = useState<string | null>(null)
+	const [objectPlanError, setObjectPlanError] = useState<string | null>(null)
+	const [objectDirector, setObjectDirector] = useState<'ai' | 'local' | null>(null)
+	const [objectModelUsed, setObjectModelUsed] = useState<string | null>(null)
+	/** whether `npm run assets:3d` has been run in this checkout */
+	const [modelPackAvailable, setModelPackAvailable] = useState(false)
+	const [objectPreviewing, setObjectPreviewing] = useState(false)
+	const [objectPreview, setObjectPreview] = useState<{ url: string; shotId: string } | null>(null)
+	const [objectPreviewError, setObjectPreviewError] = useState<string | null>(null)
+	const [objectBaking, setObjectBaking] = useState(false)
+	const [objectBakeProgress, setObjectBakeProgress] = useState({ phase: 'preparing', ratio: 0 })
+	const [objectBakeNote, setObjectBakeNote] = useState<string | null>(null)
+	const [objectBakeError, setObjectBakeError] = useState<string | null>(null)
+
 	/** progress of the "Send to Silence Studio" hand-off */
 	const [sendToSilenceState, setSendToSilenceState] = useState<
 		'idle' | 'sending' | 'sent' | 'failed'
@@ -368,6 +414,12 @@ export default function CaptionStudio() {
 	// handler on each colour tweak would remount the whole tools panel.
 	const styleRef = useRef(style)
 	styleRef.current = style
+	// The object handlers are bound once and read the live plan through a ref,
+	// the same way the tool callbacks read the style: rebuilding them on every
+	// slider drag would remount the panel mid-gesture.
+	const objectPlanRef = useRef(objectPlan)
+	objectPlanRef.current = objectPlan
+	const objectAbortRef = useRef<AbortController | null>(null)
 	// Shortcuts read the playhead and the add-cue action through refs so the
 	// key handler is bound once instead of on every frame of playback.
 	const currentMsRef = useRef(0)
@@ -413,6 +465,7 @@ export default function CaptionStudio() {
 			setPolish(session.polish)
 			setRestoreEnglish(session.restoreEnglish)
 			setTab(session.tab)
+			setObjectPlan(session.objects)
 			updateRenderSettings(settingsForDevice(session.render))
 			speechRef.current = session.speech
 			pendingSeekRef.current = session.positionMs > 0 ? session.positionMs : null
@@ -492,6 +545,7 @@ export default function CaptionStudio() {
 			polish,
 			restoreEnglish,
 			tab,
+			objects: objectPlan,
 			render: render.settings,
 			speech: speechRef.current,
 			positionMs: coarsePositionMs,
@@ -506,6 +560,7 @@ export default function CaptionStudio() {
 		handEdited,
 		layout,
 		mode,
+		objectPlan,
 		origin,
 		polish,
 		render.settings,
@@ -1007,11 +1062,26 @@ export default function CaptionStudio() {
 		setVideoBlobId(null)
 		setVideoBanked(false)
 		void removeBlob(CAPTION_VIDEO_BLOB_ID)
+		// The object plan belongs to the clip that just left: its shots are timed
+		// to a transcript that no longer exists, and its parked original is bytes
+		// nothing can restore into.
+		objectAbortRef.current?.abort()
+		for (const shot of objectPlanRef.current.shots) {
+			if (shot.blobId) void removeBlob(shot.blobId)
+		}
+		setObjectPlan(DEFAULT_OBJECT_PLAN)
+		setObjectPlanNotice(null)
+		setObjectPlanError(null)
+		setObjectBakeNote(null)
+		setObjectBakeError(null)
+		setObjectPreview(null)
+		void removeBlob(CAPTION_ORIGINAL_BLOB_ID)
 	}, [clearCueHistory, resetRender])
 
 	useEffect(() => {
 		return () => {
 			transcribeAbortRef.current?.abort()
+			objectAbortRef.current?.abort()
 		}
 	}, [])
 
@@ -1622,6 +1692,353 @@ export default function CaptionStudio() {
 		return () => window.removeEventListener('keydown', onKeyDown)
 	}, [busy, saveSessionNow])
 
+	/* ------------------------------------------------------------- objects */
+
+	/**
+	 * Whether this checkout has the 3D pack.
+	 *
+	 * It is generated by `npm run assets:3d` rather than committed, so its
+	 * presence is a fact to be read once, not a guess the panel makes on every
+	 * render.
+	 */
+	useEffect(() => {
+		let live = true
+		void loadModelCatalog().then((catalog) => {
+			if (live) setModelPackAvailable(Boolean(catalog))
+		})
+		return () => {
+			live = false
+		}
+	}, [])
+
+	/**
+	 * Swaps the clip under the captions without touching the transcript.
+	 *
+	 * `adoptVideo` is the wrong tool for a bake: it clears the cues, because a
+	 * user dropping a new file means a new video. Here the file *is* the same
+	 * video, one generation later, frame for frame and sample for sample - so
+	 * every timing stays valid and has to survive.
+	 */
+	const replaceWorkingVideo = useCallback(async (file: File) => {
+		const next = await probeVideo({ file })
+		const previous = videoRef.current
+		videoRef.current = next
+		setVideo(next)
+		if (previous) releaseVideoSource(previous)
+		const stored = await writeBlob(CAPTION_VIDEO_BLOB_ID, file, next.name)
+		setVideoBlobId(stored ? CAPTION_VIDEO_BLOB_ID : null)
+		setVideoBanked(stored)
+		return next
+	}, [])
+
+	const handleObjectSettings = useCallback((patch: Partial<ObjectSettings>) => {
+		setObjectPlan((current) => ({ ...current, settings: { ...current.settings, ...patch } }))
+	}, [])
+
+	const handleObjectShot = useCallback((id: string, patch: Partial<ObjectShot>) => {
+		setObjectPlan((current) => ({
+			...current,
+			shots: current.shots.map((shot) => (shot.id === id ? { ...shot, ...patch } : shot)),
+		}))
+	}, [])
+
+	const handleObjectPlanRun = useCallback(() => {
+		if (cuesRef.current.length === 0) return
+		objectAbortRef.current?.abort()
+		const controller = new AbortController()
+		objectAbortRef.current = controller
+		setObjectPlanning(true)
+		setObjectPlanError(null)
+		setObjectPlanNotice(null)
+
+		void (async () => {
+			try {
+				const result = await directObjects({
+					cues: cuesRef.current,
+					durationMs,
+					mode: objectPlanRef.current.mode,
+					useAi: objectPlanRef.current.useAi,
+					signal: controller.signal,
+				})
+				if (controller.signal.aborted) return
+				// A re-plan replaces the shots and nothing else: the cut-out
+				// settings describe this clip and this speaker, not which objects
+				// were chosen, so they survive every re-plan.
+				setObjectPlan((current) => ({ ...current, shots: result.shots }))
+				setObjectDirector(result.director)
+				setObjectModelUsed(result.model)
+				setObjectPreview(null)
+				setObjectPlanNotice(
+					result.shots.length === 0
+						? 'Nothing in this transcript named an object in the catalogue. Pick one by hand for a line, or re-word the caption and plan again.'
+						: result.notice,
+				)
+			} catch (error) {
+				if (controller.signal.aborted) return
+				setObjectPlanError(error instanceof Error ? error.message : String(error))
+			} finally {
+				if (objectAbortRef.current === controller) objectAbortRef.current = null
+				setObjectPlanning(false)
+			}
+		})()
+	}, [durationMs])
+
+	const handleObjectClearPlan = useCallback(() => {
+		for (const shot of objectPlanRef.current.shots) {
+			if (shot.blobId) void removeBlob(shot.blobId)
+		}
+		setObjectPlan((current) => ({ ...current, shots: [] }))
+		setObjectPreview(null)
+		setObjectPlanNotice(null)
+		setObjectDirector(null)
+		setObjectModelUsed(null)
+	}, [])
+
+	const handleObjectShotAsset = useCallback(
+		(id: string, assetId: string) => {
+			const asset = objectAssetById(assetId)
+			if (!asset) return
+			const previous = objectPlanRef.current.shots.find((shot) => shot.id === id)
+			if (previous?.blobId) void removeBlob(previous.blobId)
+			handleObjectShot(id, {
+				kind: 'library',
+				assetId: asset.id,
+				label: asset.label,
+				src: objectAssetSrc(asset, previous?.keyword || asset.id),
+				blobId: null,
+			})
+			setObjectPreview(null)
+		},
+		[handleObjectShot],
+	)
+
+	/**
+	 * Takes the user's own picture for one shot.
+	 *
+	 * The bytes go into the vault under that shot's own id so a refresh can draw
+	 * it again; the object URL only has to outlive this tab.
+	 */
+	const handleObjectShotUpload = useCallback(
+		(id: string, file: File) => {
+			void (async () => {
+				const blobId = `${CAPTION_OBJECT_BLOB_PREFIX}${id}`
+				const stored = await writeBlob(blobId, file, file.name)
+				handleObjectShot(id, {
+					kind: 'upload',
+					assetId: null,
+					label: file.name.replace(/\.[a-z0-9]+$/i, ''),
+					src: URL.createObjectURL(file),
+					blobId: stored ? blobId : null,
+				})
+				setObjectPreview(null)
+			})()
+		},
+		[handleObjectShot],
+	)
+
+	const handleObjectDeleteShot = useCallback((id: string) => {
+		const shot = objectPlanRef.current.shots.find((entry) => entry.id === id)
+		if (shot?.blobId) void removeBlob(shot.blobId)
+		setObjectPlan((current) => ({
+			...current,
+			shots: current.shots.filter((entry) => entry.id !== id),
+		}))
+		setObjectPreview((current) => (current?.shotId === id ? null : current))
+	}, [])
+
+	const handleObjectApplyToAll = useCallback(
+		(look: Pick<ObjectShot, 'scale' | 'offsetX' | 'offsetY' | 'opacity' | 'motion'>) => {
+			setObjectPlan((current) => ({
+				...current,
+				shots: current.shots.map((shot) => ({ ...shot, ...look })),
+			}))
+		},
+		[],
+	)
+
+	/**
+	 * Renders one composited frame through the bake's own code path.
+	 *
+	 * The middle of the shot, because that is where the object is at full
+	 * opacity - previewing its first frame would show the entrance and say
+	 * nothing about the size being adjusted.
+	 */
+	const handleObjectPreview = useCallback((id: string) => {
+		const source = videoRef.current
+		const shot = objectPlanRef.current.shots.find((entry) => entry.id === id)
+		if (!shot) return
+		if (!source?.file) {
+			setObjectPreviewError(NEEDS_LOCAL_FILE)
+			return
+		}
+
+		objectAbortRef.current?.abort()
+		const controller = new AbortController()
+		objectAbortRef.current = controller
+		setObjectPreviewing(true)
+		setObjectPreviewError(null)
+
+		void (async () => {
+			try {
+				const still = await renderObjectStill({
+					shots: objectPlanRef.current.shots,
+					settings: objectPlanRef.current.settings,
+					probe: source,
+					source: source.file as File,
+					atSeconds: (shot.startMs + (shot.endMs - shot.startMs) / 2) / 1000,
+					safeArea: captionSafeArea(styleRef.current),
+					signal: controller.signal,
+					resolveBlob: async (blobId) => (await readBlob(blobId))?.blob ?? null,
+				})
+				if (controller.signal.aborted) return
+				setObjectPreview((current) => {
+					if (current) URL.revokeObjectURL(current.url)
+					return { url: still.url, shotId: id }
+				})
+			} catch (error) {
+				if (controller.signal.aborted) return
+				setObjectPreviewError(error instanceof Error ? error.message : String(error))
+			} finally {
+				if (objectAbortRef.current === controller) objectAbortRef.current = null
+				setObjectPreviewing(false)
+			}
+		})()
+	}, [])
+
+	/**
+	 * Burns the objects into the clip.
+	 *
+	 * The untouched video is parked in the vault first, before a single frame is
+	 * encoded: a step that replaces the thing being edited has to be undoable
+	 * from the moment it starts, not from the moment it succeeds.
+	 */
+	const handleObjectBake = useCallback(() => {
+		const source = videoRef.current
+		if (!source?.file) {
+			setObjectBakeError(NEEDS_LOCAL_FILE)
+			return
+		}
+		if (objectPlanRef.current.shots.length === 0) return
+
+		objectAbortRef.current?.abort()
+		const controller = new AbortController()
+		objectAbortRef.current = controller
+		setObjectBaking(true)
+		setObjectBakeError(null)
+		setObjectBakeNote(null)
+		setObjectBakeProgress({ phase: 'preparing', ratio: 0 })
+
+		void (async () => {
+			const original = source.file as File
+			const plan = objectPlanRef.current
+			try {
+				const parked = plan.originalBlobId
+					? true
+					: await writeBlob(CAPTION_ORIGINAL_BLOB_ID, original, original.name)
+
+				const result = await bakeObjectVideo({
+					shots: plan.shots,
+					settings: plan.settings,
+					probe: source,
+					source: original,
+					format: 'mp4',
+					quality: 'high',
+					// The captions are styled after the bake as often as before it,
+					// so the band they own is read at the moment the objects are
+					// placed rather than baked into the plan.
+					safeArea: captionSafeArea(styleRef.current),
+					signal: controller.signal,
+					resolveBlob: async (blobId) => (await readBlob(blobId))?.blob ?? null,
+					onStage: (stage) => setObjectBakeProgress(stage),
+				})
+				if (controller.signal.aborted) return
+
+				const baked = new File([result.blob], downloadFileName(source, result.format), {
+					type: result.blob.type || 'video/mp4',
+				})
+				await replaceWorkingVideo(baked)
+				URL.revokeObjectURL(result.url)
+
+				setObjectPlan((current) => ({
+					...current,
+					baked: true,
+					originalBlobId: parked ? CAPTION_ORIGINAL_BLOB_ID : current.originalBlobId,
+					originalName: current.originalName ?? original.name,
+				}))
+				setObjectBakeNote(
+					`${describeObjectRender(result.stats, result.summary)}. Baked in ${result.elapsedSeconds.toFixed(
+						1,
+					)}s. The captions are still a live layer, so restyle them as much as you like${
+						parked
+							? ''
+							: ' - but this browser could not keep a copy of the original, so there is no way back'
+					}.`,
+				)
+			} catch (error) {
+				if (controller.signal.aborted) return
+				setObjectBakeError(error instanceof Error ? error.message : String(error))
+			} finally {
+				if (objectAbortRef.current === controller) objectAbortRef.current = null
+				setObjectBaking(false)
+			}
+		})()
+	}, [replaceWorkingVideo])
+
+	const handleObjectRestoreOriginal = useCallback(() => {
+		const blobId = objectPlanRef.current.originalBlobId
+		if (!blobId) return
+		void (async () => {
+			setObjectBakeError(null)
+			const stored = await readBlob(blobId)
+			if (!stored) {
+				setObjectBakeError(
+					'The original is no longer in this browser’s storage, so it cannot be put back. Drop the file in again to start over.',
+				)
+				setObjectPlan((current) => ({ ...current, originalBlobId: null, baked: false }))
+				return
+			}
+			const file = new File([stored.blob], stored.name, {
+				type: stored.type,
+				lastModified: stored.lastModified,
+			})
+			await replaceWorkingVideo(file)
+			setObjectPlan((current) => ({ ...current, baked: false }))
+			setObjectBakeNote('The original clip is back. The captions never moved.')
+		})()
+	}, [replaceWorkingVideo])
+
+	const objectActions = useMemo<ObjectActions>(
+		() => ({
+			onPlan: handleObjectPlanRun,
+			onClearPlan: handleObjectClearPlan,
+			onMode: (mode) => setObjectPlan((current) => ({ ...current, mode })),
+			onUseAi: (useAi) => setObjectPlan((current) => ({ ...current, useAi })),
+			onSettings: handleObjectSettings,
+			onShot: handleObjectShot,
+			onShotAsset: handleObjectShotAsset,
+			onShotUpload: handleObjectShotUpload,
+			onDeleteShot: handleObjectDeleteShot,
+			onApplyToAll: handleObjectApplyToAll,
+			onPreview: handleObjectPreview,
+			onBake: handleObjectBake,
+			onRestoreOriginal: handleObjectRestoreOriginal,
+			onSeek: (ms) => seekToMsRef.current(ms),
+		}),
+		[
+			handleObjectApplyToAll,
+			handleObjectBake,
+			handleObjectClearPlan,
+			handleObjectDeleteShot,
+			handleObjectPlanRun,
+			handleObjectPreview,
+			handleObjectRestoreOriginal,
+			handleObjectSettings,
+			handleObjectShot,
+			handleObjectShotAsset,
+			handleObjectShotUpload,
+		],
+	)
+
 	const handleReset = useCallback(() => {
 		handleClearVideo()
 		setStyle(DEFAULT_CAPTION_STYLE)
@@ -1951,16 +2368,24 @@ export default function CaptionStudio() {
 								{sound.enabled ? <span className="tab-dot" aria-label="on" /> : null}
 							</button>
 							<button
+								data-active={tab === 'objects'}
+								onClick={() => setTab('objects')}
+								title="Put an object behind the speaker (3)"
+							>
+								<IconLayers size={13} /> Objects
+								{objectPlan.shots.length > 0 ? <span className="tab-dot" aria-label="planned" /> : null}
+							</button>
+							<button
 								data-active={tab === 'tools'}
 								onClick={() => setTab('tools')}
-								title="Bulk edit the transcript (3)"
+								title="Bulk edit the transcript (4)"
 							>
 								<IconTools size={13} /> Tools
 							</button>
 							<button
 								data-active={tab === 'export'}
 								onClick={() => setTab('export')}
-								title="Render and download (4)"
+								title="Render and download (5)"
 							>
 								<IconDownload size={13} /> Render
 							</button>
@@ -1983,6 +2408,33 @@ export default function CaptionStudio() {
 								soundtrack={soundtrack}
 								disabled={render.rendering}
 								onSound={handleSound}
+							/>
+						) : tab === 'objects' ? (
+							<CaptionObjectPanel
+								state={{
+									cueCount: cues.length,
+									shots: objectPlan.shots,
+									settings: objectPlan.settings,
+									mode: objectPlan.mode,
+									useAi: objectPlan.useAi,
+									planning: objectPlanning,
+									planNotice: objectPlanNotice,
+									planError: objectPlanError,
+									directedBy: objectDirector,
+									modelUsed: objectModelUsed,
+									modelPackAvailable,
+									previewing: objectPreviewing,
+									preview: objectPreview,
+									previewError: objectPreviewError,
+									baking: objectBaking,
+									bakeProgress: objectBakeProgress,
+									bakeNote: objectBakeNote,
+									bakeError: objectBakeError,
+									baked: objectPlan.baked,
+									canRestore: Boolean(objectPlan.originalBlobId),
+									disabled: busy,
+								}}
+								actions={objectActions}
 							/>
 						) : tab === 'tools' ? (
 							<CaptionToolsPanel

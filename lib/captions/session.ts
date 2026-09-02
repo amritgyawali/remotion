@@ -28,6 +28,14 @@ import type {
 	TranscriptOrigin,
 	WhisperModelId,
 } from './types'
+import {
+	DEFAULT_OBJECT_SETTINGS,
+	normalizeObjectSettings,
+	normalizeObjectShots,
+	type ObjectPlanMode,
+	type ObjectSettings,
+	type ObjectShot,
+} from './object-plan'
 import type { SpeechSegment } from './vad'
 import type { RenderSettings } from '../types'
 
@@ -35,11 +43,50 @@ export const CAPTION_SESSION_KEY = 'captions:workspace'
 export const CAPTION_SESSION_VERSION = 1
 /** the blob-store id the current clip's bytes are filed under */
 export const CAPTION_VIDEO_BLOB_ID = 'captions:video'
+/**
+ * Where the untouched clip is parked while objects are burned into it.
+ *
+ * Baking replaces the working video, so without this the original would be
+ * gone the moment the first object landed - and the one thing a destructive
+ * step has to come with is the way back.
+ */
+export const CAPTION_ORIGINAL_BLOB_ID = 'captions:video:original'
+/** prefix for a picture the user uploaded for one object shot */
+export const CAPTION_OBJECT_BLOB_PREFIX = 'captions:object:'
 
 export type TranscriptMode = 'auto' | 'write' | 'import'
 
 /** the right-hand panel that was open, so a refresh lands back on it */
-export type CaptionPanelTab = 'design' | 'sound' | 'tools' | 'export'
+export type CaptionPanelTab = 'design' | 'sound' | 'objects' | 'tools' | 'export'
+
+/**
+ * The object layer, as it survives a refresh.
+ *
+ * The shots are plain data and restore exactly. An uploaded picture does not:
+ * its object URL died with the tab, so the shot keeps only the vault id its
+ * bytes were written under and the renderer rebuilds the address from those.
+ */
+export type StoredObjectPlan = {
+	mode: ObjectPlanMode
+	useAi: boolean
+	shots: ObjectShot[]
+	settings: ObjectSettings
+	/** true once the objects have been burned into the working video */
+	baked: boolean
+	/** the vault id holding the clip as it was before the bake */
+	originalBlobId: string | null
+	originalName: string | null
+}
+
+export const DEFAULT_OBJECT_PLAN: StoredObjectPlan = {
+	mode: 'flat',
+	useAi: true,
+	shots: [],
+	settings: DEFAULT_OBJECT_SETTINGS,
+	baked: false,
+	originalBlobId: null,
+	originalName: null,
+}
 
 export type StoredVideoFacts = {
 	/** set for an upload; null when the source was a pasted address */
@@ -75,6 +122,7 @@ export type CaptionSession = {
 	polish: boolean
 	restoreEnglish: boolean
 	tab: CaptionPanelTab
+	objects: StoredObjectPlan
 	render: RenderSettings
 	/** where speech sits in the audio, so re-cutting lines still breaks on pauses */
 	speech: SpeechSegment[]
@@ -111,7 +159,8 @@ const ORIGINS = ['whisper', 'cloud', 'srt', 'text', 'none'] as const
 const ENGINES = ['auto', 'cloud', 'device'] as const
 const LEGACY_CLOUD = 'nvidia'
 const MODES = ['auto', 'write', 'import'] as const
-const TABS = ['design', 'sound', 'tools', 'export'] as const
+const TABS = ['design', 'sound', 'objects', 'tools', 'export'] as const
+const OBJECT_MODES: readonly ObjectPlanMode[] = ['flat', 'model3d']
 const SOUND_TRIGGERS: readonly CaptionSoundTrigger[] = ['sentence', 'word', 'emphasis']
 const SOUND_VARIATIONS: readonly CaptionSoundVariation[] = ['fixed', 'cycle', 'shuffle']
 const WHISPER_MODELS = ['tiny', 'tiny.en', 'base', 'base.en', 'small', 'small.en'] as const
@@ -265,6 +314,27 @@ function normalizeStoredSound(value: unknown): CaptionSound {
 	}
 }
 
+/**
+ * The object layer.
+ *
+ * `baked` is only believed when there is an original to go back to: a snapshot
+ * that claims the objects are burned in but has lost the untouched clip would
+ * leave the panel offering a restore that cannot happen.
+ */
+function normalizeStoredObjects(value: unknown): StoredObjectPlan {
+	if (!isObject(value)) return DEFAULT_OBJECT_PLAN
+	const originalBlobId = typeof value.originalBlobId === 'string' ? value.originalBlobId : null
+	return {
+		mode: oneOf(value.mode, OBJECT_MODES, 'flat'),
+		useAi: bool(value.useAi, true),
+		shots: normalizeObjectShots(value.shots),
+		settings: normalizeObjectSettings(value.settings),
+		baked: bool(value.baked, false) && Boolean(originalBlobId),
+		originalBlobId,
+		originalName: typeof value.originalName === 'string' ? value.originalName : null,
+	}
+}
+
 function normalizeSpeech(value: unknown): SpeechSegment[] {
 	if (!Array.isArray(value)) return []
 	return value
@@ -301,6 +371,7 @@ export function normalizeCaptionSession(
 		polish: bool(value.polish, true),
 		restoreEnglish: bool(value.restoreEnglish, true),
 		tab: oneOf(value.tab, TABS, 'design'),
+		objects: normalizeStoredObjects(value.objects),
 		render: normalizeStoredRenderSettings(value.render, defaults.render),
 		speech: normalizeSpeech(value.speech),
 		positionMs: num(value.positionMs, 0, 0),
