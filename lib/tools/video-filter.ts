@@ -22,6 +22,7 @@
 import { computeFrameDims, drawFrame, type CropRect, type FrameOpsDims, type FrameOpsParams, type WatermarkSpec } from './frame-ops'
 import { encodeGif, type GifFrame } from './gif-encoder'
 import { createRenderSink, describeRenderFailure } from '../media/render-sink'
+import { createPacketRetimer } from './packet-timing'
 
 export type VideoFilterFormat = 'mp4' | 'webm'
 export type VideoFilterQuality = 'draft' | 'high' | 'max'
@@ -251,15 +252,29 @@ export async function renderVideoFilter(options: VideoFilterOptions): Promise<Vi
 			}
 		}
 
+		/**
+		 * The audio is copied packet for packet, and the only thing that has to
+		 * be thought about on the way is where those packets sit in time: an
+		 * ordinary MP4 starts its AAC track below zero to carry the encoder's
+		 * priming, and a muxer refuses a negative timestamp outright. See
+		 * `packet-timing.ts` - it decides, this loop just does as it is told.
+		 */
 		const encodeAudio = async () => {
 			if (!audioTrack || !audioSource) return
 			const decoderConfig = await audioTrack.getDecoderConfig()
 			const sink = new EncodedPacketSink(audioTrack)
+			const retimer = createPacketRetimer()
 			let first = true
 			try {
 				for await (const packet of sink.packets()) {
 					assertLive(signal)
-					await audioSource.add(packet, first ? { decoderConfig: decoderConfig ?? undefined } : undefined)
+					const placement = retimer.place(packet)
+					if (placement.action === 'drop') continue
+					const outgoing =
+						placement.action === 'retime'
+							? packet.clone({ timestamp: placement.timestamp, duration: placement.duration })
+							: packet
+					await audioSource.add(outgoing, first ? { decoderConfig: decoderConfig ?? undefined } : undefined)
 					first = false
 				}
 			} finally {

@@ -16,7 +16,9 @@
  *             recipe bakes to the identity cube, every look stays monotonic in
  *             luminance, and the trilinear lookup agrees with the evaluator it
  *             is a table of. This is the half that would catch an inverted or
- *             mis-strided cube.
+ *             mis-strided cube. It also covers packet timing: what happens to
+ *             a copied track whose packets start below zero, which is every
+ *             MP4 whose audio carries the encoder's priming delay.
  *
  *   studio  - a real Chrome, the real page: a clip is imported, each tool is
  *             selected and run, and the finished file is re-opened and its
@@ -35,9 +37,12 @@
 
 require('sucrase/register')
 
-const { spawn } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
+
+const packetTiming = require('../lib/tools/packet-timing.ts')
 
 const argv = process.argv.slice(2)
 const flag = (name, fallback = null) => {
@@ -1066,12 +1071,334 @@ async function runStudio() {
 
 /* -------------------------------------------------------------------------- */
 
+
+/* -------------------------------------------------------------------------- */
+/*  Packet timing                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Every export that copies a track rather than re-encoding it runs its packets
+ * through this first, and it exists because of one real failure: an ordinary
+ * MP4 starts its AAC track below zero to carry the encoder's priming delay,
+ * and a muxer refuses a negative timestamp outright -
+ *
+ *     Timestamps must be non-negative (got -0.044s).
+ *
+ * - which killed the object bake and every visual tool on any clip that came
+ * out of a phone. What is checked here is the policy, not the plumbing: which
+ * packets are dropped, which are re-timed, and - most importantly - that a
+ * file which was already fine is passed through completely untouched.
+ */
+function checkPacketTiming() {
+	process.stdout.write('\npacket timing\n')
+
+	const packet = (timestamp, duration, type = 'key') => ({ timestamp, duration, type })
+
+	// A normal file: nothing may change, or a copy stops being a copy.
+	const clean = packetTiming.createPacketRetimer()
+	const cleanPlacements = [packet(0, 0.021), packet(0.021, 0.021), packet(0.042, 0.021)].map((entry) =>
+		clean.place(entry),
+	)
+	record(
+		'packets',
+		'a track that already starts at zero is passed through untouched',
+		cleanPlacements.every((placement) => placement.action === 'keep'),
+		JSON.stringify(cleanPlacements),
+	)
+	record('packets', 'and nothing is reported as changed', clean.stats().retimed === 0 && clean.stats().dropped === 0)
+
+	// The real thing: 2112 samples of AAC priming at 48 kHz is -0.044s, which is
+	// the number in the error the studio was throwing.
+	const priming = packetTiming.createPacketRetimer()
+	const primed = [
+		packet(-0.044, 0.021333),
+		packet(-0.022667, 0.021333),
+		packet(-0.001333, 0.021333),
+		packet(0.02, 0.021333),
+	].map((entry) => priming.place(entry))
+	record(
+		'packets',
+		'a packet that is over before zero is dropped',
+		primed[0].action === 'drop' && primed[0].reason === 'before-zero',
+		JSON.stringify(primed[0]),
+	)
+	record(
+		'packets',
+		'so is the second one, for the same reason',
+		primed[1].action === 'drop' && primed[1].reason === 'before-zero',
+		JSON.stringify(primed[1]),
+	)
+	record(
+		'packets',
+		'the packet that straddles zero starts at zero',
+		primed[2].action === 'retime' && primed[2].timestamp === 0,
+		JSON.stringify(primed[2]),
+	)
+	record(
+		'packets',
+		'and keeps the part of itself that plays',
+		primed[2].action === 'retime' && Math.abs(primed[2].duration - 0.02) < 1e-6,
+		JSON.stringify(primed[2]),
+	)
+	record(
+		'packets',
+		'everything after zero keeps its own instant, so nothing drifts out of sync',
+		primed[3].action === 'keep',
+		JSON.stringify(primed[3]),
+	)
+	const primingStats = priming.stats()
+	record(
+		'packets',
+		'and the trim is reported rather than hidden',
+		Math.abs(primingStats.trimmedSeconds - 0.044) < 1e-3 && primingStats.dropped === 2,
+		JSON.stringify(primingStats),
+	)
+
+	// A stream cannot open on a delta packet, whatever its timestamp says.
+	const delta = packetTiming.createPacketRetimer()
+	const first = delta.place(packet(0, 0.033, 'delta'))
+	const second = delta.place(packet(0.033, 0.033, 'key'))
+	record(
+		'packets',
+		'a track cannot open on a delta packet',
+		first.action === 'drop' && first.reason === 'no-key-yet',
+		JSON.stringify(first),
+	)
+	record('packets', 'and the key packet after it opens the track', second.action === 'keep', JSON.stringify(second))
+
+	// B-frames legitimately go backwards inside a group of pictures. Repairing
+	// that would be the bug, not the fix.
+	const reordered = packetTiming.createPacketRetimer()
+	const gop = [packet(0, 0.033), packet(0.099, 0.033, 'delta'), packet(0.033, 0.033, 'delta'), packet(0.066, 0.033, 'delta')].map(
+		(entry) => reordered.place(entry),
+	)
+	record(
+		'packets',
+		'presentation order may go backwards inside one group of pictures',
+		gop.every((placement) => placement.action === 'keep'),
+		JSON.stringify(gop),
+	)
+	record('packets', 'and that is not counted as a repair', reordered.stats().reordered === 0)
+
+	// Going backwards past the previous group is what a muxer refuses, and the
+	// export is worth more than those few milliseconds.
+	const broken = packetTiming.createPacketRetimer()
+	broken.place(packet(0, 0.033))
+	broken.place(packet(0.5, 0.033, 'delta'))
+	const backwards = broken.place(packet(0.2, 0.033, 'key'))
+	record(
+		'packets',
+		'a packet behind the previous group is nudged forward rather than refused',
+		backwards.action === 'retime' && backwards.timestamp === 0.5,
+		JSON.stringify(backwards),
+	)
+	record('packets', 'and that repair is counted', broken.stats().reordered === 1)
+
+	// Rounding, not lateness: a container storing time as a rational lands a
+	// hair below zero, and throwing a packet away over that would be wrong.
+	const rounding = packetTiming.createPacketRetimer()
+	const hair = rounding.place(packet(-1e-12, 0.021))
+	record('packets', 'a timestamp a hair below zero is not a dropped packet', hair.action !== 'drop', JSON.stringify(hair))
+
+	// A video packet is not disposable the way an audio packet is: later frames
+	// are differences against it, so one that plays before zero is pulled up to
+	// zero and kept rather than dropped. A missing reference frame is a corrupt
+	// picture; a frame shown a few milliseconds early is not.
+	const video = packetTiming.createPacketRetimer({ track: 'video' })
+	const videoPlacements = [packet(-0.04, 0.033), packet(-0.007, 0.033, 'delta'), packet(0.026, 0.033, 'delta')].map(
+		(entry) => video.place(entry),
+	)
+	record(
+		'packets',
+		'a video packet before zero is never dropped',
+		videoPlacements.every((placement) => placement.action !== 'drop'),
+		JSON.stringify(videoPlacements),
+	)
+	record(
+		'packets',
+		'it is pulled up to zero instead, so its group stays decodable',
+		videoPlacements[0].action === 'retime' && videoPlacements[0].timestamp === 0,
+		JSON.stringify(videoPlacements[0]),
+	)
+	record('packets', 'and nothing in that track is reported as lost', video.stats().dropped === 0)
+
+	const broken2 = packetTiming.createPacketRetimer()
+	const nonsense = broken2.place(packet(Number.NaN, 0.021))
+	record(
+		'packets',
+		'a packet with no usable timing is dropped rather than crashing the export',
+		nonsense.action === 'drop' && nonsense.reason === 'unusable',
+		JSON.stringify(nonsense),
+	)
+
+	record(
+		'packets',
+		'a clean run says nothing, so a normal export stays quiet',
+		packetTiming.describePacketRetiming(clean.stats()) === null,
+	)
+	record(
+		'packets',
+		'and a trimmed one says what it did',
+		/priming/.test(packetTiming.describePacketRetiming(primingStats) || ''),
+		packetTiming.describePacketRetiming(primingStats),
+	)
+}
+
+
+/**
+ * The same policy, against a real file and the real muxer.
+ *
+ * The unit checks above prove what the retimer decides; this proves that the
+ * decision is the one the muxer needed. ffmpeg writes a two-second MP4 - which
+ * gives its AAC track the priming delay every AAC encoder produces - and the
+ * copy is then run twice: once the way the studio used to do it, which must
+ * fail with the exact error users reported, and once the way it does it now,
+ * which must succeed and land both tracks at zero with the duration intact.
+ *
+ * Skipped, loudly, where ffmpeg is not installed. It is a fixture generator
+ * here, not a dependency of the studio.
+ */
+async function checkPacketTimingOnRealFile() {
+	process.stdout.write('\npacket timing, against a real file\n')
+
+	const probe = spawnSync('ffmpeg', ['-version'], { encoding: 'utf8', shell: process.platform === 'win32' })
+	if (probe.status !== 0) {
+		record('packets', 'a real MP4 is re-muxed (needs ffmpeg to make one)', true, 'skipped: ffmpeg is not installed')
+		return
+	}
+
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-packet-timing-'))
+	const file = path.join(dir, 'aac-priming.mp4')
+	try {
+		const made = spawnSync(
+			'ffmpeg',
+			[
+				'-y', '-v', 'error',
+				'-f', 'lavfi', '-i', 'testsrc=size=320x240:rate=30',
+				'-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000',
+				'-t', '2',
+				'-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+				'-c:a', 'aac',
+				'-shortest',
+				file,
+			],
+			{ encoding: 'utf8', shell: process.platform === 'win32' },
+		)
+		if (made.status !== 0 || !fs.existsSync(file)) {
+			record('packets', 'a fixture MP4 is written', false, (made.stderr || '').slice(0, 160))
+			return
+		}
+
+		const mediabunny = require('mediabunny')
+		const bytes = fs.readFileSync(file)
+
+		const openTracks = async () => {
+			const input = new mediabunny.Input({
+				formats: mediabunny.ALL_FORMATS,
+				source: new mediabunny.BlobSource(new Blob([bytes])),
+			})
+			return {
+				input,
+				video: await input.getPrimaryVideoTrack(),
+				audio: await input.getPrimaryAudioTrack(),
+			}
+		}
+
+		const source = await openTracks()
+		const firstAudio = await new mediabunny.EncodedPacketSink(source.audio).getFirstPacket()
+		record(
+			'packets',
+			'an ordinary MP4 really does start its audio below zero',
+			firstAudio.timestamp < 0,
+			firstAudio.timestamp.toFixed(6) + 's',
+		)
+
+		/** One copy of the track, with or without the retimer in the way. */
+		const copy = async (retime) => {
+			const { video, audio } = await openTracks()
+			const output = new mediabunny.Output({
+				format: new mediabunny.Mp4OutputFormat({ fastStart: 'in-memory' }),
+				target: new mediabunny.BufferTarget(),
+			})
+			const videoSource = new mediabunny.EncodedVideoPacketSource(await video.getCodec())
+			const audioSource = new mediabunny.EncodedAudioPacketSource(await audio.getCodec())
+			output.addVideoTrack(videoSource)
+			output.addAudioTrack(audioSource)
+			await output.start()
+
+			const pump = async (track, sink) => {
+				const decoderConfig = await track.getDecoderConfig()
+				const retimer = packetTiming.createPacketRetimer()
+				let first = true
+				for await (const packet of new mediabunny.EncodedPacketSink(track).packets()) {
+					let outgoing = packet
+					if (retime) {
+						const placement = retimer.place(packet)
+						if (placement.action === 'drop') continue
+						if (placement.action === 'retime') {
+							outgoing = packet.clone({ timestamp: placement.timestamp, duration: placement.duration })
+						}
+					}
+					await sink.add(outgoing, first ? { decoderConfig } : undefined)
+					first = false
+				}
+			}
+
+			await pump(video, videoSource)
+			await pump(audio, audioSource)
+			await output.finalize()
+			return output.target.buffer
+		}
+
+		let refusal = null
+		try {
+			await copy(false)
+		} catch (error) {
+			refusal = String((error && error.message) || error)
+		}
+		record(
+			'packets',
+			'copying it unchanged is refused, which is the bug users hit',
+			refusal !== null && /non-negative/.test(refusal),
+			refusal || 'no error',
+		)
+
+		let buffer = null
+		let failure = null
+		try {
+			buffer = await copy(true)
+		} catch (error) {
+			failure = String((error && error.message) || error)
+		}
+		record('packets', 'and with the retimer it re-muxes', buffer !== null, failure || '')
+		if (!buffer) return
+
+		const result = new mediabunny.Input({
+			formats: mediabunny.ALL_FORMATS,
+			source: new mediabunny.BlobSource(new Blob([buffer])),
+		})
+		const outAudio = await result.getPrimaryAudioTrack()
+		const outVideo = await result.getPrimaryVideoTrack()
+		const audioStart = (await new mediabunny.EncodedPacketSink(outAudio).getFirstPacket()).timestamp
+		const videoStart = (await new mediabunny.EncodedPacketSink(outVideo).getFirstPacket()).timestamp
+		const duration = await result.computeDuration()
+
+		record('packets', 'the result starts its audio at zero', audioStart === 0, audioStart + 's')
+		record('packets', 'and its video where it always was', videoStart === 0, videoStart + 's')
+		record('packets', 'and is still two seconds long', Math.abs(duration - 2) < 0.1, duration.toFixed(3) + 's')
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true })
+	}
+}
+
 async function main() {
 	checkLibrary()
 	checkBaking()
 	checkLookup()
 	checkRegistry()
 	checkPolarity()
+	checkPacketTiming()
+	await checkPacketTimingOnRealFile()
 	checkAssets()
 
 	let server = null

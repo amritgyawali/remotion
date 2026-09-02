@@ -589,6 +589,22 @@ to choose the pictures yourself:
    caption timing survives exactly. The original is parked in the vault
    *before* the first frame is encoded, and one press puts it back.
 
+**A copied track still needs its clock checked.** An ordinary MP4 starts its
+AAC track *below* zero - that is how a file carries the encoder's priming
+samples, the ones a decoder consumes and never plays - and a muxer refuses a
+negative timestamp outright: `Timestamps must be non-negative (got -0.044s)`.
+Every export here that copies packets rather than re-encoding them (this bake,
+every visual tool, and the audio-only remuxer) puts them through
+[`lib/tools/packet-timing.ts`](lib/tools/packet-timing.ts) first. A packet that
+is over before zero is dropped, because none of it was ever going to be heard;
+a packet that straddles zero starts at zero and loses only the part that could
+not play; **everything already at or after zero is passed through untouched**,
+which is the property that keeps subtitles, objects and cuts exactly where they
+were. `npm run tools:check:maths` proves the policy and then proves the point
+end to end: ffmpeg writes a real MP4, copying it unchanged is refused with that
+same error, and copying it through the retimer re-muxes with both tracks
+starting at zero and the duration intact.
+
 **The composite is one draw, not a shader.** Writing the mix out is what makes
 this cheap. Compositing the person over a *plate* that is the frame with an
 object painted on it -
@@ -999,6 +1015,7 @@ lib/
     runners.ts          the one switch from a tool's params to an engine call
     frame-ops.ts        the shared draw pipeline and its four pass seams
     video-filter.ts     decode -> frame-ops -> encode, with a per-frame hook
+    packet-timing.ts    where a copied packet goes when its clock starts below zero
     frame-reader.ts     forward-only frame access, for the multi-clip tools
     adjust.ts           exposure, white balance, tonal regions, HSL, clarity
     color-tone.ts       79 graded looks, baked into lookup cubes

@@ -170,5 +170,16 @@ export function describeRenderFailure(error: unknown): Error {
 				'export in halves, or close other tabs and try again.',
 		)
 	}
+	// The muxer's own words for a track that starts before zero. Every export
+	// path trims the encoder priming that causes it (see tools/packet-timing.ts),
+	// so reaching here means one of them was missed - and the person reading it
+	// should be told that, not handed the muxer's sentence.
+	if (/timestamps? must be non-negative/i.test(message)) {
+		return new Error(
+			'This clip’s audio starts a few milliseconds before the video does - the encoder’s priming delay - ' +
+				'and this export path did not trim it. Re-encoding the audio first (Tools › Convert) gets around ' +
+				'it, and it is worth reporting: every other export here handles that automatically.',
+		)
+	}
 	return error instanceof Error ? error : new Error(message)
 }

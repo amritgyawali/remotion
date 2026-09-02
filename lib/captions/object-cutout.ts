@@ -92,6 +92,22 @@ export type KnockoutOptions = {
 	 * distance, so it means the same thing whatever the picture is.
 	 */
 	tolerance?: number
+	/**
+	 * How different a pixel may be **from its own neighbour** and still be
+	 * background, 0-100.
+	 *
+	 * This is what lets the fill walk a gradient. A studio backdrop is never one
+	 * colour: it is a soft ramp from grey to white, or a sky that goes from pale
+	 * at the horizon to deep at the top, and a fill that only compares against
+	 * the colour it started at stops halfway up and leaves a band. Comparing
+	 * each pixel against the one the fill arrived from instead follows the ramp
+	 * all the way - and because the step allowed is small, it still cannot climb
+	 * over the edge of the subject, where the colour changes all at once.
+	 *
+	 * The global tolerance stays in force as a leash: a gradient may wander, but
+	 * never more than a few times the distance it started from.
+	 */
+	stepTolerance?: number
 	/** how many pixels of soft edge to leave behind, 0 for a hard cut */
 	feather?: number
 	/** below this share removed, the fill is reported as having failed */
@@ -117,7 +133,23 @@ export type KnockoutResult = {
 	backgroundColor: [number, number, number]
 }
 
-const DEFAULTS = { tolerance: 12, feather: 2, minRemoved: 0.08, maxRemoved: 0.99 }
+const DEFAULTS = { tolerance: 12, stepTolerance: 7, feather: 2, minRemoved: 0.08, maxRemoved: 0.99 }
+
+/**
+ * The attempts `prepareObjectImage` makes, gentlest first.
+ *
+ * One tolerance cannot serve a logo on flat white and a bottle on a lit studio
+ * sweep: the first needs almost none and the second needs enough to climb a
+ * ramp. Rather than pick a number that is wrong for both, the fill is tried
+ * three times and the first result that takes a believable share of the
+ * picture is kept - so an easy image is cut with the gentlest setting that
+ * works, and a hard one still gets its chance.
+ */
+const ATTEMPTS: Array<{ tolerance: number; stepTolerance: number }> = [
+	{ tolerance: 9, stepTolerance: 5 },
+	{ tolerance: 15, stepTolerance: 8 },
+	{ tolerance: 24, stepTolerance: 12 },
+]
 
 /**
  * The colour the border mostly is.
@@ -168,6 +200,7 @@ export function borderColor(image: RgbaImage): [number, number, number] {
  */
 export function knockoutBackground(image: RgbaImage, options: KnockoutOptions = {}): KnockoutResult {
 	const tolerance = Math.max(0, Math.min(100, options.tolerance ?? DEFAULTS.tolerance))
+	const stepTolerance = Math.max(0, Math.min(100, options.stepTolerance ?? DEFAULTS.stepTolerance))
 	const feather = Math.max(0, Math.min(24, Math.round(options.feather ?? DEFAULTS.feather)))
 	const minRemoved = options.minRemoved ?? DEFAULTS.minRemoved
 
@@ -178,47 +211,80 @@ export function knockoutBackground(image: RgbaImage, options: KnockoutOptions = 
 	}
 
 	const seed = borderColor(image)
-	// Squared distance, so the comparison never needs a square root. The
-	// maximum is 3 * 255^2, and the tolerance is a percentage of its root.
+	// Squared distances, so no comparison ever needs a square root. The maximum
+	// is 3 * 255^2, and a tolerance is a percentage of its root.
 	const limit = ((tolerance / 100) * 441.673) ** 2
+	const stepLimit = ((stepTolerance / 100) * 441.673) ** 2
+	// How far a gradient may wander from where it started before it stops being
+	// the same background. Without this leash a chain of small steps walks
+	// across a whole photograph one shade at a time.
+	const wanderLimit = Math.min(((60 / 100) * 441.673) ** 2, limit * 9)
 
 	const source = image.data
 	const outside = new Uint8Array(pixels)
 	const stack = new Int32Array(pixels)
 	let top = 0
 
-	const matches = (index: number): boolean => {
+	const distanceTo = (index: number, red: number, green: number, blue: number): number => {
 		const at = index * 4
-		if (source[at + 3] < 8) return true // already transparent, and connected
-		const dr = source[at] - seed[0]
-		const dg = source[at + 1] - seed[1]
-		const db = source[at + 2] - seed[2]
-		return dr * dr + dg * dg + db * db <= limit
+		const dr = source[at] - red
+		const dg = source[at + 1] - green
+		const db = source[at + 2] - blue
+		return dr * dr + dg * dg + db * db
 	}
 
-	const push = (index: number) => {
-		if (outside[index] || !matches(index)) return
+	/** A pixel the fill can reach from nowhere in particular - a border seed. */
+	const seeds = (index: number): boolean => {
+		if (source[index * 4 + 3] < 8) return true // already transparent, and connected
+		return distanceTo(index, seed[0], seed[1], seed[2]) <= limit
+	}
+
+	/**
+	 * A pixel the fill can reach *from another pixel*.
+	 *
+	 * Either it looks like the background it started from, or it looks like the
+	 * pixel it arrived from and has not wandered too far from that start. The
+	 * second clause is what follows a gradient; the third is what stops it
+	 * following one all the way into the subject.
+	 */
+	const spreads = (index: number, from: number): boolean => {
+		if (source[index * 4 + 3] < 8) return true
+		if (distanceTo(index, seed[0], seed[1], seed[2]) <= limit) return true
+		if (stepLimit <= 0) return false
+		const at = from * 4
+		if (distanceTo(index, source[at], source[at + 1], source[at + 2]) > stepLimit) return false
+		return distanceTo(index, seed[0], seed[1], seed[2]) <= wanderLimit
+	}
+
+	const pushSeed = (index: number) => {
+		if (outside[index] || !seeds(index)) return
+		outside[index] = 1
+		stack[top++] = index
+	}
+
+	const pushFrom = (index: number, from: number) => {
+		if (outside[index] || !spreads(index, from)) return
 		outside[index] = 1
 		stack[top++] = index
 	}
 
 	for (let x = 0; x < width; x++) {
-		push(x)
-		push((height - 1) * width + x)
+		pushSeed(x)
+		pushSeed((height - 1) * width + x)
 	}
 	for (let y = 0; y < height; y++) {
-		push(y * width)
-		push(y * width + width - 1)
+		pushSeed(y * width)
+		pushSeed(y * width + width - 1)
 	}
 
 	while (top > 0) {
 		const index = stack[--top]
 		const x = index % width
 		const y = (index - x) / width
-		if (x > 0) push(index - 1)
-		if (x < width - 1) push(index + 1)
-		if (y > 0) push(index - width)
-		if (y < height - 1) push(index + width)
+		if (x > 0) pushFrom(index - 1, index)
+		if (x < width - 1) pushFrom(index + 1, index)
+		if (y > 0) pushFrom(index - width, index)
+		if (y < height - 1) pushFrom(index + width, index)
 	}
 
 	let removed = 0

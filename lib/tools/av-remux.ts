@@ -20,6 +20,7 @@
  */
 
 import { applyGainDb } from './audio-ops'
+import { createPacketRetimer } from './packet-timing'
 import { createRenderSink, describeRenderFailure } from '../media/render-sink'
 
 export type AudioOutputFormat = 'mp4' | 'webm'
@@ -324,13 +325,25 @@ export async function remuxWithAudioEdit(options: RemuxOptions): Promise<RemuxRe
 
 		/* -------------------------------------------------------- write it */
 
+		// Both copy loops put their packets through the retimer first. A file
+		// whose first packets sit below zero - which is every MP4 whose audio
+		// carries the encoder's priming delay, and some whose video carries a
+		// composition offset - would otherwise be refused by the muxer outright.
+		// See `packet-timing.ts`.
 		const writeVideo = async () => {
 			const sink = new EncodedPacketSink(videoTrack)
+			const retimer = createPacketRetimer({ track: 'video' })
 			let first = true
 			let count = 0
 			for await (const packet of sink.packets()) {
 				assertLive(signal)
-				await videoSource.add(packet, first ? { decoderConfig: videoDecoderConfig ?? undefined } : undefined)
+				const placement = retimer.place(packet)
+				if (placement.action === 'drop') continue
+				const outgoing =
+					placement.action === 'retime'
+						? packet.clone({ timestamp: placement.timestamp, duration: placement.duration })
+						: packet
+				await videoSource.add(outgoing, first ? { decoderConfig: videoDecoderConfig ?? undefined } : undefined)
 				first = false
 				count += 1
 				if (count % 30 === 0) options.onProgress?.({ phase: 'encoding', ratio: 0.65 })
@@ -346,11 +359,18 @@ export async function remuxWithAudioEdit(options: RemuxOptions): Promise<RemuxRe
 			if (audioPassthroughTrack && audioSource instanceof EncodedAudioPacketSource) {
 				const audioDecoderConfig = await audioPassthroughTrack.getDecoderConfig()
 				const sink = new EncodedPacketSink(audioPassthroughTrack)
+				const retimer = createPacketRetimer()
 				let first = true
 				const packetSource = audioSource
 				for await (const packet of sink.packets()) {
 					assertLive(signal)
-					await packetSource.add(packet, first ? { decoderConfig: audioDecoderConfig ?? undefined } : undefined)
+					const placement = retimer.place(packet)
+					if (placement.action === 'drop') continue
+					const outgoing =
+						placement.action === 'retime'
+							? packet.clone({ timestamp: placement.timestamp, duration: placement.duration })
+							: packet
+					await packetSource.add(outgoing, first ? { decoderConfig: audioDecoderConfig ?? undefined } : undefined)
 					first = false
 				}
 			}
