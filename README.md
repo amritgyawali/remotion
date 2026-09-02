@@ -533,18 +533,64 @@ own timing rather than its line's. Without the spread, the top ten words of a
 transcript routinely land inside two sentences - they are the top ten *because*
 that passage is dense - and the video gets a slideshow followed by nothing.
 
-**What picture.** `/api/captions/images` searches Wikimedia Commons (PNGs only),
-Openverse and Iconify, and hands back a few candidates per word with the icon
-always last: someone who asks for a mango wants a mango, and gets a pictogram of
-one only when the web could not supply the real thing. The browser then
-downloads them in order and *measures* each one, because whether a file is a
-cut-out is a fact about its pixels and no amount of reading a title tells you.
-A file that arrived transparent is used as it is. Anything else gets one flood
-fill inward from its border - a fill, not a colour key, so the white of a shirt
-in the middle of a photo survives while the white behind it does not - and is
-kept only if that fill found a real background. **A word whose every candidate
-is a rectangle is left without a picture and named in the panel**, because a
-white box behind someone's head is worse than nothing there.
+**What picture.** `/api/captions/images` is a **ladder**, and it climbs only as
+far as it has to. Each rung is asked for candidates; if that rung answers well
+enough the search stops there and the rungs below it are never queried, which is
+both why an ordinary noun is found in one round trip and why nothing is spent on
+a paid API for a word the free ones already answered:
+
+| | rung | where | needs a key |
+|---|---|---|---|
+| 1 | open and freely licensed | Wikimedia Commons (PNG only), Openverse (PNG, cleared for commercial reuse) | no |
+| 2 | the whole web, transparent only | Pixabay `colors=transparent`, Google Programmable Search `imgColorType=trans`, Bing `imageType=Transparent`, SerpAPI `tbs=ic:trans` | yes, any one |
+| 3 | photographs | Openverse and Commons with the format filter dropped, Pexels, Unsplash | no |
+| 4 | a pictogram | Iconify, recoloured white | no |
+
+Rung 1 answers most ordinary nouns and is the only rung that is always
+available. Rung 2 exists because a transcript is about whatever it is about, and
+the four providers on it all support "transparent PNG only" *natively* - so this
+asks the web for exactly the thing the feature needs rather than fetching
+everything and filtering afterwards. Every one of them is optional: no key, no
+rung, no error. See `.env.example` for which to set; `PIXABAY_API_KEY` is free
+and the best single one to have.
+
+**Watermarks are refused by provenance, not detected in the pixels.** Rungs 1, 3
+and 4 never watermark. Rung 2 can reach anything on the web, so the stock
+agencies and the "free PNG" farms that stamp their logo onto every download -
+Shutterstock, Alamy, Getty, Freepik, PNGItem and two dozen others - are refused
+by host, and a title that advertises itself as a preview or a sample is refused
+by name. The same refusal is applied again at the download proxy, because a
+candidate list is data and nothing stops a caller asking for an address the
+search would never have offered. That is an honest guard on where a picture came
+from; claiming to spot a watermark in the pixels would not be.
+
+**Then the browser measures what it downloaded**, because whether a file is a
+cut-out is a fact about its pixels and no amount of reading a title tells you. A
+file that arrived transparent is used as it is. Anything else gets a flood fill
+inward from its border - a fill, not a colour key, so the white of a shirt in
+the middle of a photo survives while the white behind it does not. The fill
+walks a gradient as well as a flat colour, comparing each pixel against the one
+it arrived from rather than only against the colour it started at, which is what
+takes a lit studio sweep instead of leaving a band halfway up it; and it is
+tried at **three escalating strengths, gentlest first**, so a logo on flat white
+is cut with almost no tolerance and a bottle on that sweep still gets enough,
+without either setting being applied to the picture it would ruin. A fill is
+kept only if it found a real background: not too little (it found the corners),
+not nearly all of it (it walked through the subject), and not one that leaves
+the border still covered on two sides (what is left is a band, not an object).
+
+**And when there is no cut-out anywhere, the word still gets a picture.** In
+order: the studio's own art pack gets a turn, because it is at least transparent
+and it only ever matches a word it actually holds a picture of. Failing that,
+one last sweep asks the route for **photographs alone** - `mode: 'photo'`, which
+starts at rung 3 and skips the two below it, since those have already been
+proven to have nothing - and the best of what comes back is kept whole, as the
+JPEG it is, with its edge ramped to nothing and its corners rounded so it reads
+as an inset rather than a screenshot pasted into the frame. Those words are
+**named in the panel as photographs**, because they look different on screen and
+nobody should have to guess which ones they were. Only a word that fails all
+three is left without an object - and it too is named, because a white box
+behind someone's head is worse than nothing there.
 
 **How big.** Three head widths across, from the slider at the bottom of the
 block. The conversion from that sentence to the renderer's `scale` cancels the
@@ -1000,8 +1046,10 @@ lib/
     object-plan.ts      one choice per cue -> a shot list with a floor and a ceiling
     object-director.ts  the keyword plan, then the language model's refinement of it
     object-auto.ts      the one press: how many objects, which words, when, how big
+    image-search.ts     the ladder of picture sources, and what counts as a watermark
     object-fetch.ts     searching the web for a word, downloading it, keeping the good one
     object-cutout.ts    is this a cut-out? if not, can its background be taken away?
+                        and if it cannot, is a softened photograph better than nothing?
     object-anchor.ts    the top of the speaker's head, one-euro filtered, placed
     object-compositor.ts one small draw: the frame is never read, only the object
     object-sprite.ts    rasterising an object at the size it is drawn, and drawing it

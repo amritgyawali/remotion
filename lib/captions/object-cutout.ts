@@ -17,12 +17,22 @@
  *      product shot on white, a logo on one colour, an illustration on a flat
  *      sky. That is a flood fill inward from the border, not a colour-distance
  *      test over the whole image: the white of a shirt in the middle of a photo
- *      must survive, and it does, because the fill never reaches it.
+ *      must survive, and it does, because the fill never reaches it. The fill
+ *      walks a gradient as well as a flat colour, and is tried at three
+ *      strengths, gentlest first, so one code path serves a logo on white and a
+ *      bottle on a lit studio sweep without ruining either.
  *
  * Where the answer to both is no - a busy photograph edge to edge - the picture
  * is reported as still opaque and the caller picks a different candidate. That
  * honesty is the point: silently pasting a rectangle behind someone's head is
  * the failure this whole file exists to avoid.
+ *
+ * There is one deliberate exception, and it has to be asked for by name. On the
+ * last sweep of a word the web had no cut-out of *anywhere*, `allowPhoto` keeps
+ * the photograph, softens its edge into the frame, and flags it - because at
+ * that point the choice is no longer between a photograph and a cut-out, it is
+ * between a photograph and an empty frame, and the photograph is of the right
+ * thing. Nothing turns that on by default.
  *
  * Everything here is a pure function over plain pixel buffers, so the same code
  * runs in the browser and in the offline checks with no canvas at all.
@@ -121,19 +131,47 @@ export type KnockoutOptions = {
 	 * specks is worse than nothing.
 	 */
 	maxRemoved?: number
+	/**
+	 * How much of the *border* the fill has to have taken, 0-1.
+	 *
+	 * The share-of-the-picture tests above cannot tell a cut-out from a band. A
+	 * photograph that is one smooth gradient edge to edge lets the fill walk out
+	 * from the middle of each side until the leash stops it, and what is left is
+	 * two stripes along the top and bottom - half the picture removed, which
+	 * every other test here calls a success, and a subject nowhere in it.
+	 *
+	 * What separates the two is where the survivors are. A real background
+	 * surrounds the object, so taking it away clears the border; a band still
+	 * runs along two whole edges. Requiring most of the border to be gone
+	 * refuses the band while still allowing the ordinary case of a subject that
+	 * bleeds off one side of the frame.
+	 */
+	minBorderRemoved?: number
 }
 
 export type KnockoutResult = {
 	image: RgbaImage
 	/** share of the picture the fill took away, 0-1 */
 	removedRatio: number
+	/** share of the border pixels it took, 0-1 - see `minBorderRemoved` */
+	borderRemovedRatio: number
 	/** false when there was no flat background to take - the picture is unchanged */
 	knockedOut: boolean
 	/** the colour the fill was seeded from, for the panel to explain itself */
 	backgroundColor: [number, number, number]
 }
 
-const DEFAULTS = { tolerance: 12, stepTolerance: 7, feather: 2, minRemoved: 0.08, maxRemoved: 0.99 }
+const DEFAULTS = {
+	tolerance: 12,
+	stepTolerance: 7,
+	feather: 2,
+	minRemoved: 0.08,
+	maxRemoved: 0.99,
+	// One whole side of the frame is 25% of its border, so 0.6 leaves room for a
+	// subject that bleeds off an edge - the common case in a tightly cropped
+	// product shot - while refusing anything still running along two of them.
+	minBorderRemoved: 0.6,
+}
 
 /**
  * The attempts `prepareObjectImage` makes, gentlest first.
@@ -207,7 +245,13 @@ export function knockoutBackground(image: RgbaImage, options: KnockoutOptions = 
 	const { width, height } = image
 	const pixels = width * height
 	if (pixels === 0) {
-		return { image, removedRatio: 0, knockedOut: false, backgroundColor: [255, 255, 255] }
+		return {
+			image,
+			removedRatio: 0,
+			borderRemovedRatio: 0,
+			knockedOut: false,
+			backgroundColor: [255, 255, 255],
+		}
 	}
 
 	const seed = borderColor(image)
@@ -291,14 +335,35 @@ export function knockoutBackground(image: RgbaImage, options: KnockoutOptions = 
 	for (let index = 0; index < pixels; index++) if (outside[index]) removed++
 	const removedRatio = removed / pixels
 
-	// Nothing connected to the border matched, so there was no flat background
-	// here - or everything did, which means the fill walked through the subject
-	// rather than around it. Either way the picture is handed back exactly as it
-	// arrived rather than half-eaten, and the caller is told so it can try
-	// another candidate.
+	let borderPixels = 0
+	let borderRemoved = 0
+	const countBorder = (index: number) => {
+		borderPixels++
+		if (outside[index]) borderRemoved++
+	}
+	for (let x = 0; x < width; x++) {
+		countBorder(x)
+		if (height > 1) countBorder((height - 1) * width + x)
+	}
+	for (let y = 1; y < height - 1; y++) {
+		countBorder(y * width)
+		if (width > 1) countBorder(y * width + width - 1)
+	}
+	const borderRemovedRatio = borderPixels === 0 ? 0 : borderRemoved / borderPixels
+
+	// Three ways this can have failed, and the picture is handed back exactly as
+	// it arrived for all of them rather than half-eaten, with the caller told so
+	// it can try another candidate:
+	//
+	//  - nothing connected to the border matched, so there was no background;
+	//  - everything did, so the fill walked through the subject rather than
+	//    around it, which is what a soft gradient does;
+	//  - enough of the border survived that what is left is a band along it,
+	//    not an object standing in the middle of it.
 	const maxRemoved = options.maxRemoved ?? DEFAULTS.maxRemoved
-	if (removedRatio < minRemoved || removedRatio > maxRemoved) {
-		return { image, removedRatio, knockedOut: false, backgroundColor: seed }
+	const minBorderRemoved = options.minBorderRemoved ?? DEFAULTS.minBorderRemoved
+	if (removedRatio < minRemoved || removedRatio > maxRemoved || borderRemovedRatio < minBorderRemoved) {
+		return { image, removedRatio, borderRemovedRatio, knockedOut: false, backgroundColor: seed }
 	}
 
 	const data = new Uint8ClampedArray(source)
@@ -321,6 +386,7 @@ export function knockoutBackground(image: RgbaImage, options: KnockoutOptions = 
 	return {
 		image: { data, width, height },
 		removedRatio,
+		borderRemovedRatio,
 		knockedOut: true,
 		backgroundColor: seed,
 	}
@@ -428,6 +494,24 @@ export function trimTransparent(image: RgbaImage, alphaThreshold = 8): TrimResul
    The whole decision, in one call.
    ========================================================================== */
 
+export type PrepareOptions = KnockoutOptions & {
+	/**
+	 * Accept a picture whose background could not be removed.
+	 *
+	 * Off by default, and deliberately so: the whole point of this file is that
+	 * a rectangle behind a speaker's head is worse than nothing there. It is
+	 * turned on only for the last sweep of a word the web had no cut-out of
+	 * anywhere, where the honest choice is between a photograph and no picture
+	 * at all - and a photograph of the right thing beats an empty frame.
+	 */
+	allowPhoto?: boolean
+	/** how wide the soft edge on that last resort is, as a share of the short side */
+	photoFeather?: number
+}
+
+/** How a picture ended up usable, which is not the same question as whether it is. */
+export type PrepareRoute = 'arrived-cutout' | 'knockout' | 'photo' | 'none'
+
 export type PreparedImage = {
 	image: RgbaImage
 	/** true when the picture can stand behind a head without looking like a sticker */
@@ -436,20 +520,87 @@ export type PreparedImage = {
 	knockedOut: boolean
 	removedRatio: number
 	alpha: AlphaReport
+	/** how it got here - the field the caller should branch on */
+	route: PrepareRoute
+	/** true for a photograph kept with its background, so the caller can say so */
+	fallback: boolean
+	/** which of the escalating attempts cut it out, for the panel and the checks */
+	attempt: { tolerance: number; stepTolerance: number } | null
 	/** what happened, in one line, for the panel to show */
 	note: string
 }
 
 /**
+ * A fill that took this little did not find a background - it found the corners.
+ *
+ * Above this share the escalation stops and keeps what it has; below it, the
+ * next attempt is tried and the biggest believable result is kept. Without the
+ * threshold the gentlest setting always wins by removing the four corners of a
+ * photograph, which is the one outcome that looks like damage rather than a
+ * cut-out.
+ */
+const CONFIDENT_REMOVED = 0.15
+
+/**
+ * Softens a rectangle's edge into the frame.
+ *
+ * Only ever used on the last resort - a photograph nothing could cut out. A
+ * hard-edged photo behind a head reads as a screenshot pasted into the video;
+ * the same photo with its border ramped to nothing and its corners rounded
+ * reads as an inset, which is a deliberate-looking thing rather than a mistake.
+ *
+ * The ramp is a smoothstep over the distance to the nearest edge, so there is
+ * no visible band where it starts.
+ */
+export function softenEdges(image: RgbaImage, radius: number): RgbaImage {
+	const { width, height } = image
+	const ramp = Math.max(1, Math.min(Math.floor(Math.min(width, height) / 2), Math.round(radius)))
+	const data = new Uint8ClampedArray(image.data)
+
+	for (let y = 0; y < height; y++) {
+		const dy = Math.min(y, height - 1 - y)
+		for (let x = 0; x < width; x++) {
+			const dx = Math.min(x, width - 1 - x)
+			// Inside a corner both distances are small at once, and taking the
+			// smaller of the two would chamfer it. Measuring from the centre of
+			// the corner's arc instead rounds it properly.
+			const distance =
+				dx < ramp && dy < ramp ? ramp - Math.hypot(ramp - dx, ramp - dy) : Math.min(dx, dy)
+			if (distance >= ramp) continue
+			const t = Math.max(0, Math.min(1, distance / ramp))
+			const eased = t * t * (3 - 2 * t)
+			const at = (y * width + x) * 4
+			data[at + 3] = Math.round(image.data[at + 3] * eased)
+		}
+	}
+
+	return { data, width, height }
+}
+
+/**
  * Prepares one downloaded picture, and says whether it is worth using.
  *
- * The order is the whole logic. A file that arrived cut out is trimmed and
- * returned untouched. Anything else gets one flood fill from its border, and is
- * usable only if that fill actually found a background - because a photograph
- * whose background could not be removed is a rectangle, and a rectangle behind
- * someone's head is the thing this feature is for avoiding.
+ * The order is the whole logic, and each step exists because the one before it
+ * failed:
+ *
+ *   1. **It arrived cut out.** Trimmed and handed back untouched - every
+ *      knockout is a chance to eat a highlight out of something that was fine.
+ *
+ *   2. **It has a background that can be taken away.** The fill is tried up to
+ *      three times, gentlest first, and stops at the first setting that takes a
+ *      believable share of the picture. That escalation is what lets one code
+ *      path serve a logo on flat white and a bottle on a lit studio sweep: the
+ *      first is cut with almost no tolerance, the second gets enough to climb
+ *      the ramp, and neither setting is applied to the picture it would ruin.
+ *
+ *   3. **Neither, and the caller said a photograph will do.** Kept as it is
+ *      with a soft edge, and flagged, so the panel can say which words got a
+ *      photograph rather than a cut-out. Only the last sweep asks for this.
+ *
+ * With `allowPhoto` off - the default, and what the main pass uses - step three
+ * is a refusal instead, and the caller moves to the next candidate.
  */
-export function prepareObjectImage(image: RgbaImage, options: KnockoutOptions = {}): PreparedImage {
+export function prepareObjectImage(image: RgbaImage, options: PrepareOptions = {}): PreparedImage {
 	const arrived = alphaReport(image)
 	if (arrived.isCutout) {
 		const trimmed = trimTransparent(image)
@@ -459,32 +610,95 @@ export function prepareObjectImage(image: RgbaImage, options: KnockoutOptions = 
 			knockedOut: false,
 			removedRatio: 0,
 			alpha: arrived,
+			route: 'arrived-cutout',
+			fallback: false,
+			attempt: null,
 			note: `arrived cut out (${Math.round(arrived.transparentRatio * 100)}% transparent)`,
 		}
 	}
 
-	const knocked = knockoutBackground(image, options)
-	if (!knocked.knockedOut) {
+	// A caller that named a tolerance gets that tolerance and nothing else: the
+	// escalation is a default, not an override of somebody's slider.
+	const attempts =
+		options.tolerance === undefined
+			? ATTEMPTS
+			: [
+					{
+						tolerance: options.tolerance,
+						stepTolerance: options.stepTolerance ?? DEFAULTS.stepTolerance,
+					},
+				]
+
+	let best: { knocked: KnockoutResult; attempt: { tolerance: number; stepTolerance: number } } | null = null
+	/**
+	 * The gentlest attempt's result, kept for the explanation if they all fail.
+	 *
+	 * It is the one that describes the picture rather than the setting: run wide
+	 * enough, *every* picture eventually reports that the fill reached all of it,
+	 * which says something about the tolerance and nothing about the file.
+	 */
+	let firstFailure: KnockoutResult | null = null
+	for (const attempt of attempts) {
+		const knocked = knockoutBackground(image, { ...options, ...attempt })
+		if (!knocked.knockedOut) {
+			if (!firstFailure) firstFailure = knocked
+			continue
+		}
+		if (!best || knocked.removedRatio > best.knocked.removedRatio) best = { knocked, attempt }
+		if (knocked.removedRatio >= CONFIDENT_REMOVED) break
+	}
+
+	if (best) {
+		const trimmed = trimTransparent(best.knocked.image)
 		return {
-			image,
-			usable: false,
-			knockedOut: false,
-			removedRatio: knocked.removedRatio,
-			alpha: arrived,
-			note:
-				knocked.removedRatio > 0.9
-					? 'the background fill reached the whole picture - nothing would be left of the object'
-					: 'no flat background to remove - this one would be a rectangle',
+			image: trimmed.image,
+			usable: true,
+			knockedOut: true,
+			removedRatio: best.knocked.removedRatio,
+			alpha: alphaReport(trimmed.image),
+			route: 'knockout',
+			fallback: false,
+			attempt: best.attempt,
+			note: `background removed (${Math.round(best.knocked.removedRatio * 100)}% of the picture, tolerance ${
+				best.attempt.tolerance
+			})`,
 		}
 	}
 
-	const trimmed = trimTransparent(knocked.image)
+	if (options.allowPhoto) {
+		const short = Math.min(image.width, image.height)
+		const softened = softenEdges(image, Math.max(4, Math.round(short * (options.photoFeather ?? 0.06))))
+		return {
+			image: softened,
+			usable: true,
+			knockedOut: false,
+			removedRatio: 0,
+			alpha: alphaReport(softened),
+			route: 'photo',
+			fallback: true,
+			attempt: null,
+			note: 'no background could be removed - used as a photograph with a soft edge',
+		}
+	}
+
+	// Nothing worked and no photograph was asked for. The picture is handed back
+	// exactly as it arrived, and the caller is told, so it can try the next
+	// candidate rather than paste a rectangle behind someone's head.
+	const failed = firstFailure
 	return {
-		image: trimmed.image,
-		usable: true,
-		knockedOut: true,
-		removedRatio: knocked.removedRatio,
-		alpha: alphaReport(trimmed.image),
-		note: `background removed (${Math.round(knocked.removedRatio * 100)}% of the picture)`,
+		image,
+		usable: false,
+		knockedOut: false,
+		removedRatio: failed?.removedRatio ?? 0,
+		alpha: arrived,
+		route: 'none',
+		fallback: false,
+		attempt: null,
+		note:
+			!failed || failed.removedRatio < (options.minRemoved ?? DEFAULTS.minRemoved)
+				? 'no flat background to remove - this one would be a rectangle'
+				: failed.removedRatio > (options.maxRemoved ?? DEFAULTS.maxRemoved)
+					? 'the background fill reached the whole picture - nothing would be left of the object'
+					: 'the background runs off the edge of the frame - what is left would be a band, not an object',
 	}
 }

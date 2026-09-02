@@ -76,8 +76,10 @@ export type ObjectAutoState = {
 	error: string | null
 	/** how many keywords the clip's length asked for */
 	target: number
-	/** words that found no usable cut-out anywhere on the web */
+	/** words that found nothing at all - no cut-out, no art-pack shape, no photograph */
 	misses: string[]
+	/** words illustrated with a photograph, background and all, because nothing else existed */
+	photos: string[]
 	/** true once a finished video exists to save */
 	finished: boolean
 }
@@ -229,15 +231,29 @@ export default function CaptionObjectPanel({
 				</div>
 			) : null}
 
+			{state.auto.photos.length > 0 && !state.auto.running ? (
+				<div className="notice notice--info" style={{ marginTop: 12 }}>
+					<span className="notice-icon">
+						<IconInfo size={14} />
+					</span>
+					<span>
+						Nothing transparent exists anywhere for {state.auto.photos.join(', ')}, so
+						{state.auto.photos.length === 1 ? ' that word is' : ' those words are'} illustrated with
+						a photograph instead - kept whole, with its edge softened into the frame rather than
+						cut to a hard rectangle. Drop your own PNG on the shot below to replace it.
+					</span>
+				</div>
+			) : null}
+
 			{state.auto.misses.length > 0 && !state.auto.running ? (
 				<div className="notice notice--info" style={{ marginTop: 12 }}>
 					<span className="notice-icon">
 						<IconInfo size={14} />
 					</span>
 					<span>
-						No cut-out picture could be found for {state.auto.misses.join(', ')}. Those words were
-						left without an object rather than given a rectangle - swap one in by hand below if you
-						have a PNG for it.
+						No picture could be found for {state.auto.misses.join(', ')} - not a cut-out, not a
+						shape in the art pack, not even a photograph. Those words were left without an object
+						rather than given a rectangle; swap one in by hand below if you have a PNG for it.
 					</span>
 				</div>
 			) : null}

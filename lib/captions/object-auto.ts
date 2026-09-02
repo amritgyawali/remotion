@@ -30,8 +30,13 @@
  *
  *   4. **What picture.** The web is searched per word and the candidates are
  *      tried in order until one is genuinely a cut-out. A word whose every
- *      candidate is a rectangle is left without a picture and reported, not
- *      quietly given a white box.
+ *      candidate is a rectangle is not given a white box: it falls to the
+ *      studio's own art pack, which is at least transparent, and then to one
+ *      last sweep that asks the route for photographs alone and keeps the best
+ *      of them with a softened edge. Only a word that fails all three is left
+ *      without an object, and it is named rather than quietly dropped - as is
+ *      every word that ended up with a photograph, because that looks different
+ *      on screen and nobody should have to guess which ones they were.
  *
  *   5. **How big.** Three head widths across, by default. The conversion from
  *      that sentence to the renderer's `scale` is `scaleForHeadMultiple`, and
@@ -46,7 +51,13 @@ import {
 	tidyShots,
 	type ObjectShot,
 } from './object-plan'
-import { resolveObjectPicture, searchObjectImages, type ImageSearchResult } from './object-fetch'
+import {
+	resolveObjectPicture,
+	searchObjectImages,
+	type DownloadedPicture,
+	type ImageCandidate,
+	type ImageSearchResult,
+} from './object-fetch'
 import type { CaptionCue } from './types'
 
 /* ==========================================================================
@@ -359,7 +370,7 @@ export function mergeKeywords(
    The whole plan.
    ========================================================================== */
 
-export type AutoObjectStage = 'keywords' | 'search' | 'pictures' | 'plan'
+export type AutoObjectStage = 'keywords' | 'search' | 'pictures' | 'photos' | 'plan'
 
 export type AutoObjectProgress = { stage: AutoObjectStage; ratio: number; message: string }
 
@@ -392,10 +403,18 @@ export type PlanWebObjectsResult = {
 	shots: ObjectShot[]
 	/** the words that were looked for, in the order they are spoken */
 	keywords: PlacedKeyword[]
-	/** words that found no usable cut-out anywhere, and nothing in the art pack either */
+	/** words that found nothing usable anywhere - not a cut-out, not the pack, not a photograph */
 	misses: string[]
 	/** words the web could not illustrate that the studio's own pack could */
 	fromLibrary: string[]
+	/**
+	 * Words that got a photograph with its background rather than a cut-out.
+	 *
+	 * Reported separately because they look different on screen - a softened
+	 * inset rather than an object standing in the frame - and somebody reviewing
+	 * the plan should not have to guess which ones those are.
+	 */
+	photos: string[]
 	/**
 	 * Shots that were downloaded and then dropped by the tidy pass.
 	 *
@@ -410,7 +429,16 @@ export type PlanWebObjectsResult = {
 
 const DEFAULT_SHOT_MS = 3_200
 
-/** The same tidy `/api/captions/images` applies before it searches. */
+/**
+ * The same tidy the search applies before it looks anything up.
+ *
+ * Deliberately a copy of `tidyQuery` in `lib/captions/image-search.ts` rather
+ * than an import of it: that module reads `process.env` and talks to eight
+ * providers, and none of that belongs in the browser bundle for the sake of one
+ * regular expression. The two must not drift - the route answers under the
+ * tidied spelling, so a mismatch here would look to the user like the web
+ * having no picture of anything.
+ */
 export function searchableQuery(query: string): string {
 	return query
 		.replace(/[^\p{L}\p{N}\s'-]/gu, ' ')
@@ -465,6 +493,7 @@ export async function planWebObjects(args: PlanWebObjectsArgs): Promise<PlanWebO
 			keywords: [],
 			misses: [],
 			fromLibrary: [],
+			photos: [],
 			discarded: [],
 			director: 'local',
 			model,
@@ -477,7 +506,7 @@ export async function planWebObjects(args: PlanWebObjectsArgs): Promise<PlanWebO
 	try {
 		const search = await searchObjectImages({
 			queries: keywords.map((keyword) => keyword.query),
-			perQuery: 3,
+			perQuery: 4,
 			signal: args.signal,
 		})
 		found = search.results
@@ -503,6 +532,7 @@ export async function planWebObjects(args: PlanWebObjectsArgs): Promise<PlanWebO
 	const shots: ObjectShot[] = []
 	const misses: string[] = []
 	const fromLibrary: string[] = []
+	const photos: string[] = []
 	const shotMs = Math.max(600, args.shotMs ?? DEFAULT_SHOT_MS)
 
 	/** Where a shot starts, and how long it stays, given the word's own timing. */
@@ -526,53 +556,8 @@ export async function planWebObjects(args: PlanWebObjectsArgs): Promise<PlanWebO
 			),
 		)
 
-	for (const [index, keyword] of keywords.entries()) {
-		if (args.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-		report(
-			'pictures',
-			0.15 + (index / keywords.length) * 0.75,
-			`Fetching “${keyword.word}” (${index + 1} of ${keywords.length})`,
-		)
-
-		const candidates =
-			candidatesFor.get(keyword.query) ?? candidatesFor.get(searchableQuery(keyword.query)) ?? []
-		const picture = await resolveObjectPicture({ candidates, signal: args.signal })
-		if (!picture) {
-			// The web had nothing usable for this word. Before giving up on it, the
-			// studio's own pack gets a turn: it only ever matches a word it
-			// actually holds a picture of, so a rocket still gets a rocket. This is
-			// a smaller answer than a photograph, not a wrong one, and it is
-			// reported separately so nobody has to guess which they got.
-			const pack = matchObjectForText(keyword.word)
-			if (pack) {
-				const id = nextId()
-				const { startMs, endMs } = windowFor(keyword.atMs)
-				shots.push({
-					id,
-					startMs,
-					endMs,
-					keyword: keyword.word,
-					label: pack.asset.label,
-					kind: 'library',
-					assetId: pack.asset.id,
-					src: objectAssetSrc(pack.asset, keyword.word),
-					blobId: null,
-					credit: null,
-					sourceUrl: null,
-					// Every file in the pack is a square 512 viewBox.
-					scale: scaleFor(1),
-					offsetX: DEFAULT_SHOT_LOOK.offsetX,
-					offsetY: DEFAULT_SHOT_LOOK.offsetY,
-					opacity: 1,
-					motion: DEFAULT_SHOT_LOOK.motion,
-				})
-				fromLibrary.push(keyword.word)
-				continue
-			}
-			misses.push(keyword.word)
-			continue
-		}
-
+	/** Parks a fetched picture in the vault and puts its shot on the list. */
+	const placePicture = async (keyword: PlacedKeyword, picture: DownloadedPicture) => {
 		const id = nextId()
 		const blobId = await args.storePicture(id, picture.blob, `${keyword.word}.png`)
 		const { startMs, endMs } = windowFor(keyword.atMs)
@@ -595,6 +580,123 @@ export async function planWebObjects(args: PlanWebObjectsArgs): Promise<PlanWebO
 			opacity: 1,
 			motion: DEFAULT_SHOT_LOOK.motion,
 		})
+		if (picture.fallback) photos.push(keyword.word)
+	}
+
+	/** Puts a shape from the studio's own pack on the list, when it has one. */
+	const placeFromPack = (keyword: PlacedKeyword): boolean => {
+		const pack = matchObjectForText(keyword.word)
+		if (!pack) return false
+		const { startMs, endMs } = windowFor(keyword.atMs)
+		shots.push({
+			id: nextId(),
+			startMs,
+			endMs,
+			keyword: keyword.word,
+			label: pack.asset.label,
+			kind: 'library',
+			assetId: pack.asset.id,
+			src: objectAssetSrc(pack.asset, keyword.word),
+			blobId: null,
+			credit: null,
+			sourceUrl: null,
+			// Every file in the pack is a square 512 viewBox.
+			scale: scaleFor(1),
+			offsetX: DEFAULT_SHOT_LOOK.offsetX,
+			offsetY: DEFAULT_SHOT_LOOK.offsetY,
+			opacity: 1,
+			motion: DEFAULT_SHOT_LOOK.motion,
+		})
+		fromLibrary.push(keyword.word)
+		return true
+	}
+
+	/** Words the cut-out pass could not illustrate, kept for the photograph sweep. */
+	const pending: PlacedKeyword[] = []
+
+	for (const [index, keyword] of keywords.entries()) {
+		if (args.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+		report(
+			'pictures',
+			0.15 + (index / keywords.length) * 0.63,
+			`Fetching “${keyword.word}” (${index + 1} of ${keywords.length})`,
+		)
+
+		const candidates =
+			candidatesFor.get(keyword.query) ?? candidatesFor.get(searchableQuery(keyword.query)) ?? []
+		const picture = await resolveObjectPicture({ candidates, signal: args.signal })
+		if (picture) {
+			await placePicture(keyword, picture)
+			continue
+		}
+
+		// The web had no cut-out for this word. Before spending a second search on
+		// it, the studio's own pack gets a turn: it only ever matches a word it
+		// actually holds a picture of, so a rocket still gets a rocket, and what
+		// it holds is already transparent - which is the thing a photograph is
+		// not. This is a smaller answer than a photograph, not a wrong one, and it
+		// is reported separately so nobody has to guess which they got.
+		if (placeFromPack(keyword)) continue
+		pending.push(keyword)
+	}
+
+	// The last sweep. Every word here has been proven to have no cut-out on any
+	// rung of the ladder and no shape in the pack, so the choice left is between
+	// a photograph of the right thing and an empty frame - and the photograph
+	// wins. It is asked for in one request for all of them, straight at the
+	// photograph rung, and `allowPhoto` keeps the best of what comes back with
+	// its background and a softened edge. A word that fails even this is a real
+	// miss and is named as one.
+	if (pending.length > 0 && !args.signal?.aborted) {
+		report(
+			'photos',
+			0.8,
+			`Looking for a photograph of ${pending.length} word${pending.length === 1 ? '' : 's'} nothing could cut out`,
+		)
+		let sweep: ImageSearchResult[] = []
+		try {
+			const search = await searchObjectImages({
+				queries: pending.map((keyword) => keyword.query),
+				perQuery: 3,
+				mode: 'photo',
+				signal: args.signal,
+			})
+			sweep = search.results
+		} catch (error) {
+			// A failed last resort is not a failed plan: the words it was for had
+			// nothing anyway, and the dozen pictures already fetched are still good.
+			if (args.signal?.aborted) throw error
+			console.warn('[objects] the photograph sweep failed:', error instanceof Error ? error.message : error)
+		}
+
+		const photoCandidatesFor = new Map<string, ImageCandidate[]>()
+		for (const result of sweep) {
+			photoCandidatesFor.set(result.query, result.candidates)
+			photoCandidatesFor.set(searchableQuery(result.query), result.candidates)
+		}
+
+		for (const [index, keyword] of pending.entries()) {
+			if (args.signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+			report(
+				'photos',
+				0.8 + (index / pending.length) * 0.12,
+				`Fetching a photograph of “${keyword.word}” (${index + 1} of ${pending.length})`,
+			)
+			const candidates =
+				photoCandidatesFor.get(keyword.query) ??
+				photoCandidatesFor.get(searchableQuery(keyword.query)) ??
+				[]
+			const picture = candidates.length
+				? await resolveObjectPicture({ candidates, allowPhoto: true, signal: args.signal })
+				: null
+			if (picture) {
+				await placePicture(keyword, picture)
+				continue
+			}
+			misses.push(keyword.word)
+		}
+	} else {
+		for (const keyword of pending) misses.push(keyword.word)
 	}
 
 	report('plan', 0.95, `Placing ${shots.length} objects`)
@@ -621,6 +723,7 @@ export async function planWebObjects(args: PlanWebObjectsArgs): Promise<PlanWebO
 		keywords,
 		misses,
 		fromLibrary,
+		photos,
 		discarded,
 		director: keywords.some((keyword) => keyword.fromAi) && model ? 'ai' : 'local',
 		model,
@@ -635,6 +738,10 @@ export function describeAutoPlan(result: PlanWebObjectsResult): string {
 	// reported as a picture the viewer will see.
 	const web = result.shots.filter((shot) => shot.kind === 'web').length
 	const pack = result.shots.filter((shot) => shot.kind === 'library').length
+	// A photograph is one of the web pictures, so it is named rather than added:
+	// counting it twice would make the numbers not add up to the shot list.
+	const kept = new Set(result.shots.map((shot) => shot.keyword))
+	const asPhotos = result.photos.filter((word) => kept.has(word))
 	const parts = [
 		`${web} picture${web === 1 ? '' : 's'} from the web`,
 		result.director === 'ai' && result.model
@@ -648,8 +755,17 @@ export function describeAutoPlan(result: PlanWebObjectsResult): string {
 				.join(', ')})`,
 		)
 	}
+	if (asPhotos.length > 0) {
+		parts.push(
+			`${asPhotos.length} of them ${
+				asPhotos.length === 1 ? 'is a photograph' : 'are photographs'
+			} rather than a cut-out (${asPhotos.slice(0, 4).join(', ')}) - nothing transparent exists for ${
+				asPhotos.length === 1 ? 'that word' : 'those words'
+			}`,
+		)
+	}
 	if (result.misses.length > 0) {
-		parts.push(`no cut-out found for ${result.misses.slice(0, 4).join(', ')}`)
+		parts.push(`no picture found at all for ${result.misses.slice(0, 4).join(', ')}`)
 	}
 	return parts.join(' · ')
 }
