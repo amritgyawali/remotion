@@ -57,8 +57,16 @@ export function captionSafeArea(style: CaptionStyle): SafeArea {
 		: { ...NO_SAFE_AREA, bottom: reserved }
 }
 
-/** Where an object's picture comes from. */
-export type ObjectSourceKind = 'library' | 'upload' | 'model3d'
+/**
+ * Where an object's picture comes from.
+ *
+ * `web` is a picture the studio fetched from the open web for a spoken word and
+ * cut out itself. It behaves exactly like an upload from here on - the bytes
+ * are in the vault and the sprite loader reads them the same way - and it is a
+ * separate kind only because the panel has to be able to say where a picture
+ * came from and credit it.
+ */
+export type ObjectSourceKind = 'library' | 'upload' | 'model3d' | 'web'
 
 /**
  * Which catalogue a plan is drawn from.
@@ -91,8 +99,12 @@ export type ObjectShot = {
 	assetId: string | null
 	/** the resolved picture address - a pack path, or an object URL for an upload */
 	src: string | null
-	/** vault id for an uploaded picture, so a refresh restores it */
+	/** vault id for an uploaded or fetched picture, so a refresh restores it */
 	blobId: string | null
+	/** who made a fetched picture and under what licence - shown, never invented */
+	credit: string | null
+	/** where a fetched picture came from, so the credit can be followed */
+	sourceUrl: string | null
 	/** height as a fraction of the frame height */
 	scale: number
 	/** sideways nudge from the head anchor, as a fraction of frame width */
@@ -131,6 +143,17 @@ export type ObjectSettings = {
 	/** sizes the object against the frame, or against the speaker's head */
 	sizeMode: ObjectSizeMode
 	/**
+	 * How many head widths across a fetched object is drawn.
+	 *
+	 * Three is the look this was built for: big enough to read as the subject of
+	 * the frame rather than a badge pinned to it, small enough that the head and
+	 * shoulders still cut a clear silhouette out of the middle of it. It only
+	 * governs the one-press flow - a hand-placed object keeps whatever size the
+	 * slider was left at, because a number nobody typed should not overrule one
+	 * somebody did.
+	 */
+	headMultiple: number
+	/**
 	 * Skips the segmentation model on frames where the picture has not moved.
 	 *
 	 * On by default: it is the single largest saving in the bake and it cannot
@@ -157,6 +180,7 @@ export const DEFAULT_OBJECT_SETTINGS: ObjectSettings = {
 	anchorDamping: 70,
 	followHead: true,
 	sizeMode: 'head',
+	headMultiple: 3,
 	adaptiveMask: true,
 	entranceMs: 260,
 	showMatte: false,
@@ -269,6 +293,8 @@ export function shotFromChoice(
 		assetId: choice.assetId,
 		src: choice.src,
 		blobId: null,
+		credit: null,
+		sourceUrl: null,
 		// The catalogue's own size is a starting point, not a rule: a confetti
 		// burst wants to be bigger than a phone for the same shot to read.
 		scale: clamp(look.scale * (choice.scale / DEFAULT_SHOT_LOOK.scale), 0.05, 1.4),
@@ -504,7 +530,7 @@ const num = (value: unknown, fallback: number, min = -Infinity, max = Infinity):
 const str = (value: unknown, fallback: string): string => (typeof value === 'string' ? value : fallback)
 
 const MOTIONS: readonly ObjectMotion[] = ['none', 'float', 'spin', 'sway', 'pulse']
-const KINDS: readonly ObjectSourceKind[] = ['library', 'upload', 'model3d']
+const KINDS: readonly ObjectSourceKind[] = ['library', 'upload', 'model3d', 'web']
 
 /**
  * A shot read back from the vault.
@@ -538,6 +564,8 @@ export function normalizeObjectShots(value: unknown): ObjectShot[] {
 				assetId,
 				src: asset ? objectAssetSrc(asset, keyword) : null,
 				blobId,
+				credit: typeof raw.credit === 'string' ? raw.credit.slice(0, 300) : null,
+				sourceUrl: typeof raw.sourceUrl === 'string' ? raw.sourceUrl.slice(0, 600) : null,
 				scale: num(raw.scale, DEFAULT_SHOT_LOOK.scale, 0.05, 1.4),
 				offsetX: num(raw.offsetX, DEFAULT_SHOT_LOOK.offsetX, -0.6, 0.6),
 				offsetY: num(raw.offsetY, DEFAULT_SHOT_LOOK.offsetY, -0.6, 0.6),
@@ -561,6 +589,7 @@ export function normalizeObjectSettings(value: unknown): ObjectSettings {
 		anchorDamping: num(value.anchorDamping, DEFAULT_OBJECT_SETTINGS.anchorDamping, 0, 100),
 		followHead: typeof value.followHead === 'boolean' ? value.followHead : true,
 		sizeMode: value.sizeMode === 'frame' ? 'frame' : 'head',
+		headMultiple: num(value.headMultiple, DEFAULT_OBJECT_SETTINGS.headMultiple, 0.5, 8),
 		adaptiveMask: typeof value.adaptiveMask === 'boolean' ? value.adaptiveMask : true,
 		entranceMs: num(value.entranceMs, DEFAULT_OBJECT_SETTINGS.entranceMs, 0, 2_000),
 		showMatte: typeof value.showMatte === 'boolean' ? value.showMatte : false,

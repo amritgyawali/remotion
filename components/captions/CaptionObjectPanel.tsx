@@ -8,10 +8,12 @@
  * the clip, the vault and the abort controller, so there is exactly one place
  * that knows how to start and stop a bake.
  *
- * The order of the sections is the order of the work: choose where objects
- * come from, plan them, check one frame, adjust the cut-out, then bake. The
- * bake is last and is the only irreversible-looking step, so it is also the
- * only one that carries a note about what it will do and a way back.
+ * The order of the sections is the order of the work, and the first of them is
+ * the whole feature in one press: "Cutout and place PNG behind" transcribes if
+ * it has to, picks a keyword for every five seconds of video, fetches a real
+ * picture of each one, cuts its background away, sizes it against the speaker's
+ * head and burns the lot in. Everything under it is the same pipeline taken
+ * apart, for when a person wants to choose the pictures themselves.
  */
 
 import { useMemo, useRef, useState } from 'react'
@@ -19,12 +21,15 @@ import {
 	IconAlert,
 	IconCheck,
 	IconClock,
+	IconDownload,
 	IconEye,
 	IconInfo,
 	IconLayers,
 	IconPerson,
+	IconScissors,
 	IconSparkle,
 	IconSpinner,
+	IconStop,
 	IconTrash,
 	IconUpload,
 	IconWand,
@@ -40,6 +45,11 @@ import {
 } from '../../lib/captions/object-plan'
 
 export type ObjectActions = {
+	/** the one-press flow: subtitles in, finished video out */
+	onAutoRun: () => void
+	onCancelAuto: () => void
+	/** saves the video the automatic pass produced */
+	onDownloadBaked: () => void
 	onPlan: () => void
 	onClearPlan: () => void
 	onMode: (mode: ObjectPlanMode) => void
@@ -56,12 +66,29 @@ export type ObjectActions = {
 	onSeek: (ms: number) => void
 }
 
+/** What the one-press flow is doing, and what it did. */
+export type ObjectAutoState = {
+	running: boolean
+	/** the step, in the user's words - "Fetching “monastery” (3 of 12)" */
+	message: string
+	ratio: number
+	note: string | null
+	error: string | null
+	/** how many keywords the clip's length asked for */
+	target: number
+	/** words that found no usable cut-out anywhere on the web */
+	misses: string[]
+	/** true once a finished video exists to save */
+	finished: boolean
+}
+
 export type ObjectPanelState = {
 	cueCount: number
 	shots: ObjectShot[]
 	settings: ObjectSettings
 	mode: ObjectPlanMode
 	useAi: boolean
+	auto: ObjectAutoState
 	planning: boolean
 	planNotice: string | null
 	planError: string | null
@@ -127,19 +154,125 @@ export default function CaptionObjectPanel({
 	}, [])
 
 	const selected = state.shots.find((shot) => shot.id === selectedId) ?? state.shots[0] ?? null
-	const busy = state.disabled || state.planning || state.baking
+	const busy = state.disabled || state.planning || state.baking || state.auto.running
+	const credits = state.shots.filter((shot) => shot.kind === 'web' && shot.credit)
 
+	/* ------------------------------------------------------- one press */
+
+	const onePress = (
+		<div className="object-auto">
+			<h2 className="section-label">
+				<IconScissors size={12} /> One press
+				{state.auto.finished ? <span className="badge badge--green">done</span> : null}
+			</h2>
+			<p className="hint-text">
+				Reads the subtitles and takes one keyword for every five seconds of video
+				{state.auto.target > 0 ? ' - ' + state.auto.target + ' for this clip' : ''} - the words it is
+				about rather than the words it repeats. Then it finds a real PNG of each one on the web, cuts
+				its background away, and stands it {Math.round(state.settings.headMultiple * 10) / 10}× the
+				width of the speaker’s head behind them at the moment that word is said, before burning the
+				whole thing into the clip.
+			</p>
+
+			<div className="object-actions">
+				<button
+					className="btn btn--primary btn--block"
+					disabled={busy}
+					onClick={actions.onAutoRun}
+					title="Subtitles in, finished video out"
+				>
+					{state.auto.running ? <IconSpinner size={13} /> : <IconScissors size={13} />}
+					{state.auto.running ? 'Working…' : 'Cutout and place PNG behind'}
+				</button>
+				{state.auto.running ? (
+					<button className="btn" onClick={actions.onCancelAuto}>
+						<IconStop size={13} /> Stop
+					</button>
+				) : null}
+				{state.auto.finished && !state.auto.running ? (
+					<button className="btn" onClick={actions.onDownloadBaked}>
+						<IconDownload size={13} /> Save the video
+					</button>
+				) : null}
+			</div>
+
+			{state.auto.running ? (
+				<div style={{ marginTop: 12 }}>
+					<div className="progress-track">
+						<div
+							className="progress-fill"
+							style={{ width: `${Math.round(Math.min(1, state.auto.ratio) * 100)}%` }}
+						/>
+					</div>
+					<div className="progress-meta">
+						<span>{state.auto.message}</span>
+						<span>{Math.round(Math.min(1, state.auto.ratio) * 100)}%</span>
+					</div>
+				</div>
+			) : null}
+
+			{state.auto.error ? (
+				<div className="notice notice--error" style={{ marginTop: 12 }}>
+					<span className="notice-icon">
+						<IconAlert size={14} />
+					</span>
+					<span>{state.auto.error}</span>
+				</div>
+			) : null}
+
+			{state.auto.note && !state.auto.running ? (
+				<div className="notice notice--success" style={{ marginTop: 12 }}>
+					<span className="notice-icon">
+						<IconCheck size={14} />
+					</span>
+					<span>{state.auto.note}</span>
+				</div>
+			) : null}
+
+			{state.auto.misses.length > 0 && !state.auto.running ? (
+				<div className="notice notice--info" style={{ marginTop: 12 }}>
+					<span className="notice-icon">
+						<IconInfo size={14} />
+					</span>
+					<span>
+						No cut-out picture could be found for {state.auto.misses.join(', ')}. Those words were
+						left without an object rather than given a rectangle - swap one in by hand below if you
+						have a PNG for it.
+					</span>
+				</div>
+			) : null}
+
+			<Slider
+				id="object-head-multiple"
+				label="Picture size, against the head"
+				value={Math.round(state.settings.headMultiple * 10)}
+				min={10}
+				max={60}
+				step={1}
+				disabled={busy}
+				format={(value) => `${(value / 10).toFixed(1)}× the head’s width`}
+				onChange={(value) => actions.onSettings({ headMultiple: value / 10 })}
+			/>
+		</div>
+	)
+
+	// A clip with no transcript still gets the one-press block: that flow
+	// transcribes for itself, and hiding the button behind a step it performs
+	// would be telling the user to do the work the button exists to do.
 	if (state.cueCount === 0) {
 		return (
-			<div className="notice notice--info">
-				<span className="notice-icon">
-					<IconInfo size={14} />
-				</span>
-				<span>
-					Objects are chosen from what is actually said, so this panel needs a transcript first.
-					Generate, write or import one and every line becomes a candidate for an object behind the
-					speaker.
-				</span>
+			<div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+				<div className="notice notice--info">
+					<span className="notice-icon">
+						<IconInfo size={14} />
+					</span>
+					<span>
+						Objects are chosen from what is actually said. Press the button below and the studio will
+						transcribe the clip first; or generate, write or import a transcript yourself and every
+						line becomes a candidate for an object behind the speaker.
+					</span>
+				</div>
+				{onePress}
 			</div>
 		)
 	}
@@ -157,6 +290,8 @@ export default function CaptionObjectPanel({
 					them afterwards.
 				</p>
 			</div>
+
+			{onePress}
 
 			{/* ------------------------------------------------------- source */}
 
@@ -269,6 +404,7 @@ export default function CaptionObjectPanel({
 									<span className="object-shot-meta">
 										{shot.keyword ? `“${shot.keyword}” · ` : ''}
 										{timecode(shot.startMs)} – {timecode(shot.endMs)}
+										{shot.kind === 'web' ? ' · from the web' : ''}
 									</span>
 								</span>
 								<span
@@ -298,7 +434,13 @@ export default function CaptionObjectPanel({
 					<div className="field">
 						<label className="field-label" htmlFor="object-swap">
 							Picture
-							<span className="field-value">{selected.kind === 'upload' ? 'your file' : selected.label}</span>
+							<span className="field-value">
+								{selected.kind === 'upload'
+									? 'your file'
+									: selected.kind === 'web'
+										? 'from the web'
+										: selected.label}
+							</span>
 						</label>
 						<select
 							id="object-swap"
@@ -310,7 +452,7 @@ export default function CaptionObjectPanel({
 							}}
 						>
 							<option value="">
-								{selected.kind === 'library' ? 'Choose an object…' : `${selected.label} (uploaded)`}
+								{selected.kind === 'library' ? 'Choose an object…' : `${selected.label} (${selected.kind === 'web' ? 'fetched' : 'uploaded'})`}
 							</option>
 							{grouped.map(([category, assets]) => (
 								<optgroup key={category} label={CATEGORY_LABEL[category]}>
@@ -323,6 +465,18 @@ export default function CaptionObjectPanel({
 							))}
 						</select>
 					</div>
+
+					{selected.credit ? (
+						<p className="hint-text">
+							{selected.sourceUrl ? (
+								<a href={selected.sourceUrl} target="_blank" rel="noreferrer noopener">
+									{selected.credit}
+								</a>
+							) : (
+								selected.credit
+							)}
+						</p>
+					) : null}
 
 					<div className="object-actions">
 						<button
@@ -655,6 +809,31 @@ export default function CaptionObjectPanel({
 					</div>
 				) : null}
 			</div>
+
+			{/* ------------------------------------------------------ credits */}
+
+			{credits.length > 0 ? (
+				<div>
+					<h2 className="section-label">Picture credits</h2>
+					<p className="hint-text">
+						Every picture fetched from the web, with who made it and under what licence. Keep this
+						with the video if you publish it.
+					</p>
+					<ul className="object-credits">
+						{credits.map((shot) => (
+							<li key={shot.id}>
+								{shot.sourceUrl ? (
+									<a href={shot.sourceUrl} target="_blank" rel="noreferrer noopener">
+										{shot.credit}
+									</a>
+								) : (
+									shot.credit
+								)}
+							</li>
+						))}
+					</ul>
+				</div>
+			) : null}
 		</div>
 	)
 }

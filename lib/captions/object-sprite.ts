@@ -100,7 +100,9 @@ export async function loadObjectSprite(shot: ObjectShot, args: LoadSpriteArgs): 
 	}
 
 	let src = shot.src
-	if (shot.kind === 'upload' && shot.blobId && args.resolveBlob) {
+	// An upload and a picture fetched from the web are the same thing by the
+	// time they get here: bytes in the vault under this shot's own id.
+	if ((shot.kind === 'upload' || shot.kind === 'web') && shot.blobId && args.resolveBlob) {
 		// An object URL dies with the tab that made it, so a restored plan
 		// rebuilds one from the bytes in the vault rather than trusting `src`.
 		const blob = await args.resolveBlob(shot.blobId)

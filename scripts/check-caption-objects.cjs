@@ -40,7 +40,23 @@
  *   9. /api/captions/objects - a malformed request is refused, and a request
  *                             with no key comes back as a usable "plan it
  *                             locally" answer rather than an error
- *  10. the studio itself    - a real browser records a clip, imports subtitles,
+ *  10. the keyword pass    - one object per five seconds, the word the video is
+ *                             about outranking the word it repeats, objects
+ *                             spread rather than clumped, and a model's pick
+ *                             leading the local ranking without replacing it
+ *  11. the cut-out         - a flat background is flood filled away from the
+ *                             border, white *inside* the subject survives it, a
+ *                             busy photograph is refused rather than pasted in
+ *                             as a rectangle, and the result is trimmed to the
+ *                             object so "three heads wide" means the object
+ *  12. head sizing         - the picture is three head widths across at any
+ *                             head size, any sprite aspect and either frame
+ *                             orientation, which is what makes the multiple
+ *                             hold across a cut
+ *  13. the new routes      - the keyword route answers usefully with no key,
+ *                             and the picture proxy refuses loopback, metadata,
+ *                             private space and non-http addresses
+ *  14. the studio itself    - a real browser records a clip, imports subtitles,
  *                             plans the objects, renders a still through the
  *                             bake’s own code path, burns the objects into the
  *                             video, checks from the panel’s own report that
@@ -50,6 +66,8 @@
  *   node scripts/check-caption-objects.cjs                # everything
  *   node scripts/check-caption-objects.cjs --maths-only   # no browser, no server
  *   node scripts/check-caption-objects.cjs --headful      # watch it happen
+ *   node scripts/check-caption-objects.cjs --web          # + the one-press flow,
+ *                                                        #   which needs the web
  */
 
 require('sucrase/register')
@@ -60,6 +78,16 @@ const { spawn } = require('node:child_process')
 
 const MATHS_ONLY = process.argv.includes('--maths-only')
 const HEADFUL = process.argv.includes('--headful')
+/**
+ * Whether to press the one-button flow, which fetches real pictures.
+ *
+ * Off by default, and the reason is the same one that keeps every other leg of
+ * this file offline: a check that fails when Wikimedia is slow is a check that
+ * teaches people to ignore it. Everything the flow decides - which words, which
+ * moments, which size, what counts as a cut-out - is proved in the offline
+ * sections. This leg proves the wiring, and it is run deliberately.
+ */
+const WEB = process.argv.includes('--web')
 /**
  * A port picked per run rather than a fixed one.
  *
@@ -76,7 +104,11 @@ const compositor = require('../lib/captions/object-compositor.ts')
 const plan = require('../lib/captions/object-plan.ts')
 const sprite = require('../lib/captions/object-sprite.ts')
 const session = require('../lib/captions/session.ts')
+const auto = require('../lib/captions/object-auto.ts')
+const cutout = require('../lib/captions/object-cutout.ts')
 const objectsRoute = require('../app/api/captions/objects/route.ts')
+const keywordsRoute = require('../app/api/captions/keywords/route.ts')
+const imagesRoute = require('../app/api/captions/images/route.ts')
 
 const PUBLIC_ROOT = path.join(__dirname, '..', 'public')
 
@@ -824,7 +856,306 @@ async function checkRoute() {
 }
 
 
-/* ============================================== 9. the studio, in a browser */
+
+/* ================================= 10. the one-press keyword pass */
+
+/**
+ * A transcript with a shape worth checking: one concrete word said in a few
+ * lines, one filler word said in most of them, and enough length that the
+ * spread has something to do.
+ */
+function keywordCues() {
+	const lines = [
+		'welcome back to the market today',
+		'the mango season starts this week',
+		'every market stall is getting ready',
+		'the market opens at sunrise',
+		'a mango from Nepal is sweeter',
+		'we drove to the market before dawn',
+		'this mango cost 30 rupees',
+		'the market was already full',
+		'the market runs until the evening',
+		'that is the market for you',
+	]
+	return lines.map((text, index) => cue(String(index + 1), text, index * 3_000, index * 3_000 + 2_400))
+}
+
+function checkKeywords() {
+	console.log('\nThe one-press keyword pass')
+
+	check('one keyword for every five seconds', auto.keywordTargetCount(60_000) === 12, auto.keywordTargetCount(60_000))
+	check('a clip shorter than one slot still gets an object', auto.keywordTargetCount(1_200) === 1)
+	check('and an hour is capped rather than planned', auto.keywordTargetCount(3_600_000) === 24)
+
+	const cues = keywordCues()
+	const ranked = auto.rankTranscriptKeywords(cues)
+	const words = ranked.map((entry) => entry.word)
+
+	// "market" is said in eight lines out of ten and "mango" in three. Frequency
+	// alone would rank the wallpaper word first, which is the failure this
+	// ranking exists to avoid: a word in most of the lines is what the video is
+	// made of, not what it is about.
+	const mango = ranked.findIndex((entry) => entry.word === 'mango')
+	const market = ranked.findIndex((entry) => entry.word === 'market')
+	check('the word the video is about outranks the word it repeats', mango >= 0 && mango < market, {
+		mango,
+		market,
+	})
+	check('no stop word is ever a candidate', !words.some((word) => auto.STOPWORDS.has(word)), words.slice(0, 8))
+	check('a bare number is not a candidate', !words.includes('30'), words.slice(0, 12))
+	check('every candidate carries the moment it is spoken', ranked.every((entry) => entry.occurrences.length > 0))
+	check(
+		'and that moment is the word\u2019s own timing, not the line\u2019s',
+		ranked.find((entry) => entry.word === 'mango').occurrences[0].atMs > cues[1].startMs,
+	)
+
+	// The same transcript twice is the same plan: nothing here may be random.
+	const again = auto.rankTranscriptKeywords(cues).map((entry) => entry.word)
+	check('the ranking is deterministic', JSON.stringify(again) === JSON.stringify(words))
+
+	const placed = auto.spreadKeywords(ranked, { count: 5, minGapMs: 2_500, durationMs: 30_000 })
+	check('the spread returns at most what was asked for', placed.length <= 5, placed.length)
+	check(
+		'no two objects land inside the gap',
+		placed.every((entry, index) => index === 0 || entry.atMs - placed[index - 1].atMs >= 2_500),
+		placed.map((entry) => entry.atMs),
+	)
+	check('nothing is planned past the end of the clip', placed.every((entry) => entry.atMs < 30_000))
+	check('and each word appears once', new Set(placed.map((entry) => entry.word)).size === placed.length)
+
+	const merged = auto.mergeKeywords(ranked, [{ line: 4, word: 'nepal', query: 'nepal flag' }], cues)
+	check('a model pick leads the ranking', merged[0].word === 'nepal' && merged[0].fromAi === true, merged[0])
+	check('and keeps the search phrase the model wrote', merged[0].query === 'nepal flag')
+	check('the local ranking survives underneath it', merged.length >= ranked.length, {
+		merged: merged.length,
+		ranked: ranked.length,
+	})
+	check(
+		'a model pick for a word nobody said in that line is dropped',
+		auto.mergeKeywords(ranked, [{ line: 0, word: 'helicopter', query: 'helicopter' }], cues)[0].word !==
+			'helicopter',
+	)
+}
+
+/* ============================================ 11. cutting a picture out */
+
+/** A plain RGBA buffer the cut-out can read, with no canvas anywhere. */
+function rgba(width, height, paint) {
+	const data = new Uint8ClampedArray(width * height * 4)
+	for (let y = 0; y < height; y++) {
+		for (let x = 0; x < width; x++) {
+			const [r, g, b, a] = paint(x, y)
+			const at = (y * width + x) * 4
+			data[at] = r
+			data[at + 1] = g
+			data[at + 2] = b
+			data[at + 3] = a
+		}
+	}
+	return { data, width, height }
+}
+
+const alphaAt = (image, x, y) => image.data[(y * image.width + x) * 4 + 3]
+
+function checkCutout() {
+	console.log('\nCutting the picture out')
+
+	const SIZE = 64
+	const inSquare = (x, y) => x >= 22 && x < 42 && y >= 22 && y < 42
+
+	// A red square on white: the shape of every product shot and half the
+	// clipart on Commons.
+	const onWhite = rgba(SIZE, SIZE, (x, y) => (inSquare(x, y) ? [220, 40, 40, 255] : [255, 255, 255, 255]))
+
+	const arrived = cutout.alphaReport(onWhite)
+	check('an opaque picture is not mistaken for a cut-out', arrived.isCutout === false, arrived)
+
+	const knocked = cutout.knockoutBackground(onWhite, { tolerance: 12, feather: 0 })
+	check('the flat background is found', knocked.knockedOut === true, knocked.removedRatio)
+	check(
+		'and is most of the picture',
+		Math.abs(knocked.removedRatio - (SIZE * SIZE - 400) / (SIZE * SIZE)) < 0.02,
+		knocked.removedRatio,
+	)
+	check('the corner is gone', alphaAt(knocked.image, 0, 0) === 0)
+	check('the subject is untouched', alphaAt(knocked.image, 32, 32) === 255)
+	check('and the colour it was seeded from is the border', knocked.backgroundColor.every((value) => value === 255))
+
+	const trimmed = cutout.trimTransparent(knocked.image)
+	check('trimming crops to the object itself', trimmed.image.width === 20 && trimmed.image.height === 20, {
+		width: trimmed.image.width,
+		height: trimmed.image.height,
+	})
+
+	// The reason this is a flood fill and not a colour key: white inside the
+	// subject is not background, however white it is.
+	const withHole = rgba(SIZE, SIZE, (x, y) => {
+		if (!inSquare(x, y)) return [255, 255, 255, 255]
+		const hole = x >= 29 && x < 35 && y >= 29 && y < 35
+		return hole ? [255, 255, 255, 255] : [220, 40, 40, 255]
+	})
+	const holed = cutout.knockoutBackground(withHole, { tolerance: 12, feather: 0 })
+	check('white inside the subject survives', alphaAt(holed.image, 32, 32) === 255)
+	check('while white outside it does not', alphaAt(holed.image, 2, 2) === 0)
+
+	// A busy photograph has no flat border to pull, and saying so is the whole
+	// point - the caller tries another candidate instead of pasting a rectangle.
+	// Uncorrelated pixel to pixel, which is what makes it a fair stand-in for a
+	// photograph: neighbouring colours are far enough apart that a fill seeded at
+	// the border cannot walk anywhere.
+	let seed = 7
+	const random = () => {
+		seed = (seed * 1664525 + 1013904223) >>> 0
+		return (seed >>> 16) & 0xff
+	}
+	const noise = rgba(SIZE, SIZE, () => [random(), random(), random(), 255])
+	const busy = cutout.prepareObjectImage(noise)
+	check('a picture with no flat background is refused', busy.usable === false, busy.note)
+	check('and is handed back unchanged', busy.image === noise)
+
+	const already = rgba(SIZE, SIZE, (x, y) => (inSquare(x, y) ? [40, 120, 220, 255] : [0, 0, 0, 0]))
+	const kept = cutout.prepareObjectImage(already)
+	check('a picture that arrived cut out is used as it is', kept.usable === true && kept.knockedOut === false)
+	check('and is trimmed to its content', kept.image.width === 20 && kept.image.height === 20)
+
+	const feathered = cutout.knockoutBackground(onWhite, { tolerance: 12, feather: 2 })
+	const edge = alphaAt(feathered.image, 21, 32)
+	check('a feathered cut has a soft shoulder', edge > 0 && edge < 255, edge)
+
+	const flat = new Float32Array(SIZE * SIZE).fill(1)
+	const blurred = cutout.boxBlur(flat, SIZE, SIZE, 3)
+	check(
+		'the blur preserves a constant, so a feather cannot darken a solid area',
+		blurred.every((value) => Math.abs(value - 1) < 1e-6),
+	)
+}
+
+/* ================================ 12. three times the size of the head */
+
+function checkHeadMultiple() {
+	console.log('\nSizing against the head')
+
+	const head = { x: 0.5, y: 0.24, headWidth: 0.18, coverage: 0.3, found: true }
+	const place = (multiple, spriteWidth, spriteHeight, headWidth, frameWidth, frameHeight) => {
+		const scale = anchor.scaleForHeadMultiple({
+			multiple,
+			frameWidth,
+			frameHeight,
+			spriteAspect: spriteWidth / spriteHeight,
+		})
+		return anchor.placeObject({
+			anchor: { ...head, headWidth },
+			frameWidth,
+			frameHeight,
+			spriteWidth,
+			spriteHeight,
+			scale,
+			offsetX: 0,
+			offsetY: 0,
+			followHead: true,
+			sizeMode: 'head',
+		})
+	}
+
+	const square = place(3, 512, 512, 0.18, 1920, 1080)
+	check(
+		'a square picture is drawn three head widths across',
+		Math.abs(square.width - 3 * 0.18 * 1920) < 1,
+		square.width,
+	)
+
+	// The head measurement cancels out of the arithmetic, which is what lets one
+	// number hold across a cut from a wide shot to a close-up.
+	const narrow = place(3, 512, 512, 0.09, 1920, 1080)
+	const wide = place(3, 512, 512, 0.34, 1920, 1080)
+	check(
+		'a close-up keeps the same multiple',
+		Math.abs(wide.width / (0.34 * 1920) - 3) < 0.01,
+		wide.width / (0.34 * 1920),
+	)
+	check(
+		'and so does a wide shot',
+		Math.abs(narrow.width / (0.09 * 1920) - 3) < 0.01,
+		narrow.width / (0.09 * 1920),
+	)
+
+	const letterbox = place(3, 1024, 512, 0.18, 1920, 1080)
+	check(
+		'a wide picture is still three heads across, not three heads tall',
+		Math.abs(letterbox.width - 3 * 0.18 * 1920) < 1,
+		letterbox.width,
+	)
+	check('so its height follows its own aspect', Math.abs(letterbox.height - letterbox.width / 2) < 1)
+
+	const portrait = place(3, 512, 512, 0.18, 1080, 1920)
+	check(
+		'a portrait frame measures the head in its own width',
+		Math.abs(portrait.width - 3 * 0.18 * 1080) < 1,
+		portrait.width,
+	)
+
+	const doubled = place(6, 512, 512, 0.18, 1920, 1080)
+	check('doubling the multiple doubles the picture', Math.abs(doubled.width / square.width - 2) < 0.01)
+}
+
+/* ========================= 13. the keyword and picture routes, offline */
+
+async function checkNewRoutes() {
+	console.log('\n/api/captions/keywords and /api/captions/images')
+
+	const keywords = (body) =>
+		keywordsRoute.POST(
+			new Request('http://localhost/api/captions/keywords', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body),
+			}),
+		)
+
+	check('a keyword request with no lines is refused', (await keywords({ count: 4 })).status === 400)
+
+	const key = process.env.NVIDIA_API_KEY
+	delete process.env.NVIDIA_API_KEY
+	const keyless = await keywords({ lines: ['the mango season starts this week'], count: 3 })
+	const body = await keyless.json()
+	if (key !== undefined) process.env.NVIDIA_API_KEY = key
+
+	check('with no key the keyword route still answers 200', keyless.status === 200, keyless.status)
+	check('with an empty list, so the browser ranks it itself', Array.isArray(body.keywords) && body.keywords.length === 0)
+	check('and says why', typeof body.notice === 'string' && body.notice.length > 0)
+
+	const images = (body) =>
+		imagesRoute.POST(
+			new Request('http://localhost/api/captions/images', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body),
+			}),
+		)
+	check('a picture search with no words is refused', (await images({ queries: [] })).status === 400)
+	check('and one with too many words is refused', (await images({ queries: new Array(40).fill('rocket') })).status === 400)
+
+	// The download proxy fetches whatever address it is handed, so these are the
+	// checks that matter: it is the same guard the video importer uses, and it
+	// has to refuse the same things.
+	const download = (url) =>
+		imagesRoute.GET(new Request(`http://localhost/api/captions/images?url=${encodeURIComponent(url)}`))
+
+	check('a download with no address is refused', (await imagesRoute.GET(new Request('http://localhost/api/captions/images'))).status === 400)
+	for (const [label, url] of [
+		['loopback', 'http://127.0.0.1/x.png'],
+		['the cloud metadata endpoint', 'http://169.254.169.254/latest/meta-data/'],
+		['private space', 'http://10.1.2.3/x.png'],
+		['IPv6 loopback', 'http://[::1]/x.png'],
+		['a file:// address', 'file:///etc/passwd'],
+		['an address with credentials in it', 'https://user:pass@example.com/x.png'],
+	]) {
+		const response = await download(url)
+		check(`the picture proxy refuses ${label}`, response.status === 400, response.status)
+	}
+}
+
+/* ============================================== 14. the studio, in a browser */
 
 /**
  * Three lines that between them name three different objects, spaced so all
@@ -1300,6 +1631,137 @@ async function checkStudio() {
 			after: cuesAfter,
 		})
 
+		/* ------------------------------------------------- the one press */
+
+		if (WEB) {
+			console.log('\n  one press: subtitles in, finished video out')
+
+			const pressed = await page.evaluate(clickIn, '.panel--right', 'Cutout and place PNG behind')
+			check('the one-press button is there and can be pressed', pressed === 'clicked', pressed)
+
+			// Long, and deliberately so: this one press runs the keyword pass, a
+			// web search, a download per word, a cut-out per picture and a full
+			// bake. The clip is five seconds, so it asks for one object.
+			const finished = await until(
+				page,
+				() => {
+					const panel = document.querySelector('.panel--right')
+					if (!panel) return null
+					const error = Array.from(panel.querySelectorAll('.notice--error'))
+						.map((node) => (node.textContent || '').trim())
+						.filter(Boolean)
+						.join(' | ')
+					if (error) return { error }
+					const note = Array.from(panel.querySelectorAll('.notice--success'))
+						.map((node) => (node.textContent || '').trim())
+						.find((text) => /from the web/i.test(text))
+					if (!note) return null
+					return {
+						note,
+						rows: Array.from(panel.querySelectorAll('.object-shot')).map((node) => ({
+							name: (node.querySelector('.object-shot-name') || {}).textContent || '',
+							meta: (node.querySelector('.object-shot-meta') || {}).textContent || '',
+							thumb: Boolean(node.querySelector('.object-shot-thumb img')),
+						})),
+						credits: Array.from(panel.querySelectorAll('.object-credits li')).map((node) =>
+							(node.textContent || '').trim(),
+						),
+					}
+				},
+				null,
+				900_000,
+				'the one-press flow to finish',
+			)
+
+			if (!check('the whole flow runs without an error', !finished.error, finished.error)) {
+				throw new Error(finished.error)
+			}
+			check('it plans at least one object', finished.rows.length >= 1, finished.rows.length)
+			// At least one, not all: a word the web cannot illustrate falls back to
+			// the studio's own art pack, and a run that used the fallback once is
+			// still a working run. A run that used it for *everything* is not -
+			// that is the offline feature with a longer wait - so this fails if
+			// nothing at all was fetched.
+			check(
+				'at least one picture came from the web',
+				finished.rows.some((row) => /from the web/.test(row.meta)),
+				finished.rows.map((row) => row.meta),
+			)
+			check(
+				'each one is tied to a word that was actually said',
+				finished.rows.every((row) => /[“"]/.test(row.meta)),
+				finished.rows.map((row) => row.meta),
+			)
+			check('and draws its own thumbnail, so the bytes are real', finished.rows.every((row) => row.thumb))
+			check('the picture is credited', finished.credits.length >= finished.rows.length, finished.credits)
+			check('and the flow says what it did', /picture/i.test(finished.note), finished.note.slice(0, 200))
+
+			// The playhead is wherever the last leg left it, and a frame with no
+			// object on it proves nothing either way. Clicking a shot parks the
+			// player in the middle of that shot, which is where the object is at
+			// full opacity.
+			const parked = await page.evaluate(() => {
+				const row = document.querySelector('.panel--right .object-shot')
+				if (!row) return 'no-row'
+				row.click()
+				return 'clicked'
+			})
+			check('the playhead can be parked on one of the pictures', parked === 'clicked', parked)
+
+			const composited = await until(
+				page,
+				(colours) => {
+					// The whole document, not one pane: the studio moves the stage
+					// between panes at narrow widths, and a check that only looks in
+					// one of them reports "no picture" when what happened was a
+					// layout change.
+					const surfaces = Array.from(document.querySelectorAll('canvas, video')).filter(
+						(node) => (node.videoWidth || node.width || 0) > 80,
+					)
+					if (surfaces.length === 0) return null
+					let best = null
+					for (const surface of surfaces) {
+						const measured = window.__foreignShare(surface, colours.backdrop, colours.subject)
+						if (!best || measured.share > best.share) best = measured
+					}
+					return best
+				},
+				{ backdrop: BACKDROP, subject: SUBJECT },
+				120_000,
+				'the finished clip on the stage',
+			).catch(async (error) => {
+				// A timeout here says only "nothing was drawable". What is actually
+				// wrong is in the page - a stage that never remounted after the swap,
+				// a compile error under the player - so it is printed rather than
+				// left for a second run to discover.
+				const state = await page.evaluate(() => ({
+					surfaces: Array.from(document.querySelectorAll('canvas, video')).map(
+						(node) =>
+							`${node.tagName}:${node.videoWidth || node.width || 0}x${node.videoHeight || node.height || 0}`,
+					),
+					// The two states that replace the player entirely: a clip that did
+					// not load, and a composition that did not build.
+					stage: Array.from(document.querySelectorAll('.stage-empty, .stage-empty h2, .stage-empty p, .stage .log')).map(
+						(node) => (node.textContent || '').trim().slice(0, 200),
+					),
+					notices: Array.from(document.querySelectorAll('.notice')).map((node) =>
+						(node.textContent || '').trim().slice(0, 120),
+					),
+				}))
+				console.log('    stage state:', JSON.stringify(state, null, 1).slice(0, 1600))
+				throw error
+			})
+			check('the finished video carries the picture', composited.share > 0.002, composited.share)
+
+			const saveable = await page.evaluate(
+				() =>
+					Array.from(document.querySelectorAll('.panel--right button')).some((node) =>
+						(node.textContent || '').includes('Save the video'),
+					),
+			)
+			check('and the finished video can be saved', saveable === true)
+		}
+
 		/* --------------------------------------------------- the 3D models */
 
 		// The GLB pack is generated by `npm run assets:3d` and deliberately not
@@ -1455,7 +1917,11 @@ async function main() {
 	checkAffectedRect()
 	checkTimingAndMotion()
 	checkSession()
+	checkKeywords()
+	checkCutout()
+	checkHeadMultiple()
 	await checkRoute()
+	await checkNewRoutes()
 	if (!MATHS_ONLY) await checkStudio()
 
 	if (failures > 0) {

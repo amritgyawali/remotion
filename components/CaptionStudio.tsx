@@ -33,6 +33,7 @@ import { directObjects } from '../lib/captions/object-director'
 import { loadModelCatalog } from '../lib/captions/object-models'
 import { objectAssetById, objectAssetSrc } from '../lib/captions/object-library'
 import { bakeObjectVideo, describeObjectRender, renderObjectStill } from '../lib/captions/object-render'
+import { describeAutoPlan, keywordTargetCount, planWebObjects } from '../lib/captions/object-auto'
 import { captionSafeArea, type ObjectSettings, type ObjectShot } from '../lib/captions/object-plan'
 import { cuesToAss } from '../lib/captions/ass'
 import { isCaptionFontId } from '../lib/captions/fonts'
@@ -118,7 +119,7 @@ import {
 import { useAutosave, useRestoredSnapshot } from '../lib/persist/use-vault'
 import { sendToStudio, useIncomingHandoff } from '../lib/handoff'
 import CaptionDesignPanel from './captions/CaptionDesignPanel'
-import CaptionObjectPanel, { type ObjectActions } from './captions/CaptionObjectPanel'
+import CaptionObjectPanel, { type ObjectActions, type ObjectAutoState } from './captions/CaptionObjectPanel'
 import CaptionExportPanel from './captions/CaptionExportPanel'
 import CaptionSoundPanel from './captions/CaptionSoundPanel'
 import CaptionToolsPanel, { type ToolsActions } from './captions/CaptionToolsPanel'
@@ -252,6 +253,18 @@ const CAPTION_PANES: Array<{ id: CaptionPane; label: string; icon: typeof IconFi
 const NEEDS_LOCAL_FILE =
 	'Objects need the clip’s own bytes. Drop the video file into the studio rather than pasting an address, and this works.'
 
+/** The one-press flow before it has been asked to do anything. */
+const IDLE_AUTO: ObjectAutoState = {
+	running: false,
+	message: '',
+	ratio: 0,
+	note: null,
+	error: null,
+	target: 0,
+	misses: [],
+	finished: false,
+}
+
 const PANEL_KEYS: Record<string, CaptionPanelTab> = {
 	'1': 'design',
 	'2': 'sound',
@@ -372,6 +385,24 @@ export default function CaptionStudio() {
 	const [objectBakeProgress, setObjectBakeProgress] = useState({ phase: 'preparing', ratio: 0 })
 	const [objectBakeNote, setObjectBakeNote] = useState<string | null>(null)
 	const [objectBakeError, setObjectBakeError] = useState<string | null>(null)
+
+	/**
+	 * The one-press flow, which owns none of the state the steps it drives own.
+	 *
+	 * It reads the transcript, plans the objects and bakes them, and every one of
+	 * those already reports itself. What is kept here is only what a caller
+	 * cannot recover afterwards: which step is running, what it said, and whether
+	 * a finished file exists to save.
+	 */
+	const [objectAuto, setObjectAuto] = useState<ObjectAutoState>(IDLE_AUTO)
+	/**
+	 * The file the last bake produced.
+	 *
+	 * Held so "Save the video" is a download rather than a second bake. A ref
+	 * rather than state because nothing renders differently for holding it - the
+	 * panel reads the flag in objectAuto instead.
+	 */
+	const bakedFileRef = useRef<File | null>(null)
 
 	/** progress of the "Send to Silence Studio" hand-off */
 	const [sendToSilenceState, setSendToSilenceState] = useState<
@@ -1087,8 +1118,16 @@ export default function CaptionStudio() {
 
 	/* -------------------------------------------------------- transcript */
 
-	const handleTranscribe = useCallback(async () => {
-		if (!video) return
+	/**
+	 * Transcribes the clip, and hands the cues back as well as storing them.
+	 *
+	 * The return value exists for the one-press object flow. It runs
+	 * transcription and then immediately needs the words, and `cuesRef` is only
+	 * refreshed on the next render - so waiting on the state would either read
+	 * the previous transcript or need a poll. Every other caller ignores it.
+	 */
+	const handleTranscribe = useCallback(async (): Promise<CaptionCue[] | null> => {
+		if (!video) return null
 		const controller = new AbortController()
 		transcribeAbortRef.current = controller
 		setTranscribing(true)
@@ -1119,6 +1158,7 @@ export default function CaptionStudio() {
 			// A cloud run says nothing about this browser's on-device support, but
 			// a device run just proved it either way.
 			if (outcome.engine === 'device') setWhisperSupport(await checkWhisperSupport(whisperModel))
+			return outcome.cues
 		} catch (error) {
 			if (error instanceof TranscriptionCancelled || controller.signal.aborted) {
 				setTranscribeProgress({ stage: 'cancelled', progress: 0, message: 'Cancelled' })
@@ -1126,6 +1166,7 @@ export default function CaptionStudio() {
 				setTranscribeError(error instanceof Error ? error.message : String(error))
 				setTranscribeProgress({ stage: 'error', progress: 0 })
 			}
+			return null
 		} finally {
 			transcribeAbortRef.current = null
 			setTranscribing(false)
@@ -1906,12 +1947,71 @@ export default function CaptionStudio() {
 	}, [])
 
 	/**
-	 * Burns the objects into the clip.
+	 * Burns a shot list into the clip and swaps the working video for the result.
+	 *
+	 * Shared by the button and by the one-press flow, and it takes the shots as
+	 * an argument for exactly that reason: the automatic pass has just computed
+	 * them and cannot read them back out of state until the next render, so a
+	 * version of this that read `objectPlanRef` would bake the previous plan.
 	 *
 	 * The untouched video is parked in the vault first, before a single frame is
 	 * encoded: a step that replaces the thing being edited has to be undoable
 	 * from the moment it starts, not from the moment it succeeds.
 	 */
+	const runObjectBake = useCallback(
+		async (
+			shots: ObjectShot[],
+			controller: AbortController,
+			onStage?: (stage: { phase: string; ratio: number }) => void,
+		) => {
+			const source = videoRef.current
+			if (!source?.file) throw new Error(NEEDS_LOCAL_FILE)
+			const original = source.file as File
+			const plan = objectPlanRef.current
+
+			const parked = plan.originalBlobId
+				? true
+				: await writeBlob(CAPTION_ORIGINAL_BLOB_ID, original, original.name)
+
+			const result = await bakeObjectVideo({
+				shots,
+				settings: plan.settings,
+				probe: source,
+				source: original,
+				format: 'mp4',
+				quality: 'high',
+				// The captions are styled after the bake as often as before it,
+				// so the band they own is read at the moment the objects are
+				// placed rather than baked into the plan.
+				safeArea: captionSafeArea(styleRef.current),
+				signal: controller.signal,
+				resolveBlob: async (blobId) => (await readBlob(blobId))?.blob ?? null,
+				onStage: (stage) => {
+					setObjectBakeProgress(stage)
+					onStage?.(stage)
+				},
+			})
+			if (controller.signal.aborted) return null
+
+			const baked = new File([result.blob], downloadFileName(source, result.format), {
+				type: result.blob.type || 'video/mp4',
+			})
+			await replaceWorkingVideo(baked)
+			URL.revokeObjectURL(result.url)
+			bakedFileRef.current = baked
+
+			setObjectPlan((current) => ({
+				...current,
+				baked: true,
+				originalBlobId: parked ? CAPTION_ORIGINAL_BLOB_ID : current.originalBlobId,
+				originalName: current.originalName ?? original.name,
+			}))
+
+			return { result, parked, file: baked }
+		},
+		[replaceWorkingVideo],
+	)
+
 	const handleObjectBake = useCallback(() => {
 		const source = videoRef.current
 		if (!source?.file) {
@@ -1929,47 +2029,14 @@ export default function CaptionStudio() {
 		setObjectBakeProgress({ phase: 'preparing', ratio: 0 })
 
 		void (async () => {
-			const original = source.file as File
-			const plan = objectPlanRef.current
 			try {
-				const parked = plan.originalBlobId
-					? true
-					: await writeBlob(CAPTION_ORIGINAL_BLOB_ID, original, original.name)
-
-				const result = await bakeObjectVideo({
-					shots: plan.shots,
-					settings: plan.settings,
-					probe: source,
-					source: original,
-					format: 'mp4',
-					quality: 'high',
-					// The captions are styled after the bake as often as before it,
-					// so the band they own is read at the moment the objects are
-					// placed rather than baked into the plan.
-					safeArea: captionSafeArea(styleRef.current),
-					signal: controller.signal,
-					resolveBlob: async (blobId) => (await readBlob(blobId))?.blob ?? null,
-					onStage: (stage) => setObjectBakeProgress(stage),
-				})
-				if (controller.signal.aborted) return
-
-				const baked = new File([result.blob], downloadFileName(source, result.format), {
-					type: result.blob.type || 'video/mp4',
-				})
-				await replaceWorkingVideo(baked)
-				URL.revokeObjectURL(result.url)
-
-				setObjectPlan((current) => ({
-					...current,
-					baked: true,
-					originalBlobId: parked ? CAPTION_ORIGINAL_BLOB_ID : current.originalBlobId,
-					originalName: current.originalName ?? original.name,
-				}))
+				const outcome = await runObjectBake(objectPlanRef.current.shots, controller)
+				if (!outcome || controller.signal.aborted) return
 				setObjectBakeNote(
-					`${describeObjectRender(result.stats, result.summary)}. Baked in ${result.elapsedSeconds.toFixed(
+					`${describeObjectRender(outcome.result.stats, outcome.result.summary)}. Baked in ${outcome.result.elapsedSeconds.toFixed(
 						1,
 					)}s. The captions are still a live layer, so restyle them as much as you like${
-						parked
+						outcome.parked
 							? ''
 							: ' - but this browser could not keep a copy of the original, so there is no way back'
 					}.`,
@@ -1982,7 +2049,162 @@ export default function CaptionStudio() {
 				setObjectBaking(false)
 			}
 		})()
-	}, [replaceWorkingVideo])
+	}, [runObjectBake])
+
+	/**
+	 * The one press: subtitles in, finished video out.
+	 *
+	 * Every step here already exists and already reports itself - transcription,
+	 * the keyword pass, the picture search, the cut-out, the bake. What this adds
+	 * is the order, one abort controller across all of it, and a single progress
+	 * number, because five progress bars in a row is not one press.
+	 *
+	 * The failures are deliberately uneven. A word whose picture cannot be found
+	 * costs that word and nothing else, and is named at the end. A transcript
+	 * that cannot be produced, or a plan with no pictures at all, stops the run -
+	 * there is nothing to bake, and burning an unchanged video back over itself
+	 * would be a slow way to do nothing.
+	 */
+	const handleObjectAutoRun = useCallback(() => {
+		const source = videoRef.current
+		if (!source?.file) {
+			setObjectAuto({ ...IDLE_AUTO, error: NEEDS_LOCAL_FILE })
+			return
+		}
+
+		objectAbortRef.current?.abort()
+		const controller = new AbortController()
+		objectAbortRef.current = controller
+		const target = keywordTargetCount(durationMs)
+		setObjectAuto({
+			...IDLE_AUTO,
+			running: true,
+			target,
+			ratio: 0.01,
+			message: 'Reading the subtitles',
+		})
+		setObjectBakeError(null)
+		setObjectBakeNote(null)
+		setObjectPlanError(null)
+
+		void (async () => {
+			try {
+				let cues = cuesRef.current
+				if (cues.length === 0) {
+					setObjectAuto((current) => ({ ...current, message: 'Transcribing the clip', ratio: 0.02 }))
+					cues = (await handleTranscribe()) ?? []
+					if (cues.length === 0) {
+						throw new Error(
+							'The clip could not be transcribed, so there are no words to choose pictures from. Write or import a transcript, then press this again.',
+						)
+					}
+				}
+				if (controller.signal.aborted) return
+
+				// The previous plan's pictures go now rather than at the end: they
+				// are about to be replaced wholesale, and a run that is stopped
+				// halfway should not leave two sets of bytes in the vault.
+				for (const shot of objectPlanRef.current.shots) {
+					if (shot.blobId) void removeBlob(shot.blobId)
+				}
+
+				const plan = await planWebObjects({
+					cues,
+					durationMs,
+					frameWidth: source.width,
+					frameHeight: source.height,
+					headMultiple: objectPlanRef.current.settings.headMultiple,
+					useAi: objectPlanRef.current.useAi,
+					signal: controller.signal,
+					onProgress: (progress) =>
+						setObjectAuto((current) => ({
+							...current,
+							message: progress.message,
+							// The search and the downloads are the first half of the
+							// wall clock; the bake is the second.
+							ratio: 0.03 + progress.ratio * 0.47,
+						})),
+					storePicture: async (shotId, blob, name) => {
+						const blobId = `${CAPTION_OBJECT_BLOB_PREFIX}${shotId}`
+						return (await writeBlob(blobId, blob, name)) ? blobId : null
+					},
+				})
+				if (controller.signal.aborted) return
+
+				for (const id of plan.discarded) void removeBlob(`${CAPTION_OBJECT_BLOB_PREFIX}${id}`)
+
+				setObjectPlan((current) => ({ ...current, shots: plan.shots }))
+				setObjectDirector(plan.director)
+				setObjectModelUsed(plan.model)
+				setObjectPreview(null)
+				setObjectPlanNotice(plan.notice)
+				setObjectAuto((current) => ({
+					...current,
+					misses: plan.misses,
+					ratio: 0.52,
+					message: `Placing ${plan.shots.length} pictures behind the speaker`,
+				}))
+
+				if (plan.shots.length === 0) {
+					throw new Error(
+						'No usable cut-out could be found for anything said in this clip, so there is nothing to place. Try the art pack below, or drop in your own PNG for a line.',
+					)
+				}
+
+				const outcome = await runObjectBake(plan.shots, controller, (stage) =>
+					setObjectAuto((current) => ({
+						...current,
+						message: stage.phase,
+						ratio: 0.55 + Math.min(1, stage.ratio) * 0.44,
+					})),
+				)
+				if (!outcome || controller.signal.aborted) return
+
+				setObjectAuto((current) => ({
+					...current,
+					running: false,
+					finished: true,
+					ratio: 1,
+					message: 'Finished',
+					note: `${describeAutoPlan(plan)}. ${describeObjectRender(
+						outcome.result.stats,
+						outcome.result.summary,
+					)}. Baked in ${outcome.result.elapsedSeconds.toFixed(
+						1,
+					)}s. The subtitles are still a live layer on top - style them under Design, then burn them in from Export${
+						outcome.parked ? '' : '. This browser could not keep a copy of the original, so there is no way back'
+					}.`,
+				}))
+			} catch (error) {
+				if (controller.signal.aborted) {
+					setObjectAuto((current) => ({ ...current, running: false, message: 'Stopped' }))
+					return
+				}
+				setObjectAuto((current) => ({
+					...current,
+					running: false,
+					error: error instanceof Error ? error.message : String(error),
+				}))
+			} finally {
+				if (objectAbortRef.current === controller) objectAbortRef.current = null
+				setObjectAuto((current) => (current.running ? { ...current, running: false } : current))
+			}
+		})()
+	}, [durationMs, handleTranscribe, runObjectBake])
+
+	const handleObjectCancelAuto = useCallback(() => {
+		objectAbortRef.current?.abort()
+		setObjectAuto((current) => ({ ...current, running: false, message: 'Stopped' }))
+	}, [])
+
+	/** Saves whatever the last bake produced, without baking it again. */
+	const handleObjectDownloadBaked = useCallback(() => {
+		const file = bakedFileRef.current ?? (videoRef.current?.file as File | undefined) ?? null
+		if (!file) return
+		const url = URL.createObjectURL(file)
+		downloadBlobUrl(url, file.name)
+		setTimeout(() => URL.revokeObjectURL(url), 4000)
+	}, [])
 
 	const handleObjectRestoreOriginal = useCallback(() => {
 		const blobId = objectPlanRef.current.originalBlobId
@@ -2009,6 +2231,9 @@ export default function CaptionStudio() {
 
 	const objectActions = useMemo<ObjectActions>(
 		() => ({
+			onAutoRun: handleObjectAutoRun,
+			onCancelAuto: handleObjectCancelAuto,
+			onDownloadBaked: handleObjectDownloadBaked,
 			onPlan: handleObjectPlanRun,
 			onClearPlan: handleObjectClearPlan,
 			onMode: (mode) => setObjectPlan((current) => ({ ...current, mode })),
@@ -2026,8 +2251,11 @@ export default function CaptionStudio() {
 		}),
 		[
 			handleObjectApplyToAll,
+			handleObjectAutoRun,
 			handleObjectBake,
+			handleObjectCancelAuto,
 			handleObjectClearPlan,
+			handleObjectDownloadBaked,
 			handleObjectDeleteShot,
 			handleObjectPlanRun,
 			handleObjectPreview,
@@ -2417,6 +2645,13 @@ export default function CaptionStudio() {
 									settings: objectPlan.settings,
 									mode: objectPlan.mode,
 									useAi: objectPlan.useAi,
+									// The clip's length decides how many objects the flow will ask
+									// for, so the panel can say the number before anything runs; a
+									// finished run keeps the count it actually used.
+									auto:
+										objectAuto.target > 0
+											? objectAuto
+											: { ...objectAuto, target: video ? keywordTargetCount(durationMs) : 0 },
 									planning: objectPlanning,
 									planNotice: objectPlanNotice,
 									planError: objectPlanError,

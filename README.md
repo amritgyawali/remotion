@@ -504,6 +504,64 @@ person is cut out of every frame and a picture is placed *behind their head*,
 timed to the word that chose it, while the subtitles stay a live layer at the
 bottom.
 
+#### One press: **Cutout and place PNG behind**
+
+The button at the top of the panel does the whole thing - transcript to
+finished video - and it is worth reading as five decisions rather than as a
+macro, because each one is a place where the obvious implementation looks wrong
+on screen.
+
+**How many.** One object for every five seconds of video, so the density is a
+property of the clip rather than of how talkative the transcript is. A
+ninety-second clip asks for eighteen keywords; a five-second one asks for one.
+
+**Which words.** The transcript is ranked locally first, always - the square
+root of how often a word is said, times how few lines it appears in, times a
+small bias towards longer words. Rooting the count is the whole ordering: taken
+linearly, the word said in every line wins every time, and the word said in
+every line is what the video is *made of*, not what it is *about*. A talk that
+says "market" in eight lines and "mango" in three illustrates the mango. When
+`NVIDIA_API_KEY` is set, `/api/captions/keywords` asks a language model the same
+question and its picks are merged over the top - it can tell a monastery from a
+moment, and arithmetic cannot - but every pick is checked back against the line
+it claims to come from, and a word nobody said is dropped. No key, no network,
+no model: the local ranking is what ships.
+
+**When.** A word said four times gets *one* object, at whichever of its
+occurrences is furthest from every object already placed, timed to that word's
+own timing rather than its line's. Without the spread, the top ten words of a
+transcript routinely land inside two sentences - they are the top ten *because*
+that passage is dense - and the video gets a slideshow followed by nothing.
+
+**What picture.** `/api/captions/images` searches Wikimedia Commons (PNGs only),
+Openverse and Iconify, and hands back a few candidates per word with the icon
+always last: someone who asks for a mango wants a mango, and gets a pictogram of
+one only when the web could not supply the real thing. The browser then
+downloads them in order and *measures* each one, because whether a file is a
+cut-out is a fact about its pixels and no amount of reading a title tells you.
+A file that arrived transparent is used as it is. Anything else gets one flood
+fill inward from its border - a fill, not a colour key, so the white of a shirt
+in the middle of a photo survives while the white behind it does not - and is
+kept only if that fill found a real background. **A word whose every candidate
+is a rectangle is left without a picture and named in the panel**, because a
+white box behind someone's head is worse than nothing there.
+
+**How big.** Three head widths across, from the slider at the bottom of the
+block. The conversion from that sentence to the renderer's `scale` cancels the
+head measurement out of the arithmetic entirely, so the multiple holds across a
+cut from a wide shot to a close-up with nothing re-measured per frame - and
+because the fetched picture is trimmed to its own content first, three heads
+wide means the *object* is three heads wide rather than its bounding box.
+
+Then it bakes, and what comes out is the finished video with the objects burned
+in and the audio untouched. The subtitles are still a live layer on top, so they
+can be restyled afterwards and burned in from Export whenever you like. Every
+picture that came from the web is credited under the panel with its licence, and
+the original clip is in the vault the whole time.
+
+The steps under the button are the same pipeline taken apart, for when you want
+to choose the pictures yourself:
+
 1. **Plan objects.** The shot list is a pure function of the transcript. The
    keyword matcher in `lib/captions/object-library.ts` reads each cue's own
    words against a catalogue of 65 concrete objects from the studio's CC0
@@ -616,8 +674,24 @@ empty frame, the filter beats the blend it replaced, the repaint rectangle
 stays a fraction of the picture, and then a real browser records a clip,
 imports subtitles, plans the objects, renders a still, bakes the video, reads
 the optimisations back out of the panel's own report, and puts the original
-back - 153 checks, no network. `npm run objects:check:maths` is the offline
-half on its own.
+back. That includes the one-press flow's own
+arithmetic: one object per five seconds, the word a video is about outranking
+the word it repeats, objects spread rather than clumped, a flood fill that
+takes a flat background but refuses a busy photograph, white *inside* a subject
+surviving the fill, and a picture that measures three head widths across at any
+head size, sprite aspect or frame orientation. The picture proxy is checked
+against the addresses an attacker would try - loopback, the cloud metadata
+endpoint, private space, IPv6 loopback, `file://`, embedded credentials -
+because it fetches whatever address it is handed, through the same vetted path
+as the video importer.
+
+`npm run objects:check:maths` is the offline half on its own - 170 checks, no
+network, no browser. `node scripts/check-caption-objects.cjs --web` adds one
+deliberate run of the one-press button through a real browser against the real
+web, taking the suite to **216**: the button is pressed, a picture is fetched
+and cut out, the video is baked, and the finished frame is measured on the
+stage. It is off by default because a check that fails when Wikimedia is slow is
+a check people learn to ignore.
 
 ## The Tools Studio
 
@@ -909,6 +983,9 @@ lib/
     object-models.ts    the generated GLB pack's catalogue and its spoken vocabulary
     object-plan.ts      one choice per cue -> a shot list with a floor and a ceiling
     object-director.ts  the keyword plan, then the language model's refinement of it
+    object-auto.ts      the one press: how many objects, which words, when, how big
+    object-fetch.ts     searching the web for a word, downloading it, keeping the good one
+    object-cutout.ts    is this a cut-out? if not, can its background be taken away?
     object-anchor.ts    the top of the speaker's head, one-euro filtered, placed
     object-compositor.ts one small draw: the frame is never read, only the object
     object-sprite.ts    rasterising an object at the size it is drawn, and drawing it

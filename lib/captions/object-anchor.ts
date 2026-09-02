@@ -278,6 +278,43 @@ export function createAnchorFilter(options: AnchorFilterOptions = {}): AnchorFil
  */
 export const REFERENCE_HEAD_WIDTH = 0.18
 
+/**
+ * The `scale` that draws an object a given multiple of the head wide.
+ *
+ * "Three times the size of the head" is a sentence about the *picture*, and
+ * `scale` is a number about the frame's height, so something has to convert
+ * between them - and it cannot be a constant, because the same object is a
+ * different fraction of a 16:9 frame than of a 9:16 one, and a wide sprite
+ * reaches three head widths at a fraction of the height a tall one needs.
+ *
+ * Both fall out of the placement arithmetic. `placeObject` draws
+ * `frameHeight * scale * (headWidth / REFERENCE_HEAD_WIDTH)` tall and takes its
+ * width from the sprite's aspect, so asking for a width of
+ * `multiple * headWidth * frameWidth` and solving for `scale` cancels the head
+ * measurement entirely:
+ *
+ *     scale = multiple * REFERENCE_HEAD_WIDTH * frameWidth / (aspect * frameHeight)
+ *
+ * That the head cancels is the useful part: the multiple holds on a close-up
+ * and on a wide shot without anything being re-measured per frame. In `frame`
+ * sizing mode nothing cancels and the same number is the nominal answer for a
+ * normally framed speaker, which is exactly what that mode promises.
+ */
+export function scaleForHeadMultiple(input: {
+	/** how many head widths across the object should be */
+	multiple: number
+	frameWidth: number
+	frameHeight: number
+	/** the sprite's own width divided by its height */
+	spriteAspect: number
+}): number {
+	const aspect = input.spriteAspect > 0 && Number.isFinite(input.spriteAspect) ? input.spriteAspect : 1
+	const frameWidth = input.frameWidth > 0 ? input.frameWidth : 1
+	const frameHeight = input.frameHeight > 0 ? input.frameHeight : 1
+	const multiple = clamp(input.multiple, 0.25, 12)
+	return (multiple * REFERENCE_HEAD_WIDTH * frameWidth) / (aspect * frameHeight)
+}
+
 /** Fractions of the frame that the object must stay out of. */
 export type SafeArea = { top: number; right: number; bottom: number; left: number }
 
