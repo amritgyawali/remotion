@@ -34,6 +34,7 @@
     "objects:check:maths": "node scripts/check-caption-objects.cjs --maths-only",
     "silence:check": "node scripts/check-silence-render.cjs",
     "silence:check:maths": "node scripts/check-silence-render.cjs --maths-only",
+    "mobile:check": "node scripts/check-mobile-layout.cjs",
     "fonts:check": "node scripts/check-devanagari-glyphs.mjs",
     "riva:check": "node scripts/check-riva.cjs",
     "riva:descriptor": "node scripts/build-riva-descriptor.mjs",
