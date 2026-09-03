@@ -527,6 +527,19 @@ moment, and arithmetic cannot - but every pick is checked back against the line
 it claims to come from, and a word nobody said is dropped. No key, no network,
 no model: the local ranking is what ships.
 
+A transcript in Devanagari needs two more things before its words can be
+searched for, and without them the panel spends its time apologising. A Nepali
+function word wearing a case marker is still a function word - `जसले`, `तेसको`,
+`तपाईंलाई` - so the ending is stripped and the root is offered to the stop-word
+list, which is what stops "to you" being ranked as the subject of a video. And
+Nepali speech is heavily code-switched, so the recogniser writes English words
+in Devanagari - `फर्स्ट`, `अप्टिमाइज`, `ल्यापटप` - and no image search on earth
+has a picture filed under those. The loanword lexicon in
+[`lib/captions/loanwords.ts`](lib/captions/loanwords.ts) knows the English they
+stand for, so `अप्टिमाइज` is searched for as *optimize* and `फर्स्ट` is
+recognised as *first* and dropped for being a stop word. A genuinely Nepali word
+is searched for exactly as it was said.
+
 **When.** A word said four times gets *one* object, at whichever of its
 occurrences is furthest from every object already placed, timed to that word's
 own timing rather than its line's. Without the spread, the top ten words of a
@@ -630,10 +643,40 @@ to choose the pictures yourself:
    The 3D runtime is loaded only when a plan actually contains a model. The
    pack is generated rather than committed, so on a fresh checkout the panel
    says how to build it instead of failing half way through a bake.
-4. **Bake.** The clip is decoded once, the objects are composited in, and the
+4. **Watch it first.** *Preview the video* renders the first half minute at 480
+   pixels and 15 frames a second, through the same per-frame hook, the same
+   segmenter and the same compositor the bake uses - the render in miniature,
+   not an approximation of it. It answers the question a still cannot: does the
+   picture arrive when the word is said, and does it stay behind the head while
+   the head moves. It costs a sixteenth of the pixels of a 1080x1920 export, it
+   never touches the working clip, and a plan whose objects all start later than
+   the window runs on to reach the first of them rather than previewing thirty
+   seconds of nothing.
+5. **Bake.** The clip is decoded once, the objects are composited in, and the
    video is re-encoded. The audio track is copied packet for packet, so every
    caption timing survives exactly. The original is parked in the vault
-   *before* the first frame is encoded, and one press puts it back.
+   *before* the first frame is encoded, and one press puts it back. *Size of the
+   finished video* caps its long side when the full-size bake is more than the
+   machine has: halving the long side quarters the pixels in the decoder, the
+   canvas, the composite and the encoder at once.
+
+**And a canvas is not permanent.** Every frame of an export is drawn on a 2D
+canvas and handed to the encoder as a `VideoFrame` built from it. When the GPU
+process drops that canvas's context - which on a long export at full size is a
+memory problem, not a bug - every draw into it silently does nothing and the
+browser refuses to make a frame out of it at all:
+`Failed to construct 'VideoFrame': Invalid source state`, two thirds of the way
+through a bake nobody wants to repeat. Three things answer it.
+[`lib/tools/video-filter.ts`](lib/tools/video-filter.ts) treats the surface as
+replaceable: a frame that cannot be built is drawn again on a new canvas before
+the export is allowed to fail, and every decoded frame is closed in a `finally`
+so a hook that throws cannot leak the GPU buffers that caused the problem.
+[`lib/captions/object-render.ts`](lib/captions/object-render.ts) rasterises an
+object's picture when its shot arrives and throws away the ones behind it, so a
+plan of two dozen objects holds three of them rather than all twenty-four - only
+one is ever on screen. And when even a fresh canvas cannot be painted, the
+message says what actually helps: fewer pixels, from the preview or from the
+size control, rather than the browser's own sentence about source states.
 
 **A copied track still needs its clock checked.** An ordinary MP4 starts its
 AAC track *below* zero - that is how a file carries the encoder's priming
@@ -747,13 +790,23 @@ endpoint, private space, IPv6 loopback, `file://`, embedded credentials -
 because it fetches whatever address it is handed, through the same vetted path
 as the video importer.
 
-`npm run objects:check:maths` is the offline half on its own - 170 checks, no
-network, no browser. `node scripts/check-caption-objects.cjs --web` adds one
-deliberate run of the one-press button through a real browser against the real
-web, taking the suite to **216**: the button is pressed, a picture is fetched
-and cut out, the video is baked, and the finished frame is measured on the
-stage. It is off by default because a check that fails when Wikimedia is slow is
-a check people learn to ignore.
+The draft preview is checked the same way the still is, because a preview that
+renders the clip untouched would look exactly like one that works: it is played
+through in the browser and the object has to be found in it, in a colour that
+was never in the footage - and the clip underneath has to be the one that was
+there before. Its arithmetic is checked offline: a capped frame keeps its shape,
+lands on even numbers whatever it started at, and a preview that keeps half the
+frames still hands back a video the full length of the clip rather than one
+running at double speed.
+
+`npm run objects:check:maths` is the offline half on its own - 189 checks, no
+network, no browser. `npm run objects:check` adds the browser and takes it to
+**231**. `node scripts/check-caption-objects.cjs --web` adds one deliberate run
+of the one-press button through a real browser against the real web, taking the
+suite to **242**: the button is pressed, a picture is fetched and cut out, the
+video is baked, and the finished frame is measured on the stage. It is off by
+default because a check that fails when Wikimedia is slow is a check people
+learn to ignore.
 
 ## The Tools Studio
 
@@ -1054,7 +1107,7 @@ lib/
     object-compositor.ts one small draw: the frame is never read, only the object
     object-sprite.ts    rasterising an object at the size it is drawn, and drawing it
     object-3d.ts        one GLB on a turntable, rendered to a transparent sprite
-    object-render.ts    the per-frame hook, the still preview and the bake
+    object-render.ts    the per-frame hook, the still and draft previews, the bake
     sfx.ts              the sound-effect catalogue and the per-sentence scheduler
     video-source.ts     duration, display size, fps and audio-track probing
     style-presets.ts    the six caption looks and the studio font kit

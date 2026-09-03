@@ -45,6 +45,7 @@
  */
 
 import { scaleForHeadMultiple } from './object-anchor'
+import { englishFor } from './loanwords'
 import { matchObjectForText, objectAssetSrc, wordsOf } from './object-library'
 import {
 	DEFAULT_SHOT_LOOK,
@@ -101,7 +102,56 @@ export const STOPWORDS = new Set([
 	'even', 'much', 'many', 'still', 'back', 'good', 'great', 'nice', 'little', 'big',
 	'छ', 'हो', 'हुन्', 'थियो', 'भयो', 'गर्न', 'गर्छ', 'मा', 'को', 'का', 'की', 'र', 'तर', 'यो', 'त्यो',
 	'म', 'हामी', 'तपाईं', 'उनी', 'पनि', 'नै', 'लाई', 'बाट', 'भन्ने', 'अनि', 'हुन', 'गरे', 'छन्',
+	// The words a Nepali sentence is built out of rather than about. Every one
+	// of these was picked by the ranking on a real clip and then found no
+	// picture anywhere, because there is no picture of "जसले" to find.
+	'हजुर', 'जो', 'जस', 'जुन', 'जब', 'तेस', 'त्यस', 'उस', 'यस', 'के', 'किन', 'कसरी', 'कहाँ',
+	'अब', 'फेरि', 'साथै', 'तैपनि', 'किनभने', 'गर्ना', 'गर्नु', 'गर्दा', 'गरेको', 'गरेर', 'हुन्छ',
+	'हुँदा', 'भने', 'भन्न', 'भन्दै', 'हेर्न', 'हेर्दा', 'जान', 'आउन', 'दिन', 'लिन', 'सक्ने', 'सक्छ',
+	'चाहिं', 'चाहिने', 'मात्र', 'सबै', 'केही', 'धेरै', 'थोरै', 'राम्रो', 'नराम्रो', 'ठिक', 'यहाँ',
+	'त्यहाँ', 'यसरी', 'त्यसरी', 'यसको', 'अहिले', 'पहिले', 'हामीलाई', 'मलाई',
 ])
+
+/**
+ * The endings a Nepali word takes that do not change what it is about.
+ *
+ * Longest first, so जसले is not mistaken for जस + ल. Only ever used to ask
+ * whether the *root* is a function word - a word is never renamed by this, and
+ * never dropped because a suffix happened to be stripped off something real.
+ */
+const NEPALI_ENDINGS = [
+	'हरूलाई', 'हरुलाई', 'हरूको', 'हरुको', 'हरूले', 'हरुले', 'हरूमा', 'हरुमा',
+	'लाई', 'हरू', 'हरु', 'बाट', 'सँग', 'संग', 'माथि', 'भन्दा', 'सम्म', 'देखि',
+	'को', 'का', 'की', 'ले', 'मा', 'ँ', 'ा', 'ो', 'े',
+]
+
+/**
+ * A word with its Nepali case marker taken off, when it has one.
+ *
+ * तपाईंलाई is तपाईं with a dative on it, तेसको is तेस with a genitive, and
+ * both are exactly as unpicturable as the bare pronoun - so the stopword list
+ * has to be able to see through the ending to refuse them.
+ */
+export function nepaliRoot(word: string): string {
+	for (const ending of NEPALI_ENDINGS) {
+		if (word.length > ending.length + 1 && word.endsWith(ending)) {
+			return word.slice(0, word.length - ending.length)
+		}
+	}
+	return word
+}
+
+/**
+ * What to search the web for, given a word as the recogniser wrote it.
+ *
+ * A Nepali transcript spells its English out in Devanagari - फर्स्ट, अप्टिमाइज,
+ * कन्टेन्ट - and no image search on earth has a picture filed under those. The
+ * loanword lexicon knows the English they stand for, and the English is what
+ * gets searched. A genuinely Nepali word is left exactly as it was said.
+ */
+export function searchTermFor(word: string): string {
+	return englishFor(word) ?? word
+}
 
 export type KeywordOccurrence = {
 	cueIndex: number
@@ -135,6 +185,13 @@ function occurrenceInCue(cue: CaptionCue, word: string, cueIndex: number): Keywo
 const isRankable = (word: string): boolean => {
 	if (STOPWORDS.has(word)) return false
 	if (/^\d+$/.test(word)) return false
+	// A Nepali function word wearing a case marker is still a function word,
+	// and an English one written in Devanagari is still an English one - both
+	// have to be refused through the spelling that was actually said.
+	const root = nepaliRoot(word)
+	if (root !== word && STOPWORDS.has(root)) return false
+	const english = englishFor(word)
+	if (english && STOPWORDS.has(english.toLowerCase())) return false
 	// Length in code points: Devanagari carries its vowels as combining marks,
 	// so `.length` calls a three-letter word eight characters long.
 	return [...word].length >= 3
@@ -188,7 +245,7 @@ export function rankTranscriptKeywords(cues: CaptionCue[]): RankedKeyword[] {
 		const lengthBonus = 1 + Math.min(10, [...word].length) / 40
 		ranked.push({
 			word,
-			query: word,
+			query: searchTermFor(word),
 			occurrences: occurrences.get(word) ?? [],
 			count,
 			documents: documentCount,
@@ -585,7 +642,12 @@ export async function planWebObjects(args: PlanWebObjectsArgs): Promise<PlanWebO
 
 	/** Puts a shape from the studio's own pack on the list, when it has one. */
 	const placeFromPack = (keyword: PlacedKeyword): boolean => {
-		const pack = matchObjectForText(keyword.word)
+		// Asked twice when the two spellings differ: the pack holds a laptop
+		// under "laptop", and a transcript that said ल्यापटप would otherwise be
+		// told the studio has no picture of one.
+		const pack =
+			matchObjectForText(keyword.word) ??
+			(keyword.query !== keyword.word ? matchObjectForText(keyword.query) : null)
 		if (!pack) return false
 		const { startMs, endMs } = windowFor(keyword.atMs)
 		shots.push({

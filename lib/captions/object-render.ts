@@ -46,6 +46,7 @@ import {
 	type VideoFilterQuality,
 	type VideoFilterResult,
 } from '../tools/video-filter'
+import { fitWithin } from '../tools/frame-ops'
 import { anchorFilterFor, findHeadAnchor, FALLBACK_ANCHOR, type HeadAnchor, type SafeArea } from './object-anchor'
 import { createObjectCompositor, type ObjectCompositorSettings } from './object-compositor'
 import { shotAtMs, type ObjectSettings, type ObjectShot } from './object-plan'
@@ -78,6 +79,15 @@ const MAX_SKIPPED_FRAMES = 3
 
 /** Every Nth pixel of the model input is compared, in both axes. */
 const MOTION_STRIDE = 3
+
+/**
+ * How many rasterised objects are kept in memory at once.
+ *
+ * One is on screen; the second is the one that follows it, so a plan that
+ * re-enters a shot does not pay for the picture twice. Three is the smallest
+ * number that never re-rasterises during ordinary forward playback.
+ */
+const MAX_LIVE_SPRITES = 3
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value))
 
@@ -142,17 +152,61 @@ export async function prepareObjectLayer(args: PrepareObjectLayerArgs): Promise<
 
 	/* --------------------------------------------------------- the pictures */
 
-	const sprites = new Map<string, ObjectSprite>()
-	try {
-		for (const shot of shots) {
-			if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-			sprites.set(
-				shot.id,
-				await loadObjectSprite(shot, { frameHeight: height, signal, resolveBlob: args.resolveBlob }),
-			)
+	/**
+	 * The rasterised pictures, of which only a few are ever alive at once.
+	 *
+	 * A sprite is rasterised at the size it will be drawn, and the cap on that
+	 * is two thousand pixels on a side - four megabytes of canvas each, on a
+	 * tall frame. A one-press plan of two dozen objects that held every one of
+	 * them from the first frame to the last would ask the browser for a hundred
+	 * megabytes of graphics memory it never needs: only one object is ever on
+	 * screen. So they are rasterised when their shot arrives and the ones left
+	 * behind are thrown away, which keeps the cost of a plan flat in the number
+	 * of objects in it.
+	 *
+	 * Promises rather than sprites, so a picture warmed during the pre-roll and
+	 * the same picture asked for on the frame it appears are one load, not two.
+	 */
+	const sprites = new Map<string, Promise<ObjectSprite>>()
+	const spriteOrder: string[] = []
+	const release = (pending: Promise<ObjectSprite> | undefined) => {
+		// A load still in flight is disposed when it lands: there is nothing to
+		// free yet, and dropping the reference would leak the canvas it is about
+		// to allocate. A failed one has nothing to free at all.
+		void pending?.then((sprite) => sprite.dispose()).catch(() => {})
+	}
+	const disposeSprites = () => {
+		for (const pending of sprites.values()) release(pending)
+		sprites.clear()
+		spriteOrder.length = 0
+	}
+
+	const spriteFor = (shot: ObjectShot): Promise<ObjectSprite> => {
+		const held = sprites.get(shot.id)
+		if (held) return held
+		const pending = loadObjectSprite(shot, {
+			frameHeight: height,
+			signal,
+			resolveBlob: args.resolveBlob,
+		})
+		sprites.set(shot.id, pending)
+		spriteOrder.push(shot.id)
+		while (spriteOrder.length > MAX_LIVE_SPRITES) {
+			const evicted = spriteOrder.shift()
+			if (!evicted || evicted === shot.id) continue
+			release(sprites.get(evicted))
+			sprites.delete(evicted)
 		}
+		return pending
+	}
+
+	// The first shot's picture is rasterised up front so a plan pointing at a
+	// file that is not there fails before the model is downloaded rather than
+	// forty seconds into a bake.
+	try {
+		await spriteFor(shots[0])
 	} catch (error) {
-		for (const sprite of sprites.values()) sprite.dispose()
+		disposeSprites()
 		throw error
 	}
 
@@ -164,7 +218,7 @@ export async function prepareObjectLayer(args: PrepareObjectLayerArgs): Promise<
 		signal,
 		onProgress: args.onProgress,
 	}).catch((error) => {
-		for (const sprite of sprites.values()) sprite.dispose()
+		disposeSprites()
 		throw error
 	})
 
@@ -180,7 +234,7 @@ export async function prepareObjectLayer(args: PrepareObjectLayerArgs): Promise<
 	if (!inputCtx) {
 		segmenter.close()
 		compositor.dispose()
-		for (const sprite of sprites.values()) sprite.dispose()
+		disposeSprites()
 		throw new Error('This browser has no 2D canvas context to hand the model a frame with.')
 	}
 
@@ -268,11 +322,19 @@ export async function prepareObjectLayer(args: PrepareObjectLayerArgs): Promise<
 			lastMs = ms
 		}
 
-		// The pre-roll exists only to warm the mask and the anchor up.
-		if (!shot) return {}
+		// The pre-roll exists only to warm the mask and the anchor up - and, since
+		// it is already spending time here, the picture that is about to be
+		// needed, so the frame the object first appears on is not the one that
+		// pays for decoding it.
+		if (!shot) {
+			const upcoming = shots.find((entry) => ms >= entry.startMs - PREROLL_MS && ms < entry.startMs)
+			// Swallowed here on purpose: this is a head start, not a load. If the
+			// picture really cannot be read, the frame that needs it says so.
+			if (upcoming) void spriteFor(upcoming).catch(() => {})
+			return {}
+		}
 
-		const sprite = sprites.get(shot.id)
-		if (!sprite) return {}
+		const sprite = await spriteFor(shot)
 
 		if (!anchor.found && anchor.coverage < 0.01) stats.framesWithoutSubject++
 
@@ -313,8 +375,7 @@ export async function prepareObjectLayer(args: PrepareObjectLayerArgs): Promise<
 		dispose() {
 			segmenter.close()
 			compositor.dispose()
-			for (const sprite of sprites.values()) sprite.dispose()
-			sprites.clear()
+			disposeSprites()
 			lastMask = null
 			motionReference = null
 		},
@@ -348,6 +409,17 @@ export type BakeObjectVideoArgs = PrepareObjectLayerArgs & {
 	source: Blob
 	format?: VideoFilterFormat
 	quality?: VideoFilterQuality
+	/**
+	 * The longest side the finished video may have. Left out, the clip keeps
+	 * its own size; set, every pixel the bake touches shrinks with it - the
+	 * frame, the cut-out's composite, and the objects, which are rasterised
+	 * against the output rather than against the source.
+	 */
+	maxDimension?: number
+	/** The highest frame rate the finished video may have. */
+	maxFrameRate?: number
+	/** How many seconds of the clip to write, from its start. */
+	maxSeconds?: number
 	onStage?: (stage: { phase: string; ratio: number }) => void
 }
 
@@ -366,10 +438,15 @@ export type BakeObjectVideoResult = VideoFilterResult & {
  */
 export async function bakeObjectVideo(args: BakeObjectVideoArgs): Promise<BakeObjectVideoResult> {
 	const startedAt = Date.now()
+	// The object layer is composited into the *output* frame, so it has to be
+	// planned against the output's size rather than the source's: at half the
+	// width, "three heads across" is still three heads across, but only if the
+	// head was measured on the frame the object lands in.
+	const output = fitWithin(args.probe.width, args.probe.height, args.maxDimension ?? Infinity)
 	const prepared = await prepareObjectLayer({
 		shots: args.shots,
 		settings: args.settings,
-		probe: args.probe,
+		probe: output,
 		signal: args.signal,
 		resolveBlob: args.resolveBlob,
 		safeArea: args.safeArea,
@@ -389,6 +466,9 @@ export async function bakeObjectVideo(args: BakeObjectVideoArgs): Promise<BakeOb
 			audio: 'copy',
 			format: args.format ?? 'mp4',
 			quality: args.quality ?? 'high',
+			maxDimension: args.maxDimension,
+			maxFrameRate: args.maxFrameRate,
+			maxSeconds: args.maxSeconds,
 			perFrame: prepared.perFrame,
 			signal: args.signal,
 			onProgress: (progress) =>
@@ -403,6 +483,133 @@ export async function bakeObjectVideo(args: BakeObjectVideoArgs): Promise<BakeOb
 	} finally {
 		prepared.dispose()
 	}
+}
+
+/* ==========================================================================
+   The moving preview.
+   ========================================================================== */
+
+/** The long side of a draft preview, in pixels. */
+export const PREVIEW_MAX_DIMENSION = 480
+
+/** The most frames a second a draft preview keeps. */
+export const PREVIEW_MAX_FRAME_RATE = 15
+
+/** How long a preview runs for before it stops, in seconds. */
+export const PREVIEW_MAX_SECONDS = 30
+
+/** The furthest a preview will run to reach an object that starts late. */
+export const PREVIEW_HARD_LIMIT_SECONDS = 90
+
+/**
+ * How many seconds a preview of this plan should cover.
+ *
+ * Half a minute from the start, unless every object in the plan happens later
+ * than that - a preview of a black-and-silent thirty seconds proves nothing,
+ * so it runs on to the end of the first object instead, up to a limit that
+ * keeps "preview" meaning "sooner than the export".
+ */
+export function previewSecondsFor(shots: ObjectShot[]): number {
+	const firstObjectEndsAt = shots.reduce(
+		(earliest, shot) => Math.min(earliest, shot.endMs),
+		Number.POSITIVE_INFINITY,
+	)
+	if (!Number.isFinite(firstObjectEndsAt)) return PREVIEW_MAX_SECONDS
+	const needed = firstObjectEndsAt / 1000 + 1
+	return Math.min(PREVIEW_HARD_LIMIT_SECONDS, Math.max(PREVIEW_MAX_SECONDS, needed))
+}
+
+export type PreviewObjectVideoArgs = Omit<
+	BakeObjectVideoArgs,
+	'format' | 'quality' | 'maxDimension' | 'maxFrameRate' | 'maxSeconds'
+> & {
+	/** the long side of the preview, defaulting to `PREVIEW_MAX_DIMENSION` */
+	maxDimension?: number
+}
+
+export type PreviewObjectVideoResult = BakeObjectVideoResult & {
+	/** true when the clip was long enough that only its first shots were rendered */
+	trimmed: boolean
+	/** how many seconds of the clip the preview covers */
+	previewSeconds: number
+	/** how many of the plan's objects fall inside it */
+	objectsShown: number
+}
+
+/**
+ * The same bake, small enough to watch while you are still deciding.
+ *
+ * This exists because the full bake is the *only* way to see the objects move,
+ * and on a long clip at full size that is minutes of work and more graphics
+ * memory than a laptop has - which is the failure it is answering: an export
+ * that dies two thirds of the way in tells you nothing about whether the
+ * pictures were the right size.
+ *
+ * Three things are turned down, in the order they cost:
+ *
+ *   1. **The frame.** 480 pixels on its long side is a quarter of the height of
+ *      a 1080x1920 clip, and so a sixteenth of its pixels. Everything
+ *      downstream is proportional to that - the canvas, the encoder, the
+ *      segmentation composite - so it is the setting that decides whether this
+ *      runs at all.
+ *   2. **The frame rate.** Fifteen frames a second, by dropping whole frames
+ *      rather than resampling, halves the number of times the model runs and
+ *      the encoder is called on ordinary footage.
+ *   3. **The bitrate.** Draft quality, because nobody is judging compression
+ *      here.
+ *
+ * What is *not* turned down is the pipeline: the same per-frame hook, the same
+ * segmenter, the same compositor. The preview is the render, in miniature, so
+ * an object that sits wrong here sits wrong in the finished video too.
+ *
+ * And it stops. Both tracks end together at `previewSecondsFor`, so ten minutes
+ * of clip does not have to be re-encoded to look at the object in its first
+ * half minute; objects past the window are dropped from the plan the preview
+ * renders, so their pictures are never even rasterised. A plan whose every
+ * object happens later than the window is the one case where the window moves,
+ * because a preview of thirty silent seconds answers nothing.
+ */
+export async function previewObjectVideo(args: PreviewObjectVideoArgs): Promise<PreviewObjectVideoResult> {
+	const previewSeconds = previewSecondsFor(args.shots)
+	const shown = args.shots.filter((shot) => shot.startMs < previewSeconds * 1000)
+	// Objects the preview will never reach are dropped from the plan it renders,
+	// so their pictures are never fetched, rasterised or held.
+	const shots = shown.length > 0 ? shown : args.shots.slice(0, 1)
+
+	const result = await bakeObjectVideo({
+		...args,
+		shots,
+		format: 'mp4',
+		quality: 'draft',
+		maxDimension: args.maxDimension ?? PREVIEW_MAX_DIMENSION,
+		maxFrameRate: PREVIEW_MAX_FRAME_RATE,
+		maxSeconds: previewSeconds,
+	})
+	return {
+		...result,
+		trimmed: shots.length < args.shots.length,
+		previewSeconds,
+		objectsShown: shots.length,
+	}
+}
+
+/** One line about a preview, in the same voice the bake's report uses. */
+export function describeObjectPreview(result: PreviewObjectVideoResult): string {
+	// The window it was asked for, or the clip, whichever ran out first: a
+	// five-second clip previewed "for thirty seconds" reads as a bug.
+	const covered = Math.min(result.previewSeconds, result.durationSeconds)
+	const parts = [
+		`The first ${Math.round(covered)}s at ${result.width}x${result.height}, ${Math.round(
+			result.fps,
+		)} frames a second`,
+		`${result.objectsShown} object${result.objectsShown === 1 ? '' : 's'} in it`,
+		`rendered in ${result.elapsedSeconds.toFixed(1)}s`,
+	]
+	if (result.trimmed) {
+		parts.push('the objects later in the clip are still in the plan, they are just past the preview')
+	}
+	parts.push('the clip itself has not been touched')
+	return parts.join('; ')
 }
 
 /* ==========================================================================

@@ -44,6 +44,10 @@
  *                             about outranking the word it repeats, objects
  *                             spread rather than clumped, and a model's pick
  *                             leading the local ranking without replacing it
+ *  10b. the draft preview  - a capped frame keeps its shape, lands on even
+ *                             numbers and is a sixteenth of the pixels, and the
+ *                             preview window reaches the first object however
+ *                             late it is
  *  11. the cut-out         - a flat background is flood filled away from the
  *                             border, white *inside* the subject survives it, a
  *                             busy photograph is refused rather than pasted in
@@ -58,10 +62,12 @@
  *                             private space and non-http addresses
  *  14. the studio itself    - a real browser records a clip, imports subtitles,
  *                             plans the objects, renders a still through the
- *                             bake’s own code path, burns the objects into the
- *                             video, checks from the panel’s own report that
- *                             the model was skipped and only a corner of each
- *                             frame repainted, and puts the original back
+ *                             bake’s own code path, renders the draft video
+ *                             preview and finds the object moving in it, burns
+ *                             the objects into the video, checks from the
+ *                             panel’s own report that the model was skipped and
+ *                             only a corner of each frame repainted, and puts
+ *                             the original back
  *
  *   node scripts/check-caption-objects.cjs                # everything
  *   node scripts/check-caption-objects.cjs --maths-only   # no browser, no server
@@ -107,6 +113,8 @@ const session = require('../lib/captions/session.ts')
 const auto = require('../lib/captions/object-auto.ts')
 const cutout = require('../lib/captions/object-cutout.ts')
 const fetcher = require('../lib/captions/object-fetch.ts')
+const frameOps = require('../lib/tools/frame-ops.ts')
+const objectRender = require('../lib/captions/object-render.ts')
 const objectsRoute = require('../app/api/captions/objects/route.ts')
 const keywordsRoute = require('../app/api/captions/keywords/route.ts')
 const imagesRoute = require('../app/api/captions/images/route.ts')
@@ -361,6 +369,19 @@ function checkPlanner() {
 	check('and off when it did', plan.normalizeObjectSettings({ adaptiveMask: false }).adaptiveMask === false)
 	check('an unknown size mode falls back to head-relative', settings.sizeMode === 'head')
 	check('and a known one is kept', plan.normalizeObjectSettings({ sizeMode: 'frame' }).sizeMode === 'frame')
+
+	// The output cap is the setting a person reaches for after a bake ran the
+	// browser out of memory, so a restored session must not quietly hand back a
+	// size nobody chose - and must not treat a nonsense one as a real cap.
+	check('the finished video keeps the clip’s own size unless one was chosen', settings.outputMaxDimension === 0)
+	check(
+		'a chosen size survives a restore',
+		plan.normalizeObjectSettings({ outputMaxDimension: 960 }).outputMaxDimension === 960,
+	)
+	check(
+		'and a size too small to be a video is not a cap at all',
+		plan.normalizeObjectSettings({ outputMaxDimension: 12 }).outputMaxDimension === 0,
+	)
 }
 
 /* ========================================================== 4. head anchor */
@@ -939,6 +960,139 @@ function checkKeywords() {
 		'a model pick for a word nobody said in that line is dropped',
 		auto.mergeKeywords(ranked, [{ line: 0, word: 'helicopter', query: 'helicopter' }], cues)[0].word !==
 			'helicopter',
+	)
+
+	/* ------------------------------------------- code-switched Nepali */
+
+	// Every word here was chosen by the ranking on a real Nepali clip and then
+	// found no picture anywhere on the web, because five of them are grammar
+	// and two are English spelled in Devanagari. Both failures are silent - the
+	// user is told "no picture could be found" and left to wonder why - so they
+	// are asserted rather than watched for.
+	const nepaliCues = [
+		{
+			startMs: 0,
+			endMs: 3_000,
+			text: 'तपाईंलाई हजुर जसले फर्स्ट अप्टिमाइज गर्ना तेसको भिडियो',
+			tokens: [],
+		},
+		{
+			startMs: 3_000,
+			endMs: 6_000,
+			text: 'तेसको ल्यापटप जसले हजुर मन्दिर',
+			tokens: [],
+		},
+		{
+			startMs: 6_000,
+			endMs: 9_000,
+			text: 'मन्दिर तपाईंलाई अप्टिमाइज गर्ना',
+			tokens: [],
+		},
+	]
+	const nepali = auto.rankTranscriptKeywords(nepaliCues).map((entry) => entry.word)
+	const unpicturable = [
+		'जसले', // jasle - "who", with the ergative on it
+		'तेसको', // tesko - "his", with the genitive
+		'तपाईंलाई', // tapainlai - "to you"
+		'हजुर', // hajur - "sir"
+		'गर्ना', // garna - "to do"
+		'फर्स्ट', // the English "first", as the recogniser spelled it
+	]
+	check(
+		'a function word wearing a case marker is not a candidate',
+		!nepali.some((word) => unpicturable.includes(word)),
+		nepali,
+	)
+	check(
+		'but the word the line is about still is',
+		nepali.includes('मन्दिर'),
+		nepali,
+	)
+	check(
+		'the case marker is what is seen through, not the word',
+		auto.nepaliRoot('तपाईंलाई') === 'तपाईं' &&
+			auto.nepaliRoot('मन्दिर') === 'मन्दिर',
+		auto.nepaliRoot('तपाईंलाई'),
+	)
+
+	// The search is what the picture is found by, so an English word spelled in
+	// Devanagari has to reach the web in English - there is no picture filed
+	// under "aptimaij" anywhere.
+	check(
+		'an English word written in Devanagari is searched for in English',
+		auto.searchTermFor('अप्टिमाइज') === 'optimize' &&
+			auto.searchTermFor('ल्यापटप') === 'laptop',
+		auto.searchTermFor('अप्टिमाइज'),
+	)
+	check(
+		'and a Nepali word is searched for exactly as it was said',
+		auto.searchTermFor('मन्दिर') === 'मन्दिर',
+	)
+	check(
+		'the ranking carries that spelling into the plan',
+		auto
+			.rankTranscriptKeywords(nepaliCues)
+			.some((entry) => entry.word === 'ल्यापटप' && entry.query === 'laptop'),
+	)
+}
+
+/* ================================== 10b. the draft preview's arithmetic */
+
+/**
+ * The two numbers that decide what a draft preview costs.
+ *
+ * Both are pure, both are the difference between a preview that runs on a
+ * laptop and an export that dies half way, and neither can be checked by
+ * looking at the picture - a preview at the wrong size still looks like a
+ * preview.
+ */
+function checkPreviewMaths() {
+	console.log('\nThe draft preview')
+
+	const portrait = frameOps.fitWithin(1080, 1920, 480)
+	check('a tall clip is capped on its long side', portrait.height === 480, portrait)
+	check(
+		'and keeps its shape',
+		Math.abs(portrait.width / portrait.height - 1080 / 1920) < 0.01,
+		portrait,
+	)
+	const landscape = frameOps.fitWithin(1920, 1080, 480)
+	check('a wide clip is capped on its long side too', landscape.width === 480, landscape)
+	check(
+		'the preview is a sixteenth of the pixels of the export',
+		Math.abs((portrait.width * portrait.height) / (1080 * 1920) - 1 / 16) < 0.002,
+		(portrait.width * portrait.height) / (1080 * 1920),
+	)
+	check(
+		'every size an encoder is handed is even',
+		[
+			frameOps.fitWithin(1079, 1921, 480),
+			frameOps.fitWithin(641, 361, 480),
+			frameOps.fitWithin(3, 5, 480),
+		].every((size) => size.width % 2 === 0 && size.height % 2 === 0),
+	)
+	const small = frameOps.fitWithin(320, 240, 480)
+	check('a clip smaller than the cap is left alone', small.width === 320 && small.height === 240, small)
+
+	check(
+		'a preview covers the first half minute',
+		objectRender.previewSecondsFor([{ startMs: 0, endMs: 3_000 }]) === 30,
+	)
+	check(
+		'it runs on to reach an object that starts later than that',
+		objectRender.previewSecondsFor([{ startMs: 60_000, endMs: 63_000 }]) === 64,
+		objectRender.previewSecondsFor([{ startMs: 60_000, endMs: 63_000 }]),
+	)
+	check(
+		'but never so far that it stops being quicker than the bake',
+		objectRender.previewSecondsFor([{ startMs: 600_000, endMs: 603_000 }]) === 90,
+	)
+	check(
+		'the earliest object is the one it waits for',
+		objectRender.previewSecondsFor([
+			{ startMs: 400_000, endMs: 403_000 },
+			{ startMs: 40_000, endMs: 42_000 },
+		]) === 43,
 	)
 }
 
@@ -1739,6 +1893,93 @@ async function checkStudio() {
 			preview.share,
 		)
 
+		/* --------------------------------------------- the moving preview */
+
+		// The whole point of this one: it is the *only* way to see the objects
+		// move without paying for the export, and on a long clip the export is
+		// exactly what runs the browser out of graphics memory. So it is
+		// checked the same way the still is - by finding, in the picture it
+		// produced, a colour that was never in the footage.
+		const previewingMovie = await page.evaluate(clickIn, '.panel--right', 'Preview the video')
+		check('the draft video preview starts', previewingMovie === 'clicked', previewingMovie)
+
+		const movie = await until(
+			page,
+			() => {
+				const failure = Array.from(document.querySelectorAll('.panel--right .notice--error'))
+					.map((node) => (node.textContent || '').trim())
+					.filter(Boolean)
+					.join(' | ')
+				if (failure) return { error: failure }
+				const video = document.querySelector('video.object-preview-movie')
+				if (!video || !video.videoWidth || !Number.isFinite(video.duration) || video.duration <= 0) {
+					return null
+				}
+				const note = Array.from(document.querySelectorAll('.panel--right .hint-text'))
+					.map((node) => (node.textContent || '').trim())
+					.find((text) => /frames a second/.test(text))
+				return {
+					width: video.videoWidth,
+					height: video.videoHeight,
+					duration: video.duration,
+					note: note || '',
+				}
+			},
+			null,
+			300_000,
+			'a draft video preview',
+		)
+		if (!check('the draft preview renders', !movie.error, movie.error)) throw new Error(movie.error)
+		check('it is no bigger than the draft size', Math.max(movie.width, movie.height) <= 480, movie)
+		// The clip is five seconds and the preview keeps every second of it while
+		// throwing away half its frames. A stride that renumbered the frames it
+		// kept instead of keeping their own timestamps would hand back a video
+		// half as long, running at double speed, silently out of step with the
+		// audio - so the length is what is asserted, not the frame count.
+		check('it keeps the whole clip, not half of it', movie.duration > 3.5 && movie.duration < 7, movie.duration)
+		check('and the panel says what it rendered', /frames a second/.test(movie.note), movie.note)
+
+		// The preview has to be carrying the object somewhere in it - a preview
+		// that renders the clip untouched would pass every check above and be
+		// worthless. Which instant is not the point and the shots move with the
+		// transcript, so the whole thing is walked rather than one guessed
+		// timestamp sampled.
+		const movieFrame = await until(
+			page,
+			(colours) => {
+				const video = document.querySelector('video.object-preview-movie')
+				if (!video || !Number.isFinite(video.duration) || video.duration <= 0) return null
+				const scan = window.__movieScan || (window.__movieScan = { best: 0, at: 0, next: 0 })
+				if (video.readyState < 2 || Math.abs(video.currentTime - scan.next) > 0.15) {
+					if (Math.abs(video.currentTime - scan.next) > 0.15) video.currentTime = scan.next
+					return null
+				}
+				const measured = window.__foreignShare(video, colours.backdrop, colours.subject)
+				if (measured.share > scan.best) {
+					scan.best = measured.share
+					scan.at = video.currentTime
+				}
+				scan.next = Math.round((scan.next + 0.25) * 100) / 100
+				if (scan.next >= video.duration - 0.1) return { share: scan.best, at: scan.at }
+				return null
+			},
+			{ backdrop: BACKDROP, subject: SUBJECT },
+			120_000,
+			'the object to appear somewhere in the draft preview',
+		)
+		check(
+			'and it carries the object, not just the footage',
+			movieFrame.share > 0.005,
+			movieFrame,
+		)
+
+		// It is a preview, not an edit: the clip under the captions must be the
+		// one that was there before it ran.
+		const untouched = await page.evaluate(() =>
+			(document.querySelector('.panel--left')?.innerText || '').includes('speaker.webm'),
+		)
+		check('the working clip is untouched by the preview', untouched === true)
+
 		/* -------------------------------------------------------- the bake */
 
 		const baking = await page.evaluate(clickIn, '.panel--right', 'Add objects to the video')
@@ -1799,6 +2040,12 @@ async function checkStudio() {
 		})
 		check('clicking a shot parks the playhead on it', seeked === 'clicked', seeked)
 
+		// The stage is a paused video the studio has just seeked, and the frame
+		// it shows arrives a moment after the seek does. Sampling once is
+		// therefore a race against the decoder rather than a measurement of the
+		// bake: it is sampled until the object turns up, and given up on after
+		// sixteen seconds so that a bake that really did not composite anything
+		// fails on the picture rather than on a timeout.
 		const after = await until(
 			page,
 			(colours) => {
@@ -1806,12 +2053,13 @@ async function checkStudio() {
 					(node) => (node.videoWidth || node.width || 0) > 80,
 				)
 				if (surfaces.length === 0) return null
-				let best = null
+				const scan = window.__stageScan || (window.__stageScan = { share: 0, polls: 0 })
+				scan.polls++
 				for (const surface of surfaces) {
 					const measured = window.__foreignShare(surface, colours.backdrop, colours.subject)
-					if (!best || measured.share > best.share) best = measured
+					if (measured.share > scan.share) scan.share = measured.share
 				}
-				return best
+				return scan.share > 0.005 || scan.polls > 40 ? { share: scan.share, polls: scan.polls } : null
 			},
 			{ backdrop: BACKDROP, subject: SUBJECT },
 			90_000,
@@ -2132,6 +2380,7 @@ async function main() {
 	checkTimingAndMotion()
 	checkSession()
 	checkKeywords()
+	checkPreviewMaths()
 	checkCutout()
 	checkHarderPictures()
 	checkHeadMultiple()

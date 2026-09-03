@@ -215,6 +215,16 @@ export const ENGLISH_LOANWORDS: Record<string, string[]> = {
 	WhatsApp: ['ह्वाट्सएप', 'व्हाट्सएप'],
 	Google: ['गुगल', 'गूगल'],
 	Instagram: ['इन्स्टाग्राम', 'इन्स्टाग्राम्'],
+	content: ['कन्टेन्ट', 'कन्टेण्ट', 'कन्टेन्ट्'],
+	// A creator talking about a channel says these in English and the
+	// recogniser writes them in Devanagari, where they are neither Nepali
+	// words nor searchable ones - "अप्टिमाइज" matches no picture anywhere.
+	optimize: ['अप्टिमाइज', 'अप्टिमाईज', 'ओप्टिमाइज', 'अप्टिमाइज्'],
+	algorithm: ['एल्गोरिदम', 'एल्गोरिथम', 'अल्गोरिदम', 'एल्गोरिथ्म'],
+	thumbnail: ['थम्बनेल', 'थम्बनेल्', 'थम्बनेइल'],
+	title: ['टाइटल', 'टाईटल'],
+	keyword: ['किवर्ड', 'कीवर्ड'],
+	first: ['फर्स्ट', 'फस्ट्'],
 
 	/* ------------------------------------------------------------ courtesy */
 	'thank you': ['थ्याङ्क्यू', 'थैंक्यू', 'थ्यांक्यू', 'थ्याङ्कयू', 'थ्याङ्क्यु', 'थ्यांक्यु'],

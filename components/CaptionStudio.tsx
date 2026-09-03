@@ -32,7 +32,13 @@ import { captionProject, captionSourceFor, downloadFileName, planComposition } f
 import { directObjects } from '../lib/captions/object-director'
 import { loadModelCatalog } from '../lib/captions/object-models'
 import { objectAssetById, objectAssetSrc } from '../lib/captions/object-library'
-import { bakeObjectVideo, describeObjectRender, renderObjectStill } from '../lib/captions/object-render'
+import {
+	bakeObjectVideo,
+	describeObjectPreview,
+	describeObjectRender,
+	previewObjectVideo,
+	renderObjectStill,
+} from '../lib/captions/object-render'
 import { describeAutoPlan, keywordTargetCount, planWebObjects } from '../lib/captions/object-auto'
 import { captionSafeArea, type ObjectSettings, type ObjectShot } from '../lib/captions/object-plan'
 import { cuesToAss } from '../lib/captions/ass'
@@ -382,6 +388,16 @@ export default function CaptionStudio() {
 	const [objectPreviewing, setObjectPreviewing] = useState(false)
 	const [objectPreview, setObjectPreview] = useState<{ url: string; shotId: string } | null>(null)
 	const [objectPreviewError, setObjectPreviewError] = useState<string | null>(null)
+	/**
+	 * The draft video preview: small, rough, and never the working clip.
+	 *
+	 * Held here rather than in the panel because it owns a blob URL, and the one
+	 * thing a preview must not do is leak the memory it was made to save.
+	 */
+	const [objectMovie, setObjectMovie] = useState<{ url: string; note: string } | null>(null)
+	const [objectMovieRendering, setObjectMovieRendering] = useState(false)
+	const [objectMovieProgress, setObjectMovieProgress] = useState({ phase: 'preparing', ratio: 0 })
+	const [objectMovieError, setObjectMovieError] = useState<string | null>(null)
 	const [objectBaking, setObjectBaking] = useState(false)
 	const [objectBakeProgress, setObjectBakeProgress] = useState({ phase: 'preparing', ratio: 0 })
 	const [objectBakeNote, setObjectBakeNote] = useState<string | null>(null)
@@ -1107,6 +1123,13 @@ export default function CaptionStudio() {
 		setObjectBakeNote(null)
 		setObjectBakeError(null)
 		setObjectPreview(null)
+		// The draft preview is a blob URL over a video of the clip that just
+		// left; nothing else will ever free it.
+		setObjectMovie((current) => {
+			if (current) URL.revokeObjectURL(current.url)
+			return null
+		})
+		setObjectMovieError(null)
 		void removeBlob(CAPTION_ORIGINAL_BLOB_ID)
 	}, [clearCueHistory, resetRender])
 
@@ -1948,6 +1971,68 @@ export default function CaptionStudio() {
 	}, [])
 
 	/**
+	 * Renders a small, rough, playable version of the finished video.
+	 *
+	 * The still preview answers "is the picture the right size"; only a moving
+	 * one answers "does it arrive when the word is said, and does it sit behind
+	 * the head while the head moves". Baking the real thing to find that out
+	 * costs minutes and, on a long clip at full size, more graphics memory than
+	 * the browser has - which is the failure this exists to route around.
+	 *
+	 * It never touches the working clip. Nothing is parked, nothing is replaced,
+	 * and the result is a blob URL the panel plays and this drops on the next
+	 * run.
+	 */
+	const handleObjectPreviewVideo = useCallback(() => {
+		const source = videoRef.current
+		if (!source?.file) {
+			setObjectMovieError(NEEDS_LOCAL_FILE)
+			return
+		}
+		const shots = objectPlanRef.current.shots
+		if (shots.length === 0) {
+			setObjectMovieError('There are no objects to preview yet. Plan them first, or use the one press above.')
+			return
+		}
+
+		objectAbortRef.current?.abort()
+		const controller = new AbortController()
+		objectAbortRef.current = controller
+		setObjectMovieRendering(true)
+		setObjectMovieError(null)
+		setObjectMovieProgress({ phase: 'preparing', ratio: 0 })
+
+		void (async () => {
+			try {
+				const result = await previewObjectVideo({
+					shots,
+					settings: objectPlanRef.current.settings,
+					probe: source,
+					source: source.file as File,
+					safeArea: captionSafeArea(styleRef.current),
+					signal: controller.signal,
+					resolveBlob: async (blobId) => (await readBlob(blobId))?.blob ?? null,
+					onStage: (stage) => setObjectMovieProgress(stage),
+				})
+				if (controller.signal.aborted) {
+					URL.revokeObjectURL(result.url)
+					return
+				}
+				setObjectMovie((current) => {
+					if (current) URL.revokeObjectURL(current.url)
+					return { url: result.url, note: describeObjectPreview(result) }
+				})
+			} catch (error) {
+				if (controller.signal.aborted) return
+				setObjectMovieError(error instanceof Error ? error.message : String(error))
+			} finally {
+				if (objectAbortRef.current === controller) objectAbortRef.current = null
+				setObjectMovieRendering(false)
+			}
+		})()
+	}, [])
+
+	/**
 	 * Burns a shot list into the clip and swaps the working video for the result.
 	 *
 	 * Shared by the button and by the one-press flow, and it takes the shots as
@@ -1981,6 +2066,10 @@ export default function CaptionStudio() {
 				source: original,
 				format: 'mp4',
 				quality: 'high',
+				// Zero means the clip's own size. Anything else was chosen in the
+				// panel, and is usually chosen because the full-size bake ran the
+				// browser out of graphics memory.
+				maxDimension: plan.settings.outputMaxDimension || undefined,
 				// The captions are styled after the bake as often as before it,
 				// so the band they own is read at the moment the objects are
 				// placed rather than baked into the plan.
@@ -2007,6 +2096,13 @@ export default function CaptionStudio() {
 				originalBlobId: parked ? CAPTION_ORIGINAL_BLOB_ID : current.originalBlobId,
 				originalName: current.originalName ?? original.name,
 			}))
+			// The draft was a preview of a clip that no longer exists: the objects
+			// are in the working video now, and leaving the old one on screen
+			// invites a comparison between a thing and itself.
+			setObjectMovie((current) => {
+				if (current) URL.revokeObjectURL(current.url)
+				return null
+			})
 
 			return { result, parked, file: baked }
 		},
@@ -2247,6 +2343,8 @@ export default function CaptionStudio() {
 			onDeleteShot: handleObjectDeleteShot,
 			onApplyToAll: handleObjectApplyToAll,
 			onPreview: handleObjectPreview,
+			onPreviewVideo: handleObjectPreviewVideo,
+			onCancelPreviewVideo: () => objectAbortRef.current?.abort(),
 			onBake: handleObjectBake,
 			onRestoreOriginal: handleObjectRestoreOriginal,
 			onSeek: (ms) => seekToMsRef.current(ms),
@@ -2261,6 +2359,7 @@ export default function CaptionStudio() {
 			handleObjectDeleteShot,
 			handleObjectPlanRun,
 			handleObjectPreview,
+			handleObjectPreviewVideo,
 			handleObjectRestoreOriginal,
 			handleObjectSettings,
 			handleObjectShot,
@@ -2663,6 +2762,10 @@ export default function CaptionStudio() {
 									previewing: objectPreviewing,
 									preview: objectPreview,
 									previewError: objectPreviewError,
+									movie: objectMovie,
+									movieRendering: objectMovieRendering,
+									movieProgress: objectMovieProgress,
+									movieError: objectMovieError,
 									baking: objectBaking,
 									bakeProgress: objectBakeProgress,
 									bakeNote: objectBakeNote,

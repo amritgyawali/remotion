@@ -170,6 +170,19 @@ export function describeRenderFailure(error: unknown): Error {
 				'export in halves, or close other tabs and try again.',
 		)
 	}
+	// What Chromium says when a canvas can no longer produce an image: the GPU
+	// dropped its context, which on a long export means it ran out of room. The
+	// export retries the frame on a fresh canvas before it ever gets here, so
+	// reaching this point means even a new canvas could not be painted - and
+	// the only thing that helps then is asking for fewer pixels.
+	if (/invalid source state|context(?: is)? lost|contextlost/i.test(message)) {
+		return new Error(
+			'The browser’s graphics memory ran out part-way through this export, so a frame could not be ' +
+				'handed to the encoder. Ask for a smaller output size and run it again - fewer pixels is the ' +
+				'one thing that reliably fixes this - or close other tabs first. A draft-sized render of the ' +
+				'same clip will go through whatever the machine.',
+		)
+	}
 	// The muxer's own words for a track that starts before zero. Every export
 	// path trims the encoder priming that causes it (see tools/packet-timing.ts),
 	// so reaching here means one of them was missed - and the person reading it

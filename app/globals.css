@@ -7583,6 +7583,23 @@ textarea::placeholder {
 	background: var(--surface-3);
 }
 
+/*
+ * The draft video preview. Same box as the still it sits under, and a hard
+ * ceiling on its height so a vertical clip cannot push the bake button off the
+ * panel - the whole point of the preview is that the thing it is previewing is
+ * still one click away.
+ */
+.object-preview-movie {
+	display: block;
+	width: 100%;
+	max-height: 320px;
+	margin-top: 8px;
+	border-radius: var(--radius-sm);
+	border: 1px solid var(--border-strong);
+	background: #000;
+	object-fit: contain;
+}
+
 @media (max-width: 560px) {
 	.tone-grid {
 		max-height: 260px;

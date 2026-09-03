@@ -157,6 +157,27 @@ export function evenSize(value: number): number {
 	return rounded % 2 === 0 ? rounded : rounded + 1
 }
 
+/**
+ * The largest even frame size that fits inside `maxDimension` on its long side.
+ *
+ * Only ever shrinks - asking for a bigger box than the picture leaves the
+ * picture alone - and always lands on even numbers, because H.264 and HEVC
+ * refuse odd ones. It is the single place a "render this smaller" request
+ * becomes pixels, so the size the object layer is composited against and the
+ * size the encoder is handed can never disagree.
+ */
+export function fitWithin(
+	width: number,
+	height: number,
+	maxDimension: number,
+): { width: number; height: number } {
+	const w = Math.max(1, width)
+	const h = Math.max(1, height)
+	const longest = Math.max(w, h)
+	const scale = Number.isFinite(maxDimension) && maxDimension > 0 ? Math.min(1, maxDimension / longest) : 1
+	return { width: evenSize(w * scale), height: evenSize(h * scale) }
+}
+
 export type FrameOpsDims = {
 	width: number
 	height: number

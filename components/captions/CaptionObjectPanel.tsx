@@ -61,6 +61,9 @@ export type ObjectActions = {
 	onDeleteShot: (id: string) => void
 	onApplyToAll: (look: Pick<ObjectShot, 'scale' | 'offsetX' | 'offsetY' | 'opacity' | 'motion'>) => void
 	onPreview: (id: string) => void
+	/** renders a small, rough, playable version of the finished video */
+	onPreviewVideo: () => void
+	onCancelPreviewVideo: () => void
 	onBake: () => void
 	onRestoreOriginal: () => void
 	onSeek: (ms: number) => void
@@ -101,6 +104,11 @@ export type ObjectPanelState = {
 	previewing: boolean
 	preview: { url: string; shotId: string } | null
 	previewError: string | null
+	/** the last draft video preview, and what it covers */
+	movie: { url: string; note: string } | null
+	movieRendering: boolean
+	movieProgress: { phase: string; ratio: number }
+	movieError: string | null
 	baking: boolean
 	bakeProgress: { phase: string; ratio: number }
 	bakeNote: string | null
@@ -156,7 +164,7 @@ export default function CaptionObjectPanel({
 	}, [])
 
 	const selected = state.shots.find((shot) => shot.id === selectedId) ?? state.shots[0] ?? null
-	const busy = state.disabled || state.planning || state.baking || state.auto.running
+	const busy = state.disabled || state.planning || state.baking || state.auto.running || state.movieRendering
 	const credits = state.shots.filter((shot) => shot.kind === 'web' && shot.credit)
 
 	/* ------------------------------------------------------- one press */
@@ -762,6 +770,69 @@ export default function CaptionObjectPanel({
 				/>
 			</div>
 
+			{/* ------------------------------------------------ moving preview */}
+
+			<div>
+				<h2 className="section-label">
+					<IconEye size={12} /> Watch it first
+				</h2>
+				<p className="hint-text">
+					Renders the first half minute at 480 pixels and 15 frames a second - the same cut-out, the
+					same placement, a sixteenth of the pixels - so you can see the objects move before
+					committing to the full bake. It is quick, it asks the browser for very little memory, and
+					it leaves your clip exactly where it is.
+				</p>
+
+				<div className="object-actions">
+					<button
+						className="btn"
+						disabled={state.disabled || state.planning || state.baking || state.auto.running || state.shots.length === 0}
+						onClick={state.movieRendering ? actions.onCancelPreviewVideo : actions.onPreviewVideo}
+					>
+						{state.movieRendering ? <IconStop size={13} /> : <IconEye size={13} />}
+						{state.movieRendering ? 'Stop the preview' : state.movie ? 'Preview again' : 'Preview the video'}
+					</button>
+				</div>
+
+				{state.movieRendering ? (
+					<div style={{ marginTop: 12 }}>
+						<div className="progress-track">
+							<div
+								className="progress-fill"
+								style={{ width: `${Math.round(Math.min(1, state.movieProgress.ratio) * 100)}%` }}
+							/>
+						</div>
+						<div className="progress-meta">
+							<span>{state.movieProgress.phase}</span>
+							<span>{Math.round(Math.min(1, state.movieProgress.ratio) * 100)}%</span>
+						</div>
+					</div>
+				) : null}
+
+				{state.movieError ? (
+					<div className="notice notice--error" style={{ marginTop: 12 }}>
+						<span className="notice-icon">
+							<IconAlert size={14} />
+						</span>
+						<span>{state.movieError}</span>
+					</div>
+				) : null}
+
+				{state.movie ? (
+					<>
+						<video
+							className="object-preview-movie"
+							src={state.movie.url}
+							controls
+							loop
+							playsInline
+							preload="metadata"
+						/>
+						<p className="hint-text">{state.movie.note}</p>
+					</>
+				) : null}
+			</div>
+
 			{/* --------------------------------------------------------- bake */}
 
 			<div>
@@ -772,6 +843,24 @@ export default function CaptionObjectPanel({
 					This decodes the clip once, places the objects, and re-encodes the video. The audio is
 					copied untouched, so every caption timing survives exactly. The original stays in this
 					browser and one press brings it back.
+				</p>
+
+				<Segmented
+					label="Size of the finished video"
+					value={String(state.settings.outputMaxDimension)}
+					disabled={busy}
+					options={[
+						{ value: '0', label: 'Full size' },
+						{ value: '1280', label: '1280' },
+						{ value: '960', label: '960' },
+						{ value: '720', label: '720' },
+					]}
+					onChange={(value) => actions.onSettings({ outputMaxDimension: Number(value) })}
+				/>
+				<p className="hint-text">
+					Full size keeps the clip exactly as it came in. The smaller sizes cap its long side, which
+					is the one setting that decides how much memory the bake asks for - halving it quarters the
+					pixels. Pick one if a full-size bake stops part-way saying it ran out of graphics memory.
 				</p>
 
 				<div className="object-actions">

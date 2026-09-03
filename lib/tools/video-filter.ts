@@ -19,7 +19,7 @@
  * that map already exists and is already tested.)
  */
 
-import { computeFrameDims, drawFrame, type CropRect, type FrameOpsDims, type FrameOpsParams, type WatermarkSpec } from './frame-ops'
+import { computeFrameDims, drawFrame, fitWithin, type CropRect, type FrameOpsDims, type FrameOpsParams, type WatermarkSpec } from './frame-ops'
 import { encodeGif, type GifFrame } from './gif-encoder'
 import { createRenderSink, describeRenderFailure } from '../media/render-sink'
 import { createPacketRetimer } from './packet-timing'
@@ -69,6 +69,35 @@ export type VideoFilterOptions = {
 	format: VideoFilterFormat
 	quality: VideoFilterQuality
 	perFrame?: PerFrameHook
+	/**
+	 * The longest side the output may have, in pixels.
+	 *
+	 * The picture is scaled down to fit and nothing else changes: the crop, the
+	 * grade and the per-frame hook all still run, just over fewer pixels. This
+	 * is what a draft preview turns down, and it is the single biggest lever
+	 * there is on how much memory an export asks the browser for - a 1080x1920
+	 * frame is sixteen times the pixels of the same clip capped at 480, in the
+	 * decoder, in the canvas, in the encoder and in every scratch surface a
+	 * per-frame hook keeps.
+	 */
+	maxDimension?: number
+	/**
+	 * The highest frame rate the output may have.
+	 *
+	 * Source frames are dropped in whole steps to reach it - never resampled -
+	 * so what is encoded is a subset of what was decoded, at its original
+	 * timestamps. The audio is untouched, so nothing drifts.
+	 */
+	maxFrameRate?: number
+	/**
+	 * How many seconds of the clip to write, from its start.
+	 *
+	 * Both tracks stop at the same instant, so the result is a shorter video
+	 * rather than a video whose sound outlives its picture. Used by the draft
+	 * preview: the whole point of a preview is that it is ready before the
+	 * export it is previewing.
+	 */
+	maxSeconds?: number
 	onProgress?: (progress: { phase: 'preparing' | 'encoding' | 'finishing'; ratio: number; framesDone: number; framesTotal: number }) => void
 	signal: AbortSignal
 }
@@ -139,12 +168,32 @@ export async function renderVideoFilter(options: VideoFilterOptions): Promise<Vi
 
 		const sourceWidth = await videoTrack.getDisplayWidth()
 		const sourceHeight = await videoTrack.getDisplayHeight()
-		const dims: FrameOpsDims = computeFrameDims(sourceWidth, sourceHeight, options.params)
+		// A size cap is expressed as a target size rather than as a separate
+		// scale step, so everything downstream - the encoder, the per-frame
+		// hook, `drawFrame` - sees one set of dimensions and cannot disagree
+		// about them.
+		let params: FrameOpsParams = options.params
+		let dims: FrameOpsDims = computeFrameDims(sourceWidth, sourceHeight, params)
+		if (options.maxDimension && Math.max(dims.width, dims.height) > options.maxDimension) {
+			const fitted = fitWithin(dims.width, dims.height, options.maxDimension)
+			params = { ...options.params, targetWidth: fitted.width, targetHeight: fitted.height }
+			dims = computeFrameDims(sourceWidth, sourceHeight, params)
+		}
 
 		const stats = await videoTrack.computePacketStats(120)
 		const fps = stats.averagePacketRate > 0 ? Math.min(120, Math.max(1, stats.averagePacketRate)) : 30
 		const duration = await input.computeDuration()
-		const framesTotal = Math.max(1, Math.round(duration * fps))
+		const limitSeconds = options.maxSeconds && options.maxSeconds > 0 ? options.maxSeconds : Infinity
+		const framesTotal = Math.max(1, Math.round(Math.min(duration, limitSeconds) * fps))
+
+		// Whole steps only: frame 0, 2, 4 of a 30fps clip is a real 15fps video,
+		// where 30 * (15/30.7) is a stutter. The kept frames keep their own
+		// timestamps, so the picture still lines up with the untouched audio.
+		const stride =
+			options.maxFrameRate && options.maxFrameRate > 0
+				? Math.max(1, Math.floor(fps / options.maxFrameRate))
+				: 1
+		const outputFps = fps / stride
 
 		options.onProgress?.({ phase: 'preparing', ratio: 0, framesDone: 0, framesTotal })
 
@@ -169,7 +218,7 @@ export async function renderVideoFilter(options: VideoFilterOptions): Promise<Vi
 			bitrate: mediabunny[VIDEO_QUALITY[options.quality]],
 			keyFrameInterval: 2,
 		})
-		output.addVideoTrack(videoSource, { frameRate: fps })
+		output.addVideoTrack(videoSource, { frameRate: outputFps })
 
 		let audioTrack: Awaited<ReturnType<typeof input.getPrimaryAudioTrack>> = null
 		let audioSource: InstanceType<typeof EncodedAudioPacketSource> | null = null
@@ -202,9 +251,50 @@ export async function renderVideoFilter(options: VideoFilterOptions): Promise<Vi
 			})
 		}
 
-		const canvas = new OffscreenCanvas(dims.width, dims.height)
-		const ctx = canvas.getContext('2d')
-		if (!ctx) throw new Error('This browser has no 2D canvas context to draw frames with.')
+		/**
+		 * The surface every output frame is drawn on, and how to build another.
+		 *
+		 * A 2D canvas is not permanent. When the GPU process drops its context -
+		 * which on a long export is a memory problem, not a bug - every draw
+		 * into it silently does nothing and `new VideoFrame(canvas)` throws
+		 * "Invalid source state", because the browser can no longer produce an
+		 * image from it. The only cure is a new canvas, so the surface is
+		 * replaceable and the frame is drawn again rather than the export dying
+		 * two thirds of the way through a bake nobody wants to repeat.
+		 */
+		const makeSurface = () => {
+			const surfaceCanvas = new OffscreenCanvas(dims.width, dims.height)
+			const surfaceCtx = surfaceCanvas.getContext('2d')
+			if (!surfaceCtx) throw new Error('This browser has no 2D canvas context to draw frames with.')
+			return { canvas: surfaceCanvas, ctx: surfaceCtx }
+		}
+		let surface = makeSurface()
+
+		/**
+		 * Draws one frame and hands it to the encoder, once - or twice, if the
+		 * canvas turned out to be dead.
+		 *
+		 * The retry is deliberately the whole draw: a replacement canvas is
+		 * blank, so re-encoding without redrawing would write a transparent
+		 * frame and call it a success.
+		 */
+		const encodeFrame = async (timestampSeconds: number, frameDuration: number, draw: (ctx: OffscreenCanvasRenderingContext2D) => void) => {
+			draw(surface.ctx)
+			let output: InstanceType<typeof VideoSample>
+			try {
+				output = new VideoSample(surface.canvas, { timestamp: timestampSeconds, duration: frameDuration })
+			} catch (error) {
+				if (signal.aborted) throw error
+				surface = makeSurface()
+				draw(surface.ctx)
+				output = new VideoSample(surface.canvas, { timestamp: timestampSeconds, duration: frameDuration })
+			}
+			try {
+				await videoSource.add(output)
+			} finally {
+				output.close()
+			}
+		}
 
 		const encodeVideo = async () => {
 			const sink = new VideoSampleSink(videoTrack)
@@ -212,38 +302,48 @@ export async function renderVideoFilter(options: VideoFilterOptions): Promise<Vi
 			try {
 				for await (const sample of sink.samples()) {
 					assertLive(signal)
-					const timestampSeconds = index / fps
-					const extra = options.perFrame
-						? await options.perFrame(index, timestampSeconds, {
-								width: sourceWidth,
-								height: sourceHeight,
-								drawTo: (target, width, height) => sample.draw(target as CanvasRenderingContext2D, 0, 0, width, height),
-							})
-						: undefined
-					const frameParams: FrameOpsParams =
-						extra?.patch || extra?.overlay !== undefined
-							? {
-									...options.params,
-									...(extra.patch ?? {}),
-									...(extra.overlay !== undefined ? { watermark: extra.overlay } : {}),
-								}
-							: options.params
-
-					drawFrame(
-						ctx,
-						(c, sx, sy, sw, sh, dx, dy, dw, dh) => sample.draw(c as CanvasRenderingContext2D, sx, sy, sw, sh, dx, dy, dw, dh),
-						frameParams,
-						dims,
-						extra?.cropOffset,
-						index,
-					)
-					sample.close()
-
-					const output = new VideoSample(canvas, { timestamp: timestampSeconds, duration: 1 / fps })
-					await videoSource.add(output)
-					output.close()
-
+					const sourceIndex = index
 					index += 1
+					try {
+						// Dropped frames still cost a decode - the decoder has to
+						// walk them to reach the next key frame - but nothing past
+						// this point, which is where the work actually is.
+						if (sourceIndex % stride !== 0) continue
+						const timestampSeconds = sourceIndex / fps
+						if (timestampSeconds >= limitSeconds) break
+						const extra = options.perFrame
+							? await options.perFrame(sourceIndex, timestampSeconds, {
+									width: sourceWidth,
+									height: sourceHeight,
+									drawTo: (target, width, height) => sample.draw(target as CanvasRenderingContext2D, 0, 0, width, height),
+								})
+							: undefined
+						const frameParams: FrameOpsParams =
+							extra?.patch || extra?.overlay !== undefined
+								? {
+										...params,
+										...(extra.patch ?? {}),
+										...(extra.overlay !== undefined ? { watermark: extra.overlay } : {}),
+									}
+								: params
+
+						await encodeFrame(timestampSeconds, stride / fps, (target) =>
+							drawFrame(
+								target,
+								(c, sx, sy, sw, sh, dx, dy, dw, dh) => sample.draw(c as CanvasRenderingContext2D, sx, sy, sw, sh, dx, dy, dw, dh),
+								frameParams,
+								dims,
+								extra?.cropOffset,
+								sourceIndex,
+							),
+						)
+					} finally {
+						// Always: a decoded frame that is not closed holds a GPU
+						// buffer, and enough of those is exactly the memory
+						// exhaustion the retry above exists to survive.
+						sample.close()
+					}
+
 					framesDone = index
 					if (index % 5 === 0) report()
 				}
@@ -268,6 +368,10 @@ export async function renderVideoFilter(options: VideoFilterOptions): Promise<Vi
 			try {
 				for await (const packet of sink.packets()) {
 					assertLive(signal)
+					// The picture stops at `limitSeconds`, so the sound does too -
+					// a preview whose audio runs on over a black screen is not a
+					// preview of anything.
+					if (packet.timestamp >= limitSeconds) break
 					const placement = retimer.place(packet)
 					if (placement.action === 'drop') continue
 					const outgoing =
@@ -298,7 +402,7 @@ export async function renderVideoFilter(options: VideoFilterOptions): Promise<Vi
 			format: options.format,
 			width: dims.width,
 			height: dims.height,
-			fps,
+			fps: outputFps,
 			durationSeconds: framesTotal / fps,
 			sizeInBytes: blob.size,
 			videoCodec,

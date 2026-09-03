@@ -154,6 +154,19 @@ export type ObjectSettings = {
 	 */
 	headMultiple: number
 	/**
+	 * The longest side the burned-in video may have, or 0 for the clip's own.
+	 *
+	 * A bake is the most expensive thing this studio does, and what it costs is
+	 * decided by this number before anything else: a 1080x1920 frame is four
+	 * times the pixels of a 960-tall one in the decoder, the canvas, the
+	 * composite and the encoder at once. On a machine that cannot hold the
+	 * full-size version - and the browser says so by refusing to make a frame
+	 * out of a canvas it can no longer paint - turning this down is the
+	 * difference between a finished video and an error two thirds of the way
+	 * through.
+	 */
+	outputMaxDimension: number
+	/**
 	 * Skips the segmentation model on frames where the picture has not moved.
 	 *
 	 * On by default: it is the single largest saving in the bake and it cannot
@@ -181,6 +194,7 @@ export const DEFAULT_OBJECT_SETTINGS: ObjectSettings = {
 	followHead: true,
 	sizeMode: 'head',
 	headMultiple: 3,
+	outputMaxDimension: 0,
 	adaptiveMask: true,
 	entranceMs: 260,
 	showMatte: false,
@@ -590,6 +604,12 @@ export function normalizeObjectSettings(value: unknown): ObjectSettings {
 		followHead: typeof value.followHead === 'boolean' ? value.followHead : true,
 		sizeMode: value.sizeMode === 'frame' ? 'frame' : 'head',
 		headMultiple: num(value.headMultiple, DEFAULT_OBJECT_SETTINGS.headMultiple, 0.5, 8),
+		// Zero means "whatever the clip is"; anything else is a real cap, and
+		// nothing below 240 is a video anybody would keep.
+		outputMaxDimension:
+			num(value.outputMaxDimension, DEFAULT_OBJECT_SETTINGS.outputMaxDimension, 0, 4_320) >= 240
+				? num(value.outputMaxDimension, DEFAULT_OBJECT_SETTINGS.outputMaxDimension, 0, 4_320)
+				: 0,
 		adaptiveMask: typeof value.adaptiveMask === 'boolean' ? value.adaptiveMask : true,
 		entranceMs: num(value.entranceMs, DEFAULT_OBJECT_SETTINGS.entranceMs, 0, 2_000),
 		showMatte: typeof value.showMatte === 'boolean' ? value.showMatte : false,
