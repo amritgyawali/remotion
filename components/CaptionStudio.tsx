@@ -134,6 +134,9 @@ import CaptionTopBar from './captions/CaptionTopBar'
 import CloudCaptionBurn from './cloud/CloudCaptionBurn'
 import CloudProjectsPanel from './cloud/CloudProjectsPanel'
 import { useCloud } from '../lib/cloud/use-cloud'
+import { useCloudMedia } from '../lib/cloud/use-cloud-media'
+import { useCloudProjectAutosave } from '../lib/cloud/use-project-autosave'
+import { ensureUploaded } from '../lib/cloud/run-tool'
 import CueTrack from './captions/CueTrack'
 import ShortcutSheet from './captions/ShortcutSheet'
 import { RestoreNotice } from './SaveState'
@@ -436,6 +439,13 @@ export default function CaptionStudio() {
 	const [restoreSummary, setRestoreSummary] = useState<string | null>(null)
 	const [restoreWarning, setRestoreWarning] = useState<string | null>(null)
 	const cloud = useCloud()
+	const { asset: cloudAsset, error: cloudMediaError, setAsset: setCloudAsset } = useCloudMedia({
+		cloud,
+		file: video?.file ?? null,
+	})
+	useEffect(() => {
+		if (cloud.location === 'cloud' && cloudMediaError) setVideoError(`Cloud upload: ${cloudMediaError}`)
+	}, [cloud.location, cloudMediaError])
 	/** what opening a cloud workspace changed, said once next to the panel */
 	const [cloudOpened, setCloudOpened] = useState<string | null>(null)
 	/** false when only the settings could be kept - the clip must be re-picked */
@@ -547,6 +557,7 @@ export default function CaptionStudio() {
 			}
 
 			if (restoredVideo) {
+				setCloudAsset(session.video?.cloudAsset ?? null)
 				setVideoBlobId(session.video?.blobId ?? null)
 				videoRef.current = restoredVideo
 				setVideo(restoredVideo)
@@ -581,7 +592,7 @@ export default function CaptionStudio() {
 	const session = useMemo<CaptionSession | null>(() => {
 		if (restoring) return null
 		const next: CaptionSession = {
-			video: video ? videoFactsOf(video, videoBlobId) : null,
+			video: video ? videoFactsOf(video, videoBlobId, cloudAsset) : null,
 			fps,
 			cues,
 			origin,
@@ -627,18 +638,30 @@ export default function CaptionStudio() {
 		transcriptText,
 		video,
 		videoBlobId,
+		cloudAsset,
 		whisperLanguage,
 		whisperModel,
 	])
 
+	const cloudSnapshot = useMemo(
+		() => session ? { name: video?.name ?? 'Caption workspace', version: CAPTION_SESSION_VERSION, data: session } : null,
+		[session, video?.name],
+	)
+	useCloudProjectAutosave({ studio: 'captions', cloud, snapshot: cloudSnapshot })
+
+	useEffect(() => {
+		if (!cloud.probed) return
+		updateRenderSettings({
+			engine: cloud.location === 'cloud' && render.capabilities.enabled ? 'server' : 'browser',
+		})
+	}, [cloud.location, cloud.probed, render.capabilities.enabled, updateRenderSettings])
+
 	/**
 	 * Opens a workspace saved in the cloud.
 	 *
-	 * Only the decisions come back - captions, timing, look, sound, objects.
-	 * The clip deliberately does not: a snapshot points at a blob in *this*
-	 * browser's storage, and a workspace opened on another machine would be
-	 * pointing at nothing. Naming the file it wants is more use than silently
-	 * restoring an empty player.
+	 * Captions, timing, design and render settings always come back. A file
+	 * source comes back too once it has a Cloudinary identity; legacy local-only
+	 * snapshots still explain which file must be reselected.
 	 */
 	const openCloudSession = useCallback(
 		(raw: unknown) => {
@@ -657,14 +680,24 @@ export default function CaptionStudio() {
 			setTranscriptText(opened.transcriptText)
 			setObjectPlan(opened.objects)
 			setTab(opened.tab)
-			updateRenderSettings(settingsForDevice(opened.render))
+			updateRenderSettings(opened.render)
+			const restoredVideo = opened.video ? videoFromFacts(opened.video, null) : null
+			if (restoredVideo) {
+				const previous = videoRef.current
+				videoRef.current = restoredVideo
+				setVideo(restoredVideo)
+				if (previous) releaseVideoSource(previous)
+				setCloudAsset(opened.video?.cloudAsset ?? null)
+			}
 			setCloudOpened(
-				opened.video
-					? `Workspace open. Load "${opened.video.name}" again to render it.`
+				opened.video?.cloudAsset
+					? `Workspace open with "${opened.video.name}" from Cloudinary.`
+					: opened.video
+						? `Workspace open. Load "${opened.video.name}" again to render it.`
 					: 'Workspace open.',
 			)
 		},
-		[updateRenderSettings],
+		[setCloudAsset, updateRenderSettings],
 	)
 
 	const vault = useAutosave<CaptionSession>({
@@ -1151,6 +1184,7 @@ export default function CaptionStudio() {
 		pendingSeekRef.current = null
 		setVideoBlobId(null)
 		setVideoBanked(false)
+		setCloudAsset(null)
 		void removeBlob(CAPTION_VIDEO_BLOB_ID)
 		// The object plan belongs to the clip that just left: its shots are timed
 		// to a transcript that no longer exists, and its parked original is bytes
@@ -1173,7 +1207,7 @@ export default function CaptionStudio() {
 		})
 		setObjectMovieError(null)
 		void removeBlob(CAPTION_ORIGINAL_BLOB_ID)
-	}, [clearCueHistory, resetRender])
+	}, [clearCueHistory, resetRender, setCloudAsset])
 
 	useEffect(() => {
 		return () => {
@@ -1681,14 +1715,36 @@ export default function CaptionStudio() {
 
 	const handleRender = useCallback(() => {
 		if (!composition || !video || !plan) return
-		const project = captionProject(source, video.name)
-		const extension = render.settings.format === 'webm' ? 'webm' : 'mp4'
-		void startRender({
-			project,
-			composition,
-			fileName: downloadFileName(video, extension),
-		})
-	}, [composition, plan, render.settings.format, source, startRender, video])
+		void (async () => {
+			let renderAsset = cloud.location === 'cloud' ? cloudAsset : null
+			if (cloud.location === 'cloud' && !renderAsset && video.file) {
+				renderAsset = await ensureUploaded({ file: video.file })
+				setCloudAsset(renderAsset)
+			}
+			if (cloud.location === 'cloud' && !renderAsset) {
+				setVideoError('This clip has no cloud copy. Re-select the file or switch to Local before rendering.')
+				return
+			}
+			const renderSource = renderAsset
+				? captionSourceFor({
+						video: { ...video, url: renderAsset.secureUrl, kind: 'url', file: null },
+						cues,
+						style,
+						sound,
+						plan,
+						origin,
+					})
+				: source
+			const project = captionProject(renderSource, video.name)
+			const extension = render.settings.format === 'webm' ? 'webm' : 'mp4'
+			await startRender({
+				project,
+				composition,
+				fileName: downloadFileName(video, extension),
+				deliver: cloud.location === 'cloud' ? 'cloud' : 'stream',
+			})
+		})().catch((failure) => setVideoError(failure instanceof Error ? failure.message : 'Could not prepare the cloud render.'))
+	}, [cloud.location, cloudAsset, composition, cues, origin, plan, render.settings.format, setCloudAsset, sound, source, startRender, style, video])
 
 	const handleDownloadSrt = useCallback(() => {
 		if (!video) return
@@ -2436,6 +2492,7 @@ export default function CaptionStudio() {
 				capabilities={render.capabilities}
 				webCodecs={render.webCodecs}
 				crossOriginIsolated={isolated}
+				cloud={cloud}
 				save={{ status: vault.status, savedAt: vault.savedAt, error: vault.error }}
 				onReset={handleReset}
 				canReset={video !== null || cues.length > 0 || transcriptText.trim().length > 0}
@@ -2832,7 +2889,9 @@ export default function CaptionStudio() {
 							<CaptionExportPanel
 								render={render}
 								composition={composition}
-								video={video}
+								video={cloud.location === 'cloud' && cloudAsset && video
+									? { ...video, url: cloudAsset.secureUrl, kind: 'url', file: null }
+									: video}
 								cueCount={cues.length}
 								sendToSilenceState={sendToSilenceState}
 								onRender={handleRender}
@@ -2844,6 +2903,7 @@ export default function CaptionStudio() {
 								<CloudCaptionBurn
 									cloud={cloud}
 									file={video?.file ?? null}
+									asset={cloudAsset}
 									srt={() => cuesToSrt(cues)}
 									cueCount={cues.length}
 									format={render.settings.format === 'webm' ? 'webm' : 'mp4'}
@@ -2851,15 +2911,7 @@ export default function CaptionStudio() {
 								<CloudProjectsPanel
 									studio="captions"
 									cloud={cloud}
-									snapshot={() =>
-										session
-											? {
-													name: video?.name ?? 'Caption workspace',
-													version: CAPTION_SESSION_VERSION,
-													data: session,
-												}
-											: null
-									}
+									snapshot={() => cloudSnapshot}
 									onOpen={openCloudSession}
 									note={cloudOpened}
 								/>

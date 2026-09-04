@@ -7,6 +7,7 @@
  */
 
 import type { OutputSettings, RunParams } from './runners'
+import { normalizeCloudAsset, type CloudAsset } from '../cloud/types'
 
 export const TOOLS_SESSION_KEY = 'tools:workspace'
 export const TOOLS_SESSION_VERSION = 1
@@ -21,6 +22,7 @@ export type StoredToolsVideo = {
 	height: number
 	fps: number
 	hasAudio: boolean
+	cloudAsset: CloudAsset | null
 }
 
 export type ToolsSession = {
@@ -56,7 +58,8 @@ function normalizeVideo(value: unknown): StoredToolsVideo | null {
 	const height = Math.round(num(value.height, 0, 0))
 	if (!durationInSeconds || !width || !height) return null
 	const blobId = typeof value.blobId === 'string' ? value.blobId : null
-	if (!blobId) return null
+	const cloudAsset = normalizeCloudAsset(value.cloudAsset)
+	if (!blobId && !cloudAsset) return null
 	return {
 		blobId,
 		name: str(value.name, 'video'),
@@ -66,6 +69,7 @@ function normalizeVideo(value: unknown): StoredToolsVideo | null {
 		height,
 		fps: num(value.fps, 30, 1, 240),
 		hasAudio: bool(value.hasAudio, true),
+		cloudAsset,
 	}
 }
 

@@ -38,6 +38,7 @@ import {
 } from './object-plan'
 import type { SpeechSegment } from './vad'
 import type { RenderSettings } from '../types'
+import { normalizeCloudAsset, type CloudAsset } from '../cloud/types'
 
 export const CAPTION_SESSION_KEY = 'captions:workspace'
 export const CAPTION_SESSION_VERSION = 1
@@ -101,6 +102,7 @@ export type StoredVideoFacts = {
 	height: number
 	fps: number
 	hasAudio: boolean
+	cloudAsset: CloudAsset | null
 }
 
 export type CaptionSession = {
@@ -274,8 +276,9 @@ function normalizeStoredVideo(value: unknown): StoredVideoFacts | null {
 
 	const blobId = typeof value.blobId === 'string' ? value.blobId : null
 	const url = typeof value.url === 'string' ? value.url : null
+	const cloudAsset = normalizeCloudAsset(value.cloudAsset)
 	// Neither the bytes nor an address: there is nothing left to restore from.
-	if (!blobId && !url) return null
+	if (!blobId && !url && !cloudAsset) return null
 
 	return {
 		blobId,
@@ -288,6 +291,7 @@ function normalizeStoredVideo(value: unknown): StoredVideoFacts | null {
 		height,
 		fps: num(value.fps, 30, 1, 240),
 		hasAudio: bool(value.hasAudio, true),
+		cloudAsset,
 	}
 }
 
@@ -379,7 +383,7 @@ export function normalizeCaptionSession(
 }
 
 /** Strips the live File and object URL back down to the facts worth storing. */
-export function videoFactsOf(video: CaptionVideoSource, blobId: string | null): StoredVideoFacts {
+export function videoFactsOf(video: CaptionVideoSource, blobId: string | null, cloudAsset: CloudAsset | null = null): StoredVideoFacts {
 	return {
 		blobId: video.kind === 'file' ? blobId : null,
 		url: video.kind === 'url' ? video.url : null,
@@ -391,6 +395,7 @@ export function videoFactsOf(video: CaptionVideoSource, blobId: string | null): 
 		height: video.height,
 		fps: video.fps,
 		hasAudio: video.hasAudio,
+		cloudAsset,
 	}
 }
 
@@ -405,7 +410,21 @@ export function videoFromFacts(
 	file: File | null,
 ): CaptionVideoSource | null {
 	if (facts.kind === 'file') {
-		if (!file) return null
+		if (!file && !facts.cloudAsset) return null
+		if (!file) {
+			return {
+				url: facts.cloudAsset!.secureUrl,
+				name: facts.name,
+				kind: 'url',
+				sizeInBytes: facts.sizeInBytes,
+				durationInSeconds: facts.durationInSeconds,
+				width: facts.width,
+				height: facts.height,
+				fps: facts.fps,
+				hasAudio: facts.hasAudio,
+				file: null,
+			}
+		}
 		return {
 			url: URL.createObjectURL(file),
 			name: facts.name,

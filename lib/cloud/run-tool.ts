@@ -45,6 +45,7 @@ export type CloudRunResult = {
  * instant rather than another upload. Weak, so closing the clip lets it go.
  */
 const uploaded = new WeakMap<File, CloudAsset>()
+const uploadsInFlight = new WeakMap<File, Promise<CloudAsset>>()
 
 /** What the finished file is, judged by the format the plan asked Cloudinary for. */
 function kindOf(format: string): CloudRunResult['kind'] {
@@ -62,16 +63,25 @@ export async function ensureUploaded(args: {
 }): Promise<CloudAsset> {
 	const cached = uploaded.get(args.file)
 	if (cached) return cached
+	const running = uploadsInFlight.get(args.file)
+	if (running) return running
 
-	const asset = await uploadToCloud({
+	const request = uploadToCloud({
 		file: args.file,
 		kind: args.kind ?? 'source',
 		signal: args.signal,
 		onProgress: ({ ratio }) =>
 			args.onProgress?.({ phase: 'Uploading to the cloud', ratio: ratio * 0.5 }),
+	}).then((asset) => {
+		uploaded.set(args.file, asset)
+		return asset
 	})
-	uploaded.set(args.file, asset)
-	return asset
+	uploadsInFlight.set(args.file, request)
+	try {
+		return await request
+	} finally {
+		uploadsInFlight.delete(args.file)
+	}
 }
 
 /** True when this tool has a cloud equivalent at all - the UI reads it too. */
@@ -85,7 +95,8 @@ export function toolRunsInCloud(
 
 export async function runToolInCloud(args: {
 	toolId: string
-	file: File
+	file?: File | null
+	asset?: CloudAsset | null
 	params: Record<string, string | number | boolean>
 	output: CloudRunOutput
 	secondaryFile?: File | null
@@ -100,11 +111,12 @@ export async function runToolInCloud(args: {
 	}
 
 	args.onProgress?.({ phase: 'Uploading to the cloud', ratio: 0.02 })
-	const asset = await ensureUploaded({
+	const asset = args.asset ?? (args.file ? await ensureUploaded({
 		file: args.file,
 		signal: args.signal,
 		onProgress: args.onProgress,
-	})
+	}) : null)
+	if (!asset) throw new Error('Upload the source video before starting this cloud job.')
 
 	let overlayAssetId: string | null = null
 	if (plan.overlay) {
@@ -179,7 +191,8 @@ export async function runToolInCloud(args: {
  * this the one export in the studio that a phone can finish.
  */
 export async function runSpliceInCloud(args: {
-	file: File
+	file?: File | null
+	asset?: CloudAsset | null
 	segments: Array<{ startSec: number; endSec: number; speed: number }>
 	output: CloudRunOutput
 	includeAudio?: boolean
@@ -187,11 +200,12 @@ export async function runSpliceInCloud(args: {
 	onProgress?: (progress: CloudRunProgress) => void
 }): Promise<CloudRunResult> {
 	args.onProgress?.({ phase: 'Uploading to the cloud', ratio: 0.02 })
-	const asset = await ensureUploaded({
+	const asset = args.asset ?? (args.file ? await ensureUploaded({
 		file: args.file,
 		signal: args.signal,
 		onProgress: args.onProgress,
-	})
+	}) : null)
+	if (!asset) throw new Error('Upload the source video before starting this cloud cut.')
 
 	args.onProgress?.({ phase: 'Handing the cut to the cloud', ratio: 0.55 })
 	const { job: started } = await startCloudSplice({
@@ -219,7 +233,8 @@ export async function runSpliceInCloud(args: {
  * cloud only ever sees an SRT and a style.
  */
 export async function runSubtitlesInCloud(args: {
-	file: File
+	file?: File | null
+	asset?: CloudAsset | null
 	srt: string
 	output: CloudRunOutput
 	style?: Record<string, string | number>
@@ -228,11 +243,12 @@ export async function runSubtitlesInCloud(args: {
 	onProgress?: (progress: CloudRunProgress) => void
 }): Promise<CloudRunResult> {
 	args.onProgress?.({ phase: 'Uploading to the cloud', ratio: 0.02 })
-	const asset = await ensureUploaded({
+	const asset = args.asset ?? (args.file ? await ensureUploaded({
 		file: args.file,
 		signal: args.signal,
 		onProgress: args.onProgress,
-	})
+	}) : null)
+	if (!asset) throw new Error('Upload the source video before starting this cloud caption job.')
 
 	args.onProgress?.({ phase: 'Uploading the caption track', ratio: 0.5 })
 	const base = (asset.originalName ?? 'captions').replace(/\.[A-Za-z0-9]{1,8}$/, '')

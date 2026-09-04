@@ -44,6 +44,10 @@ export type Asset = {
 	hasAudio: boolean
 	status: AssetStatus
 	error: string | null
+	/** durable media identity used by cloud preview and server-side timeline renders */
+	cloudAssetId?: string | null
+	cloudPublicId?: string | null
+	cloudUrl?: string | null
 }
 
 export type TrackKind = 'video' | 'audio' | 'text'

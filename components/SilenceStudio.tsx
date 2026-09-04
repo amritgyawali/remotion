@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { downloadBlobUrl, formatSeconds } from '../lib/format'
 import { isVideoFile, probeVideo, releaseVideoSource } from '../lib/captions/video-source'
 import type { CaptionCue, CaptionVideoSource } from '../lib/captions/types'
+import type { SpeechSegment } from '../lib/captions/vad'
 import {
 	AnalysisCancelled,
 	NoAudioError,
@@ -63,6 +64,8 @@ import { readBlob, removeBlob, requestPersistentStorage, writeBlob } from '../li
 import { useAutosave, useRestoredSnapshot } from '../lib/persist/use-vault'
 import { sendToStudio, useIncomingHandoff } from '../lib/handoff'
 import { useCloud } from '../lib/cloud/use-cloud'
+import { useCloudMedia } from '../lib/cloud/use-cloud-media'
+import { useCloudProjectAutosave } from '../lib/cloud/use-project-autosave'
 import { runSpliceInCloud } from '../lib/cloud/run-tool'
 import { MAX_CLOUD_SPLICES, cloudSpliceLimitReason } from '../lib/cloud/transform'
 import CloudProjectsPanel from './cloud/CloudProjectsPanel'
@@ -109,6 +112,7 @@ export default function SilenceStudio() {
 	const [videoBlobId, setVideoBlobId] = useState<string | null>(null)
 
 	const [analysis, setAnalysis] = useState<AudioAnalysis | null>(null)
+	const [restoredSpeech, setRestoredSpeech] = useState<SpeechSegment[]>([])
 	const [analyzing, setAnalyzing] = useState(false)
 	const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress | null>(null)
 	const [analysisError, setAnalysisError] = useState<string | null>(null)
@@ -123,6 +127,13 @@ export default function SilenceStudio() {
 
 	const [exportSettings, setExportSettings] = useState<ExportSettings>(DEFAULT_EXPORT_SETTINGS)
 	const cloud = useCloud()
+	const { asset: cloudAsset, error: cloudMediaError, setAsset: setCloudAsset } = useCloudMedia({
+		cloud,
+		file: video?.file ?? null,
+	})
+	useEffect(() => {
+		if (cloud.location === 'cloud' && cloudMediaError) setAnalysisError(`Cloud upload: ${cloudMediaError}`)
+	}, [cloud.location, cloudMediaError])
 	const [cloudNote, setCloudNote] = useState<string | null>(null)
 	const [rendering, setRendering] = useState(false)
 	const [renderProgress, setRenderProgress] = useState<RenderProgress | null>(null)
@@ -156,16 +167,20 @@ export default function SilenceStudio() {
 		() => (analysis ? detectFrom(analysis, settings) : null),
 		[analysis, settings],
 	)
+	const activeSpeech = analysis ? (detection?.speech ?? []) : restoredSpeech
+	const speechRatio = durationMs > 0
+		? activeSpeech.reduce((total, segment) => total + segment.endMs - segment.startMs, 0) / durationMs
+		: 0
 
 	const plan = useMemo(
 		() =>
 			buildPlan({
-				speech: detection?.speech ?? [],
+				speech: activeSpeech,
 				durationMs,
 				settings,
 				overrides,
 			}),
-		[detection, durationMs, overrides, settings],
+		[activeSpeech, durationMs, overrides, settings],
 	)
 
 	const activePreset = useMemo(() => presetIdOf(settings), [settings])
@@ -197,6 +212,7 @@ export default function SilenceStudio() {
 			} catch (error) {
 				if (error instanceof AnalysisCancelled || controller.signal.aborted) return
 				setAnalysis(null)
+				setRestoredSpeech([])
 				setAnalysisError(
 					error instanceof NoAudioError
 						? 'That file has no audio track, so there is no silence to find. Upload a clip with sound.'
@@ -280,6 +296,7 @@ export default function SilenceStudio() {
 			return null
 		})
 		setAnalysis(null)
+		setRestoredSpeech([])
 		setOverrides({})
 		setSelectedGap(null)
 		setSourceMs(0)
@@ -292,9 +309,10 @@ export default function SilenceStudio() {
 		setSendState('idle')
 		setVideoBanked(false)
 		setVideoBlobId(null)
+		setCloudAsset(null)
 		void removeBlob(SILENCE_VIDEO_BLOB_ID)
 		void removeBlob(SILENCE_LEVELS_BLOB_ID)
-	}, [cancelAnalysis])
+	}, [cancelAnalysis, setCloudAsset])
 
 	/* --------------------------------------------------------- settings */
 
@@ -354,7 +372,11 @@ export default function SilenceStudio() {
 	const usingCloud = cloud.location === 'cloud' && cloudRefusal === null
 
 	const handleRender = useCallback(() => {
-		if (!video?.file) {
+		if (cloud.location === 'cloud' && cloudRefusal) {
+			setRenderError(`${cloudRefusal} Switch to Local to render this cut on this machine.`)
+			return
+		}
+		if (!video || (!video.file && !(usingCloud && cloudAsset))) {
 			setRenderError('The original file is no longer in memory. Re-select the clip and try again.')
 			return
 		}
@@ -387,7 +409,8 @@ export default function SilenceStudio() {
 					 * that ran here. Only the sizes are measured.
 					 */
 					const cut = await runSpliceInCloud({
-						file: video.file as File,
+						file: video.file,
+						asset: cloudAsset,
 						segments: cloudSegments,
 						output: { format: exportSettings.format, quality: exportSettings.quality },
 						includeAudio: exportSettings.includeAudio && video.hasAudio,
@@ -444,7 +467,7 @@ export default function SilenceStudio() {
 				}
 			}
 		})()
-	}, [cloudSegments, exportSettings, plan, usingCloud, video])
+	}, [cloud.location, cloudAsset, cloudRefusal, cloudSegments, exportSettings, plan, usingCloud, video])
 
 	const handleCancelRender = useCallback(() => {
 		renderAbortRef.current?.abort()
@@ -497,11 +520,13 @@ export default function SilenceStudio() {
 			setOverrides(session.overrides)
 			setExportSettings(session.exportSettings)
 			setPreviewOriginal(session.previewOriginal)
+			setRestoredSpeech(session.speech)
 
 			const notes: string[] = []
 			let warning: string | null = null
 
 			if (session.video?.blobId) {
+				setCloudAsset(session.video.cloudAsset)
 				const stored = await readBlob(session.video.blobId)
 				if (stored) {
 					const file = new File([stored.blob], session.video.name, { type: stored.type })
@@ -544,6 +569,24 @@ export default function SilenceStudio() {
 					warning =
 						'Your settings came back, but the clip itself was dropped by the browser to free space. Pick the file again and everything else is still here.'
 				}
+			} else if (session.video?.cloudAsset) {
+				const facts = session.video
+				const asset = facts.cloudAsset!
+				setCloudAsset(asset)
+				setVideo({
+					url: asset.secureUrl,
+					name: facts.name,
+					kind: 'url',
+					sizeInBytes: facts.sizeInBytes,
+					durationInSeconds: facts.durationInSeconds,
+					width: facts.width,
+					height: facts.height,
+					fps: facts.fps,
+					hasAudio: facts.hasAudio,
+					file: null,
+				})
+				setVideoBanked(true)
+				notes.push(`${facts.name} from Cloudinary`)
 			}
 
 			if (Object.keys(session.overrides).length > 0) {
@@ -571,9 +614,11 @@ export default function SilenceStudio() {
 						height: video.height,
 						fps: video.fps,
 						hasAudio: video.hasAudio,
+						cloudAsset,
 					}
 				: null,
 			analysis: analysis ? analysisFacts(analysis) : null,
+			speech: activeSpeech,
 			settings,
 			overrides,
 			exportSettings,
@@ -581,7 +626,13 @@ export default function SilenceStudio() {
 			previewOriginal,
 			tab: 'detect',
 		}
-	}, [analysis, exportSettings, overrides, previewOriginal, settings, sourceMs, video, videoBlobId])
+	}, [activeSpeech, analysis, cloudAsset, exportSettings, overrides, previewOriginal, settings, sourceMs, video, videoBlobId])
+
+	const cloudSnapshot = useMemo(
+		() => snapshot ? { name: video?.name ?? 'Silence workspace', version: SILENCE_SESSION_VERSION, data: snapshot } : null,
+		[snapshot, video?.name],
+	)
+	useCloudProjectAutosave({ studio: 'silence', cloud, snapshot: cloudSnapshot })
 
 	const vault = useAutosave<SilenceSession>({
 		key: SILENCE_SESSION_KEY,
@@ -694,7 +745,7 @@ export default function SilenceStudio() {
 					analyzing={analyzing}
 					analysisProgress={analysisProgress}
 					analysisError={analysisError}
-					speechRatio={detection?.speechRatio ?? 0}
+					speechRatio={speechRatio}
 					settings={settings}
 					plan={plan}
 					activePreset={activePreset}
@@ -782,22 +833,25 @@ export default function SilenceStudio() {
 					<CloudProjectsPanel
 						studio="silence"
 						cloud={cloud}
-						snapshot={() =>
-							snapshot
-								? { name: video?.name ?? 'Silence workspace', version: SILENCE_SESSION_VERSION, data: snapshot }
-								: null
-						}
+						snapshot={() => cloudSnapshot}
 						onOpen={(data) => {
 							const session = normalizeSilenceSession(data)
 							if (!session) return
 							setSettings(session.settings)
 							setOverrides(session.overrides)
 							setExportSettings(session.exportSettings)
-							// The clip and its loudness map are too big for a snapshot, so
-							// a cloud workspace restores the decisions and asks for the
-							// file again rather than pretending it has one.
+							setRestoredSpeech(session.speech)
+							if (session.video?.cloudAsset) {
+								const facts = session.video
+								const asset = facts.cloudAsset!
+								setCloudAsset(asset)
+								setVideo({ ...facts, url: asset.secureUrl, kind: 'url', file: null })
+								setVideoBanked(true)
+							}
 							setCloudNote(
-								session.video
+								session.video?.cloudAsset
+									? `Settings and "${session.video.name}" restored from the cloud.`
+									: session.video
 									? `Settings restored. Load "${session.video.name}" again to cut it.`
 									: 'Settings restored.',
 							)

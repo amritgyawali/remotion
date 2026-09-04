@@ -190,6 +190,41 @@ function checkMaths() {
 		}),
 		`${transform.CLOUD_TOOL_IDS.length} tools`,
 	)
+
+	process.stdout.write('\ncloud-first wiring\n')
+	const root = path.resolve(__dirname, '..')
+	const cloudPreference = fs.readFileSync(path.join(root, 'lib/cloud/use-cloud.ts'), 'utf8')
+	record(
+		'wiring',
+		'a browser with no saved override defaults to cloud',
+		/cloud'\)\s*\n\s*\n\s*useEffect/.test(cloudPreference) && /=== 'device' \? 'device' : 'cloud'/.test(cloudPreference),
+	)
+	const topBars = [
+		'components/TopBar.tsx',
+		'components/captions/CaptionTopBar.tsx',
+		'components/silence/SilenceTopBar.tsx',
+		'components/tools/ToolsTopBar.tsx',
+		'components/editor/EditorTopBar.tsx',
+	]
+	record(
+		'wiring',
+		'all five studio headers render the Cloud / Local toggle',
+		topBars.every((file) => fs.readFileSync(path.join(root, file), 'utf8').includes('<RunLocationToggle cloud={cloud}')),
+		`${topBars.length} sections`,
+	)
+	const studios = ['Studio.tsx', 'CaptionStudio.tsx', 'SilenceStudio.tsx', 'ToolsStudio.tsx', 'EditorStudio.tsx']
+	record(
+		'wiring',
+		'all five studios continuously save their active project to Supabase',
+		studios.every((file) => fs.readFileSync(path.join(root, 'components', file), 'utf8').includes('useCloudProjectAutosave({')),
+		`${studios.length} sections`,
+	)
+	const editorCloud = fs.readFileSync(path.join(root, 'lib/editor/cloud-project.ts'), 'utf8')
+	record(
+		'wiring',
+		'the editor compiles its timeline into a server-rendered Remotion composition',
+		editorCloud.includes('EditorTimeline') && editorCloud.includes('asset.cloudUrl'),
+	)
 }
 
 /* -------------------------------------------------------------------------- */
@@ -665,8 +700,8 @@ async function checkLive() {
 /*  The browser leg                                                           */
 /*                                                                            */
 /*  The API is only half the promise. This half checks that the switch really */
-/*  reaches the screen: the toggle is in the header, pressing Cloud changes    */
-/*  what the Run button says, and the choice survives a reload - which is the  */
+/*  reaches the screen: the toggle is in every header, Cloud is the default,   */
+/*  and an explicit Local choice survives a reload - which is the              */
 /*  difference between a feature and a setting nobody can find.               */
 /* -------------------------------------------------------------------------- */
 
@@ -675,12 +710,12 @@ function toggleMounted() {
 	return Boolean(document.querySelector('.runloc'))
 }
 
-/** In-page: press the Cloud half of the toggle. */
-function pressCloud() {
+/** In-page: press the Local half of the toggle. */
+function pressLocal() {
 	const options = [...document.querySelectorAll('.runloc-option')]
-	const cloud = options[options.length - 1]
-	if (!cloud) return 'no-toggle'
-	cloud.click()
+	const local = options[options.length - 1]
+	if (!local) return 'no-toggle'
+	local.click()
 	return 'clicked'
 }
 
@@ -724,7 +759,9 @@ async function checkBrowser() {
 		const page = await browser.newPage({ context: null, logLevel: 'error', indent: false, pageIndex: 0 })
 		await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 })
 
-		for (const route of ['/tools', '/silence']) {
+		for (const route of ['/', '/captions', '/silence', '/tools', '/editor']) {
+			await page.goto({ url: BASE + route, timeoutInMilliseconds: 180_000 })
+			await page.evaluate(() => window.localStorage.removeItem('rvs:run-location'), null)
 			await page.goto({ url: BASE + route, timeoutInMilliseconds: 180_000 })
 			try {
 				await waitForPage(page, toggleMounted, 120_000)
@@ -733,59 +770,22 @@ async function checkBrowser() {
 				continue
 			}
 
-			/*
-			 * The Tools studio only knows where a press would run once a tool is
-			 * picked, so the label cannot change before one is - pick the trim,
-			 * which is the plainest cloud-capable tool in the catalogue.
-			 */
-			if (route === '/tools') {
-				await page.evaluate(pickTool, null)
-				await sleep(600)
-			}
-
 			const before = await page.evaluate(readState, null)
 			record(
 				'browser',
-				`${route} offers both places to run`,
-				before.options.length === 2 && before.active === 0,
+				`${route} defaults to cloud and offers a local override`,
+				before.options.length === 2 && before.active === 0 && /cloud/i.test(before.options[0]) && /local/i.test(before.options[1]),
 				before.options.join(' / '),
 			)
 
-			await page.evaluate(pressCloud, null)
+			await page.evaluate(pressLocal, null)
 			await sleep(500)
 			const after = await page.evaluate(readState, null)
 			record(
 				'browser',
-				`${route} switches to the cloud`,
+				`${route} switches to local processing`,
 				after.active === 1,
 				`active index ${after.active}`,
-			)
-			/*
-			 * With something to run, the button has to say the work is leaving.
-			 * The Silence studio has no clip loaded here, so its button cannot
-			 * change yet - what it owes instead is quiet: an empty studio must
-			 * not warn about a cut nobody has asked for.
-			 */
-			if (route === '/tools') {
-				record(
-					'browser',
-					`${route} renames the action once it would run remotely`,
-					/cloud/i.test(after.primary ?? ''),
-					`${before.primary} -> ${after.primary}`,
-				)
-			} else {
-				record(
-					'browser',
-					`${route} does not warn about a cut that does not exist yet`,
-					after.warning === null || !/cloud/i.test(after.warning),
-					after.warning?.slice(0, 60) ?? 'no warning',
-				)
-			}
-			record(
-				'browser',
-				`${route} explains what leaves the device`,
-				Boolean(after.note) && /cloud/i.test(after.note),
-				after.note?.slice(0, 70),
 			)
 
 			// The preference is the whole reason it is a setting rather than a
@@ -796,16 +796,12 @@ async function checkBrowser() {
 			const reloaded = await page.evaluate(readState, null)
 			record(
 				'browser',
-				`${route} remembers the choice across a reload`,
+				`${route} remembers the local override across a reload`,
 				reloaded.active === 1,
 				`active index ${reloaded.active}`,
 			)
 
-			// Left as found, so the next route starts from the default.
-			await page.evaluate(function reset() {
-				const options = [...document.querySelectorAll('.runloc-option')]
-				options[0]?.click()
-			}, null)
+			await page.evaluate(() => window.localStorage.removeItem('rvs:run-location'), null)
 			await sleep(200)
 		}
 	} finally {

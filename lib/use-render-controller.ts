@@ -66,6 +66,8 @@ export type StartRenderArgs = {
 	css?: string
 	/** overrides the default "<composition>-<preset>.<ext>" name */
 	fileName?: string
+	/** cloud mode keeps the finished render in Cloudinary */
+	deliver?: 'stream' | 'cloud'
 }
 
 export type RenderController = {
@@ -144,7 +146,7 @@ export function useRenderController(initialSettings: RenderSettings): RenderCont
 	}, [replaceOutput])
 
 	const startRender = useCallback(
-		async ({ project, composition, css, fileName }: StartRenderArgs) => {
+		async ({ project, composition, css, fileName, deliver }: StartRenderArgs) => {
 			const controller = new AbortController()
 			abortRef.current = controller
 			setRendering(true)
@@ -180,6 +182,7 @@ export function useRenderController(initialSettings: RenderSettings): RenderCont
 								compositionId: composition.id,
 								settings,
 								fileName: name,
+								deliver: deliver ?? 'stream',
 								accessKey: accessKey || undefined,
 								overrides: {
 									width: composition.width,

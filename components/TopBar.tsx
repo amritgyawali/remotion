@@ -6,12 +6,15 @@ import ThemeToggle from './ThemeToggle'
 import { SaveBadge } from './SaveState'
 import type { VaultStatus } from '../lib/persist/use-vault'
 import type { RenderEngine, ServerCapabilities, VirtualProject } from '../lib/types'
+import type { CloudState } from '../lib/cloud/use-cloud'
+import RunLocationToggle from './cloud/RunLocationToggle'
 
 export default function TopBar({
 	project,
 	engine,
 	capabilities,
 	webCodecs,
+	cloud,
 	save,
 	onReset,
 }: {
@@ -19,6 +22,7 @@ export default function TopBar({
 	engine: RenderEngine
 	capabilities: ServerCapabilities
 	webCodecs: boolean
+	cloud: CloudState
 	save: { status: VaultStatus; savedAt: number | null; error: string | null }
 	onReset: () => void
 }) {
@@ -50,6 +54,7 @@ export default function TopBar({
 			) : null}
 
 			<SaveBadge status={save.status} savedAt={save.savedAt} error={save.error} />
+			<RunLocationToggle cloud={cloud} />
 
 			<span
 				className={`badge ${engine === 'server' ? 'badge--orange' : webCodecs ? 'badge--green' : 'badge--red'}`}

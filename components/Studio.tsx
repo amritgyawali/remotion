@@ -23,6 +23,7 @@ import { RestoreNotice } from './SaveState'
 import RenderPanel from './RenderPanel'
 import CloudProjectsPanel from './cloud/CloudProjectsPanel'
 import { useCloud } from '../lib/cloud/use-cloud'
+import { useCloudProjectAutosave } from '../lib/cloud/use-project-autosave'
 import SourcePanel from './SourcePanel'
 import StagePanel from './StagePanel'
 import TopBar from './TopBar'
@@ -117,6 +118,18 @@ export default function Studio() {
 	}, [aiMessages, aiPrompt, mobileTab, project, render.settings, restoring, selectedId])
 
 	const cloud = useCloud()
+	const cloudSnapshot = useMemo(
+		() => session ? { name: project?.name ?? 'Video workspace', version: STUDIO_SESSION_VERSION, data: session } : null,
+		[project?.name, session],
+	)
+	useCloudProjectAutosave({ studio: 'video', cloud, snapshot: cloudSnapshot })
+
+	useEffect(() => {
+		if (!cloud.probed) return
+		updateRenderSettings({
+			engine: cloud.location === 'cloud' && render.capabilities.enabled ? 'server' : 'browser',
+		})
+	}, [cloud.location, cloud.probed, render.capabilities.enabled, updateRenderSettings])
 
 	const vault = useAutosave<StudioSession>({
 		key: STUDIO_SESSION_KEY,
@@ -393,8 +406,13 @@ export default function Studio() {
 
 	const handleRender = useCallback(() => {
 		if (!composition || !project) return
-		void startRender({ project, composition, css: compileResult?.css })
-	}, [compileResult, composition, project, startRender])
+		void startRender({
+			project,
+			composition,
+			css: compileResult?.css,
+			deliver: cloud.location === 'cloud' ? 'cloud' : 'stream',
+		})
+	}, [cloud.location, compileResult, composition, project, startRender])
 
 	useEffect(() => {
 		if (
@@ -422,6 +440,7 @@ export default function Studio() {
 				engine={render.settings.engine}
 				capabilities={render.capabilities}
 				webCodecs={render.webCodecs}
+				cloud={cloud}
 				save={{ status: vault.status, savedAt: vault.savedAt, error: vault.error }}
 				onReset={handleReset}
 			/>
@@ -494,15 +513,7 @@ export default function Studio() {
 						<CloudProjectsPanel
 							studio="video"
 							cloud={cloud}
-							snapshot={() =>
-								session
-									? {
-											name: project?.name ?? 'Video workspace',
-											version: STUDIO_SESSION_VERSION,
-											data: session,
-										}
-									: null
-							}
+							snapshot={() => cloudSnapshot}
 							onOpen={(data) => {
 								const opened = normalizeStudioSession(data, { render: INITIAL_SETTINGS })
 								if (!opened) return

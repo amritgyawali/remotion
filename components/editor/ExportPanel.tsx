@@ -10,6 +10,7 @@
 import { IconClose, IconDownload, IconSpinner } from '../Icons'
 import { formatBytes, formatSeconds } from '../../lib/format'
 import type { ExportFormat, ExportProgress, ExportQuality, ExportResult } from '../../lib/editor/export'
+import type { RunLocation } from '../../lib/cloud/types'
 
 export type ExportSettings = { format: ExportFormat; quality: ExportQuality; scale: number; includeAudio: boolean }
 
@@ -33,6 +34,11 @@ export default function ExportPanel({
 	onCancel,
 	onClose,
 	onDownload,
+	location,
+	serverReady,
+	requiresKey,
+	accessKey,
+	onAccessKey,
 }: {
 	open: boolean
 	settings: ExportSettings
@@ -46,6 +52,11 @@ export default function ExportPanel({
 	onCancel: () => void
 	onClose: () => void
 	onDownload: () => void
+	location: RunLocation
+	serverReady: boolean
+	requiresKey: boolean
+	accessKey: string
+	onAccessKey: (value: string) => void
 }) {
 	if (!open) return null
 
@@ -61,6 +72,19 @@ export default function ExportPanel({
 
 				{!rendering && !result ? (
 					<div className="editor-modal-body">
+						<p className="editor-hint">
+							{location === 'cloud'
+								? serverReady
+									? 'The timeline renders online and the finished video is saved to Cloudinary.'
+									: 'Cloud rendering is not configured. Switch to Local to render on this machine.'
+								: 'The timeline renders on this machine and is downloaded locally.'}
+						</p>
+						{location === 'cloud' && requiresKey ? (
+							<label className="editor-field">
+								<span>Render access key</span>
+								<input type="password" value={accessKey} onChange={(event) => onAccessKey(event.target.value)} autoComplete="off" />
+							</label>
+						) : null}
 						<div className="segmented" role="group" aria-label="Format">
 							{(['mp4', 'webm'] as ExportFormat[]).map((format) => (
 								<button key={format} type="button" data-active={settings.format === format} onClick={() => onSettings({ format })}>
@@ -88,8 +112,8 @@ export default function ExportPanel({
 						</label>
 						<p className="editor-hint">{durationLabel}</p>
 						{error ? <p className="notice notice--error">{error}</p> : null}
-						<button type="button" className="btn btn--primary btn--block" onClick={onStart}>
-							<IconDownload size={14} /> Render and download
+						<button type="button" className="btn btn--primary btn--block" onClick={onStart} disabled={location === 'cloud' && !serverReady}>
+							<IconDownload size={14} /> {location === 'cloud' ? 'Render and save in cloud' : 'Render and download'}
 						</button>
 					</div>
 				) : null}

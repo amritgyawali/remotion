@@ -6,6 +6,8 @@ import ThemeToggle from '../ThemeToggle'
 import { SaveBadge } from '../SaveState'
 import type { VaultStatus } from '../../lib/persist/use-vault'
 import type { RenderEngine, ServerCapabilities } from '../../lib/types'
+import type { CloudState } from '../../lib/cloud/use-cloud'
+import RunLocationToggle from '../cloud/RunLocationToggle'
 
 export type StudioStep = {
 	id: string
@@ -19,6 +21,7 @@ export default function CaptionTopBar({
 	capabilities,
 	webCodecs,
 	crossOriginIsolated,
+	cloud,
 	save,
 	onReset,
 	canReset,
@@ -28,6 +31,7 @@ export default function CaptionTopBar({
 	capabilities: ServerCapabilities
 	webCodecs: boolean
 	crossOriginIsolated: boolean
+	cloud: CloudState
 	save: { status: VaultStatus; savedAt: number | null; error: string | null }
 	onReset: () => void
 	canReset: boolean
@@ -63,6 +67,7 @@ export default function CaptionTopBar({
 			<div className="topbar-spacer" />
 
 			<SaveBadge status={save.status} savedAt={save.savedAt} error={save.error} />
+			<RunLocationToggle cloud={cloud} />
 
 			<span
 				className={`badge ${crossOriginIsolated ? 'badge--green' : 'badge--muted'}`}

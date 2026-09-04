@@ -41,6 +41,11 @@ import type { HistoryEntry } from '../lib/editor/commands'
 import { formatSeconds } from '../lib/format'
 import { isTauriNative } from '../lib/device'
 import { useCloud } from '../lib/cloud/use-cloud'
+import { ensureUploaded } from '../lib/cloud/run-tool'
+import { useCloudProjectAutosave } from '../lib/cloud/use-project-autosave'
+import { editorCloudProject } from '../lib/editor/cloud-project'
+import { DEFAULT_CAPABILITIES, fetchServerCapabilities, renderOnServer } from '../lib/server-render-client'
+import type { ServerCapabilities } from '../lib/types'
 import CloudProjectsPanel from './cloud/CloudProjectsPanel'
 
 const SESSION_KEY = 'editor-studio'
@@ -69,6 +74,8 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 	const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null)
 	const [exportResult, setExportResult] = useState<ExportResult | null>(null)
 	const [exportError, setExportError] = useState<string | null>(null)
+	const [renderCapabilities, setRenderCapabilities] = useState<ServerCapabilities>(DEFAULT_CAPABILITIES)
+	const [renderAccessKey, setRenderAccessKey] = useState('')
 
 	const poolRef = useRef<AssetSinkPool>(new AssetSinkPool())
 	const blobsRef = useRef<Map<string, Blob>>(new Map())
@@ -77,6 +84,7 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 	const playerRef = useRef<Player | null>(null)
 	const canvasRef = useRef<HTMLCanvasElement>(null)
 	const exportAbortRef = useRef<AbortController | null>(null)
+	const cloudUploadsRef = useRef<Set<string>>(new Set())
 	const resolveBlob = useCallback((assetId: string) => blobsRef.current.get(assetId) ?? null, [])
 
 	/* ------------------------------------------------------------- restore */
@@ -88,7 +96,8 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 			engine.hydrate(data.doc, data.undo ?? [], data.redo ?? [])
 			setUi({ ...defaultUi(), ...data.ui })
 			await resolveAssetBlobs(Object.values(data.doc.assets))
-			const needing = await assetsNeedingPermission(Object.values(data.doc.assets))
+			const needing = (await assetsNeedingPermission(Object.values(data.doc.assets)))
+				.filter((id) => !blobsRef.current.has(id))
 			setNeedsReconnect(new Set(needing))
 		},
 	})
@@ -101,7 +110,15 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 		await Promise.all(
 			assets.map(async (asset) => {
 				if (blobsRef.current.has(asset.id)) return
-				const blob = await readAssetBlob(asset)
+				let blob = await readAssetBlob(asset)
+				if (!blob && asset.cloudUrl) {
+					try {
+						const response = await fetch(asset.cloudUrl)
+						if (response.ok) blob = await response.blob()
+					} catch {
+						// The reconnect UI remains available when a remote asset is unreachable.
+					}
+				}
 				if (blob) {
 					blobsRef.current.set(asset.id, blob)
 					changed = true
@@ -117,6 +134,46 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 
 	const snapshot: EditorSnapshot | null = useMemo(() => (hydrated ? { doc, undo: state.undo, redo: state.redo, ui } : null), [hydrated, doc, state.undo, state.redo, ui])
 	const vault = useAutosave({ key: SESSION_KEY, version: EDITOR_SCHEMA_VERSION, data: snapshot, enabled: hydrated })
+	const cloudSnapshot = useMemo(
+		() => snapshot ? { name: doc.name, version: EDITOR_SCHEMA_VERSION, data: snapshot } : null,
+		[doc.name, snapshot],
+	)
+	useCloudProjectAutosave({ studio: 'editor', cloud, snapshot: cloudSnapshot })
+
+	useEffect(() => {
+		if (!cloud.available || cloud.location !== 'cloud') return
+		for (const asset of Object.values(doc.assets)) {
+			if (asset.cloudUrl || cloudUploadsRef.current.has(asset.id)) continue
+			const blob = blobsRef.current.get(asset.id)
+			if (!blob) continue
+			cloudUploadsRef.current.add(asset.id)
+			const file = blob instanceof File
+				? blob
+				: new File([blob], asset.name, { type: blob.type, lastModified: asset.lastModified })
+			void ensureUploaded({ file }).then((uploaded) => {
+				const current = engine.getDoc()
+				if (!current.assets[asset.id]?.cloudUrl) {
+					engine.dispatch(ops.updateAsset(current, asset.id, {
+						cloudAssetId: uploaded.id,
+						cloudPublicId: uploaded.publicId,
+						cloudUrl: uploaded.secureUrl,
+					}))
+				}
+				setImportError(null)
+			}).catch((failure) => {
+				cloudUploadsRef.current.delete(asset.id)
+				setImportError(failure instanceof Error ? failure.message : `Could not upload ${asset.name}.`)
+			})
+		}
+	}, [cloud.available, cloud.location, doc.assets, engine])
+
+	useEffect(() => {
+		let active = true
+		void fetchServerCapabilities().then((next) => {
+			if (active) setRenderCapabilities(next)
+		})
+		return () => { active = false }
+	}, [])
 
 	/* -------------------------------------------------------------- player */
 
@@ -520,7 +577,48 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 		const controller = new AbortController()
 		exportAbortRef.current = controller
 		try {
-			const result = await renderEditorExport(engine.getDoc(), poolRef.current, resolveBlob, { ...exportSettings, signal: controller.signal }, setExportProgress)
+			const current = engine.getDoc()
+			let result: ExportResult
+			if (cloud.location === 'cloud') {
+				if (!renderCapabilities.enabled) throw new Error('Cloud rendering is not configured on this deployment. Switch to Local or configure the server renderer.')
+				const framesTotal = projectDurationFrames(current)
+				const rendered = await renderOnServer({
+					project: editorCloudProject(current),
+					compositionId: 'EditorTimeline',
+					settings: {
+						engine: 'server',
+						preset: exportSettings.quality,
+						format: exportSettings.format,
+						audioEnabled: exportSettings.includeAudio,
+						scale: exportSettings.scale,
+						previewSeconds: 0,
+					},
+					fileName: `${current.name || 'editor-export'}.${exportSettings.format}`,
+					accessKey: renderAccessKey || undefined,
+					deliver: 'cloud',
+					overrides: { ...current.settings, durationInFrames: Math.max(1, framesTotal) },
+					signal: controller.signal,
+					onProgress: (next) => setExportProgress({
+						phase: next.phase === 'rendering' ? 'rendering' : next.phase === 'preparing' || next.phase === 'bundling' ? 'preparing' : 'finishing',
+						ratio: next.progress,
+						framesDone: next.renderedFrames ?? Math.round(framesTotal * next.progress),
+						framesTotal,
+					}),
+				})
+				result = {
+					blob: new Blob([], { type: rendered.mimeType }),
+					url: rendered.url,
+					format: exportSettings.format,
+					width: rendered.width,
+					height: rendered.height,
+					fps: current.settings.fps,
+					durationSeconds: framesTotal / current.settings.fps,
+					sizeInBytes: rendered.sizeInBytes,
+					offlineAssetCount: 0,
+				}
+			} else {
+				result = await renderEditorExport(current, poolRef.current, resolveBlob, { ...exportSettings, signal: controller.signal }, setExportProgress)
+			}
 			setExportResult(result)
 		} catch (error) {
 			if (!(error instanceof ExportCancelled)) setExportError(error instanceof Error ? error.message : 'Export failed.')
@@ -528,7 +626,7 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 			setExportRendering(false)
 			exportAbortRef.current = null
 		}
-	}, [engine, exportSettings, resolveBlob])
+	}, [cloud.location, engine, exportSettings, renderAccessKey, renderCapabilities.enabled, resolveBlob])
 
 	/**
 	 * A browser can only ever "download" a file - into whatever folder the OS
@@ -546,7 +644,8 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 				const [{ save }, { writeFile }] = await Promise.all([import('@tauri-apps/plugin-dialog'), import('@tauri-apps/plugin-fs')])
 				const path = await save({ defaultPath: filename, filters: [{ name: exportResult.format.toUpperCase(), extensions: [exportResult.format] }] })
 				if (path === null) return // the user cancelled the dialog - not an error
-				const bytes = new Uint8Array(await exportResult.blob.arrayBuffer())
+				const source = exportResult.blob.size > 0 ? exportResult.blob : await fetch(exportResult.url).then((response) => response.blob())
+				const bytes = new Uint8Array(await source.arrayBuffer())
 				await writeFile(path, bytes)
 				return
 			} catch (error) {
@@ -592,6 +691,7 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 				onExport={() => setExportOpen(true)}
 				onReset={handleReset}
 				standalone={standalone}
+				cloud={cloud}
 			/>
 
 			{restore.phase === 'restored' ? (
@@ -657,28 +757,21 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 						studio="editor"
 						cloud={cloud}
 						note={cloudOpened}
-						snapshot={() =>
-							snapshot ? { name: doc.name, version: EDITOR_SCHEMA_VERSION, data: snapshot } : null
-						}
+						snapshot={() => cloudSnapshot}
 						onOpen={async (data) => {
 							const opened = data as EditorSnapshot | null
 							if (!opened?.doc?.assets) return
 							engine.hydrate(opened.doc, opened.undo ?? [], opened.redo ?? [])
 							setUi({ ...defaultUi(), ...opened.ui })
-							/*
-							 * The timeline comes back whole; the media does not. Clip bytes
-							 * live in this browser's storage, so a project opened on another
-							 * machine lands with every asset asking to be reconnected -
-							 * which is the flow this studio already has for a cleared cache.
-							 */
 							await resolveAssetBlobs(Object.values(opened.doc.assets))
-							const needing = await assetsNeedingPermission(Object.values(opened.doc.assets))
+							const needing = (await assetsNeedingPermission(Object.values(opened.doc.assets)))
+								.filter((id) => !blobsRef.current.has(id))
 							setNeedsReconnect(new Set(needing))
 							playerRef.current?.setDoc(engine.getDoc())
 							setCloudOpened(
 								needing.length > 0
 									? `Timeline open. ${needing.length} clip${needing.length === 1 ? '' : 's'} need their file pointing at again.`
-									: 'Timeline open.',
+									: 'Timeline and Cloudinary media open.',
 							)
 						}}
 					/>
@@ -713,6 +806,11 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 					setExportError(null)
 				}}
 				onDownload={handleDownloadExport}
+				location={cloud.location}
+				serverReady={renderCapabilities.enabled}
+				requiresKey={renderCapabilities.requiresKey}
+				accessKey={renderAccessKey}
+				onAccessKey={setRenderAccessKey}
 			/>
 		</div>
 	)

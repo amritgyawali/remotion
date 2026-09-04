@@ -198,6 +198,7 @@ async function pollDetachedJob(args: {
 	onProgress: (progress: RenderProgress) => void
 	signal: AbortSignal
 	started: number
+	deliver?: 'stream' | 'cloud'
 }): Promise<RenderOutput> {
 	let consecutiveFailures = 0
 	try {
@@ -239,11 +240,34 @@ async function pollDetachedJob(args: {
 				if (!update.url || !Number.isFinite(update.size)) {
 					throw new Error('The Vercel render finished without a valid Blob result.')
 				}
+				let deliveredUrl = update.url
+				let deliveredSize = update.size as number
+				if (args.deliver === 'cloud') {
+					args.onProgress({ phase: 'uploading', progress: 0.99, message: 'Saving the finished render to Cloudinary' })
+					const delivered = await fetch('/api/render/cloud-delivery', {
+						method: 'POST',
+						headers: requestHeaders(args.accessKey),
+						signal: args.signal,
+						body: JSON.stringify({
+							url: update.url,
+							fileName: args.job.fileName,
+							resourceType: args.settings.format === 'png' ? 'image' : 'video',
+							format: args.settings.format,
+							size: update.size,
+							width: args.job.width,
+							height: args.job.height,
+						}),
+					})
+					if (!delivered.ok) throw new Error(await delivered.text().catch(() => 'Could not save the render to Cloudinary.'))
+					const cloudCopy = await delivered.json() as { url: string; size: number }
+					deliveredUrl = cloudCopy.url
+					deliveredSize = cloudCopy.size || deliveredSize
+				}
 				return outputFromDone({
 					done: {
 						type: 'done',
-						url: update.url,
-						sizeInBytes: update.size as number,
+						url: deliveredUrl,
+						sizeInBytes: deliveredSize,
 						codec: args.job.codec,
 						width: args.job.width,
 						height: args.job.height,
@@ -386,6 +410,7 @@ export async function renderOnServer(args: {
 			onProgress: args.onProgress,
 			signal: args.signal,
 			started,
+			deliver: args.deliver,
 		})
 	}
 

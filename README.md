@@ -1,17 +1,15 @@
 # Remotion Video Studio
 
-Upload a code file, get a rendered video. A Next.js 16 App Router app that
-compiles a Remotion composition **in the browser**, previews it frame-accurately
-and encodes a finished MP4/WebM with WebCodecs - including music and sound -
-with no render server or queue. It supports deterministic React Three Fiber
-scenes as well as DOM/SVG motion graphics.
-An optional protected server engine renders on a trusted Node host or inside an
-isolated Vercel Sandbox VM when you want ProRes, GIF, or server-side encoding.
+Upload a code file, get a rendered video. A Next.js 16 App Router app with a
+cloud-first workflow across Video, Subtitles, Silence, Tools, and Editor.
+Cloudinary stores and transforms media, Supabase continuously saves projects,
+and the protected Remotion engine renders online on Node or Vercel Sandbox.
+Every section has the same **Cloud / Local** switch; Cloud is the default when
+configured, while Local keeps the full WebCodecs workflow available.
 
 ```
-upload .tsx / .zip  ->  sucrase compile  ->  <Player> preview  ->  browser video + audio render  ->  download
-                                                              \-> optional /api/render
-                                                                  Node or Vercel Sandbox -> Blob
+upload .tsx / .zip  ->  sucrase compile  ->  <Player> preview  ->  /api/render -> Cloudinary
+                                                              \-> Local -> WebCodecs -> download
 ```
 
 It also captions video you already have. The **Subtitle Studio** at `/captions`
@@ -883,6 +881,24 @@ the second on the right.
 
 ## Deploy to GitHub + Vercel
 
+### Cloud-first storage and processing
+
+Configure the Cloudinary and Supabase variables from `.env.example` and apply
+`supabase/migrations/*.sql`. New media is uploaded directly from the browser to
+a signed, owner-scoped Cloudinary folder; large bytes never pass through a Next
+Function. Each studio debounces edits into one active Supabase project row, so
+typing and timeline changes autosave without creating duplicate projects.
+
+Video and Subtitle compositions use the protected Remotion server renderer and
+request Cloudinary delivery. Silence and compatible Tools operations use
+Cloudinary transformations. Editor assets are uploaded in the background, and
+the NLE timeline is compiled into a self-contained Remotion composition for an
+online render. On Vercel, the detached Sandbox result first lands in Blob and
+is then copied server-to-server into Cloudinary and indexed in Supabase.
+
+Selecting **Local** persists the override in that browser and routes subsequent
+processing and renders back through the existing on-device engines.
+
 ```bash
 git init
 git add .
@@ -895,8 +911,8 @@ git push -u origin main
 1. Go to <https://vercel.com/new> and import the repository.
 2. Framework preset: **Next.js**. Build command, output directory and install
    command are all detected automatically - leave them untouched.
-3. Deploy. No environment variables are required: browser rendering runs on the
-   visitor's device, while Vercel serves the app and its static production assets.
+3. Deploy. Without cloud variables the switch falls back to Local and browser
+   rendering continues to work. Add the variables below for the default cloud workflow.
 
 This can be `$0` for a personal, non-commercial project within Vercel Hobby's
 usage limits. Hobby is not licensed for commercial use; use Vercel Pro (or
@@ -906,7 +922,8 @@ renderer disabled for the simplest public deployment.
 For cloud server rendering, connect a Vercel Blob store and set
 `ENABLE_SERVER_RENDER=1` plus a strong `RENDER_ACCESS_KEY`. On Vercel, the route
 orchestrates `@remotion/vercel`: uploaded code, Chrome, and FFmpeg execute in a
-disposable Sandbox VM, and the finished file is delivered through Blob. A normal
+disposable Sandbox VM, and the finished file is delivered through Blob before
+cloud mode copies it to Cloudinary. A normal
 Vercel Function does not run Chromium directly. The Vercel build creates a
 reusable renderer snapshot; each job restores it and then uploads only the
 current Remotion bundle. Old snapshot/Blob objects should be removed as part of
@@ -950,7 +967,7 @@ Copy `.env.example` to `.env.local` to try them locally.
 | Path | Best use | Quality and limits |
 | --- | --- | --- |
 | Browser engine | Interactive renders on any Vercel/static deployment | H.264/AAC or WebM/Opus, Max preset, 2x scale, OPFS-backed output where available; bounded by device codecs, GPU, disk and RAM |
-| Vercel Sandbox | Protected on-demand cloud renders | Isolated Chrome + FFmpeg VM, Blob delivery, MP4/WebM/GIF/ProRes; requires Vercel, Blob, auth and spend controls |
+| Vercel Sandbox | Protected on-demand cloud renders | Isolated Chrome + FFmpeg VM, Blob staging and Cloudinary delivery in cloud mode, MP4/WebM/GIF/ProRes; requires Vercel, Blob, auth and spend controls |
 | Node server / local CLI | Trusted private infrastructure | CRF 9, PNG source frames, H.264/H.265/VP9/ProRes; bounded by the host |
 | GitHub Actions | Trusted committed/manual offline renders | CI smoke-renders 3D + audio; **Render video** workflow creates a High/Max downloadable artifact, with a 6-hour job ceiling and no hosted-runner GPU guarantee |
 

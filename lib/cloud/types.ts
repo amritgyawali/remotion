@@ -28,6 +28,29 @@ export type CloudAsset = {
 	createdAt: string
 }
 
+export function normalizeCloudAsset(value: unknown): CloudAsset | null {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+	const item = value as Record<string, unknown>
+	if (typeof item.id !== 'string' || typeof item.publicId !== 'string' || typeof item.secureUrl !== 'string') return null
+	if (!['video', 'image', 'raw'].includes(String(item.resourceType))) return null
+	if (!['source', 'output', 'overlay', 'subtitle', 'poster'].includes(String(item.kind))) return null
+	const nullableNumber = (entry: unknown) => typeof entry === 'number' && Number.isFinite(entry) ? entry : null
+	return {
+		id: item.id,
+		publicId: item.publicId,
+		resourceType: item.resourceType as CloudResourceType,
+		kind: item.kind as CloudAssetKind,
+		format: typeof item.format === 'string' ? item.format : null,
+		bytes: nullableNumber(item.bytes),
+		duration: nullableNumber(item.duration),
+		width: nullableNumber(item.width),
+		height: nullableNumber(item.height),
+		secureUrl: item.secureUrl,
+		originalName: typeof item.originalName === 'string' ? item.originalName : null,
+		createdAt: typeof item.createdAt === 'string' ? item.createdAt : new Date(0).toISOString(),
+	}
+}
+
 export type CloudProjectSummary = {
 	id: string
 	studio: StudioId

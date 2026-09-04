@@ -4,12 +4,13 @@
  * Saved workspaces that live on the server rather than in this browser.
  *
  * Every studio already writes a JSON snapshot to the local vault on a timer.
- * This panel sends that same snapshot to Supabase on request, and lists what
+ * Cloud mode sends that same snapshot to Supabase on a debounce. This panel
+ * also supports an immediate save and lists what
  * came back - so the work survives a cleared browser, a different machine, or a
  * phone picking up where a laptop stopped.
  *
- * It is deliberately manual. Autosaving to a server on every keystroke is a
- * request per keystroke and a row nobody asked for; pressing Save is a decision.
+ * The active row is shared with the autosave hook so opening a workspace makes
+ * subsequent edits update that workspace rather than creating duplicates.
  */
 
 import { useCallback, useEffect, useState } from 'react'
@@ -23,6 +24,7 @@ import type { CloudProjectSummary, StudioId } from '../../lib/cloud/types'
 import type { CloudState } from '../../lib/cloud/use-cloud'
 import { agoLabel, useNow } from '../../lib/persist/use-vault'
 import { IconCheck, IconCloudUp, IconHistory, IconSpinner, IconTrash } from '../Icons'
+import { CLOUD_PROJECT_EVENT, readActiveCloudProject, rememberActiveCloudProject } from '../../lib/cloud/use-project-autosave'
 
 export type CloudSnapshot = {
 	name: string
@@ -57,8 +59,12 @@ export default function CloudProjectsPanel({
 	const [error, setError] = useState<string | null>(null)
 	const now = useNow(30_000, projects.length > 0)
 
+	useEffect(() => {
+		setSavedId(readActiveCloudProject(studio))
+	}, [studio])
+
 	const refresh = useCallback(async () => {
-		if (!cloud.available) return
+		if (!cloud.available || cloud.location !== 'cloud') return
 		setLoading(true)
 		try {
 			setProjects(await listCloudProjects(studio))
@@ -68,13 +74,24 @@ export default function CloudProjectsPanel({
 		} finally {
 			setLoading(false)
 		}
-	}, [cloud.available, studio])
+	}, [cloud.available, cloud.location, studio])
+
+	useEffect(() => {
+		const changed = (event: Event) => {
+			const detail = (event as CustomEvent<{ studio: StudioId; id: string | null }>).detail
+			if (detail?.studio !== studio) return
+			setSavedId(detail.id)
+			void refresh()
+		}
+		window.addEventListener(CLOUD_PROJECT_EVENT, changed)
+		return () => window.removeEventListener(CLOUD_PROJECT_EVENT, changed)
+	}, [refresh, studio])
 
 	useEffect(() => {
 		void refresh()
 	}, [refresh])
 
-	if (!cloud.available) return null
+	if (!cloud.available || cloud.location !== 'cloud') return null
 
 	const save = async () => {
 		const payload = snapshot()
@@ -87,8 +104,9 @@ export default function CloudProjectsPanel({
 		try {
 			// Saving over the project this session last saved keeps one row per
 			// workspace instead of a new one on every press.
-			const project = await saveCloudProject({ id: savedId, studio, ...payload })
+			const project = await saveCloudProject({ id: readActiveCloudProject(studio) ?? savedId, studio, ...payload })
 			setSavedId(project.id)
+			rememberActiveCloudProject(studio, project.id)
 			await refresh()
 		} catch (failure) {
 			setError(failure instanceof Error ? failure.message : 'Could not save to the cloud.')
@@ -103,6 +121,7 @@ export default function CloudProjectsPanel({
 		try {
 			const project = await readCloudProject(summary.id)
 			setSavedId(project.id)
+			rememberActiveCloudProject(studio, project.id)
 			await onOpen(project.data, project)
 		} catch (failure) {
 			setError(failure instanceof Error ? failure.message : 'Could not open that project.')
@@ -115,7 +134,10 @@ export default function CloudProjectsPanel({
 		setBusyId(summary.id)
 		try {
 			await deleteCloudProject(summary.id)
-			if (savedId === summary.id) setSavedId(null)
+			if (savedId === summary.id) {
+				setSavedId(null)
+				rememberActiveCloudProject(studio, null)
+			}
 			await refresh()
 		} catch (failure) {
 			setError(failure instanceof Error ? failure.message : 'Could not delete that project.')
@@ -130,14 +152,14 @@ export default function CloudProjectsPanel({
 				<h3>{title}</h3>
 				<button type="button" className="btn btn--ghost btn--sm" onClick={save} disabled={saving}>
 					{saving ? <IconSpinner size={13} /> : <IconCloudUp size={13} />}
-					{saving ? 'Saving' : 'Save to cloud'}
+					{saving ? 'Saving' : 'Save now'}
 				</button>
 			</header>
 
 			<p className="cloud-projects-hint">
 				{cloud.signedIn
-					? `Signed in as ${cloud.email ?? 'your account'} - these follow you to any browser.`
-					: 'Saved against this browser. Sign in later and they can be moved to your account.'}
+					? `Autosaving to Supabase as ${cloud.email ?? 'your account'} - these follow you to any browser.`
+					: 'Autosaving to Supabase for this browser. Sign in to use the same workspace on every device.'}
 			</p>
 
 			{note ? <p className="cloud-projects-hint">{note}</p> : null}

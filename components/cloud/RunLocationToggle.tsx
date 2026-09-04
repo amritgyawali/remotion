@@ -5,8 +5,8 @@
  *
  * It sits in every studio's top bar, in the same place, saying the same thing -
  * because the answer to "where is my video being encoded" should not depend on
- * which page someone happens to be on. When the server has no cloud configured
- * it renders nothing at all rather than a disabled control nobody can act on.
+ * which page someone happens to be on. Cloud is first and is the default;
+ * Local remains an explicit, persistent escape hatch in every section.
  */
 
 import { IconCloud, IconDevice } from '../Icons'
@@ -20,10 +20,8 @@ export default function RunLocationToggle({
 	/** drops the words and keeps the icons, for a crowded phone header */
 	compact?: boolean
 }) {
-	if (!cloud.available || !cloud.status) return null
-
 	const { location, setLocation, status } = cloud
-	const limit = describeLimit(status.maxVideoBytes)
+	const limit = status ? describeLimit(status.maxVideoBytes) : null
 
 	return (
 		<div
@@ -35,26 +33,33 @@ export default function RunLocationToggle({
 			<button
 				type="button"
 				role="radio"
-				aria-checked={location === 'device'}
+				aria-checked={location === 'cloud'}
 				className="runloc-option"
-				data-active={location === 'device'}
-				onClick={() => setLocation('device')}
-				title="Everything is decoded and encoded here. Nothing is uploaded, and nothing leaves this browser."
+				data-active={location === 'cloud'}
+				disabled={!cloud.probed || !cloud.available}
+				onClick={() => setLocation('cloud')}
+				title={
+					cloud.available && limit
+						? `Upload, save, process, and render online with Cloudinary and Supabase - up to ${limit} per video.`
+						: cloud.probed
+							? 'Cloud is not configured on this deployment.'
+							: 'Checking cloud availability'
+				}
 			>
-				<IconDevice size={12} />
-				{compact ? null : <span>Device</span>}
+				<IconCloud size={12} />
+				{compact ? null : <span>Cloud</span>}
 			</button>
 			<button
 				type="button"
 				role="radio"
-				aria-checked={location === 'cloud'}
+				aria-checked={location === 'device'}
 				className="runloc-option"
-				data-active={location === 'cloud'}
-				onClick={() => setLocation('cloud')}
-				title={`Your file is uploaded and processed on the server. This laptop only sends and receives - up to ${limit} per video.`}
+				data-active={location === 'device'}
+				onClick={() => setLocation('device')}
+				title="Keep files, editing, processing, and rendering on this machine."
 			>
-				<IconCloud size={12} />
-				{compact ? null : <span>Cloud</span>}
+				<IconDevice size={12} />
+				{compact ? null : <span>Local</span>}
 			</button>
 		</div>
 	)
@@ -65,7 +70,10 @@ export default function RunLocationToggle({
  * room for a sentence. Kept next to the switch so the two can never disagree.
  */
 export function RunLocationNote({ cloud }: { cloud: CloudState }) {
-	if (!cloud.available || !cloud.status) return null
+	if (cloud.probed && !cloud.available) {
+		return <p className="runloc-note"><IconDevice size={12} /> Cloud is unavailable on this deployment, so work stays local.</p>
+	}
+	if (!cloud.status) return null
 
 	if (cloud.location === 'device') {
 		return (

@@ -5,6 +5,8 @@ import StudioNav from '../StudioNav'
 import ThemeToggle from '../ThemeToggle'
 import { SaveBadge } from '../SaveState'
 import type { VaultStatus } from '../../lib/persist/use-vault'
+import type { CloudState } from '../../lib/cloud/use-cloud'
+import RunLocationToggle from '../cloud/RunLocationToggle'
 
 export default function EditorTopBar({
 	projectName,
@@ -16,6 +18,7 @@ export default function EditorTopBar({
 	onExport,
 	onReset,
 	standalone = false,
+	cloud,
 }: {
 	projectName: string
 	save: { status: VaultStatus; savedAt: number | null; error: string | null }
@@ -27,6 +30,7 @@ export default function EditorTopBar({
 	onReset: () => void
 	/** true in the native desktop/mobile shell (`apps/editor-native`), which has no other studios to link to */
 	standalone?: boolean
+	cloud: CloudState
 }) {
 	return (
 		<header className="topbar">
@@ -36,7 +40,7 @@ export default function EditorTopBar({
 				</span>
 				<span className="brand-text">
 					Editor Studio
-					<span className="brand-sub">a full multi-track editor, entirely on this device</span>
+					<span className="brand-sub">multi-track editing and rendering, in cloud or local mode</span>
 				</span>
 			</div>
 
@@ -56,6 +60,7 @@ export default function EditorTopBar({
 			</div>
 
 			<SaveBadge status={save.status} savedAt={save.savedAt} error={save.error} />
+			<RunLocationToggle cloud={cloud} />
 
 			<div className="topbar-actions">
 				<button type="button" className="btn btn--primary btn--sm" onClick={onExport}>

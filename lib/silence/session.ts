@@ -14,6 +14,8 @@
 import { DEFAULT_CUT_SETTINGS, type CutSettings, type GapOverrides, type SilenceAction } from './plan'
 import type { AudioAnalysis } from './analyze'
 import type { RenderFormat, RenderQuality } from './render'
+import { normalizeCloudAsset, type CloudAsset } from '../cloud/types'
+import type { SpeechSegment } from '../captions/vad'
 
 export const SILENCE_SESSION_KEY = 'silence:workspace'
 export const SILENCE_SESSION_VERSION = 1
@@ -33,6 +35,7 @@ export type StoredVideoFacts = {
 	height: number
 	fps: number
 	hasAudio: boolean
+	cloudAsset: CloudAsset | null
 }
 
 export type StoredAnalysis = {
@@ -66,6 +69,8 @@ export const DEFAULT_EXPORT_SETTINGS: ExportSettings = {
 export type SilenceSession = {
 	video: StoredVideoFacts | null
 	analysis: StoredAnalysis | null
+	/** compact detector output; enough to rebuild the cut on another machine */
+	speech: SpeechSegment[]
 	settings: CutSettings
 	overrides: GapOverrides
 	exportSettings: ExportSettings
@@ -102,6 +107,16 @@ const FORMATS = ['mp4', 'webm'] as const
 const QUALITIES = ['draft', 'high', 'max'] as const
 const TABS = ['detect', 'export'] as const
 
+function normalizeSpeech(value: unknown): SpeechSegment[] {
+	if (!Array.isArray(value)) return []
+	return value.slice(0, 100_000).flatMap((entry) => {
+		if (!isObject(entry)) return []
+		const startMs = num(entry.startMs, -1, 0)
+		const endMs = num(entry.endMs, -1, 0)
+		return endMs > startMs ? [{ startMs, endMs }] : []
+	})
+}
+
 export function normalizeSettings(value: unknown): CutSettings {
 	if (!isObject(value)) return DEFAULT_CUT_SETTINGS
 	return {
@@ -137,7 +152,8 @@ function normalizeVideo(value: unknown): StoredVideoFacts | null {
 
 	const blobId = typeof value.blobId === 'string' ? value.blobId : null
 	const url = typeof value.url === 'string' ? value.url : null
-	if (!blobId && !url) return null
+	const cloudAsset = normalizeCloudAsset(value.cloudAsset)
+	if (!blobId && !url && !cloudAsset) return null
 
 	return {
 		blobId,
@@ -150,6 +166,7 @@ function normalizeVideo(value: unknown): StoredVideoFacts | null {
 		height,
 		fps: num(value.fps, 30, 1, 240),
 		hasAudio: bool(value.hasAudio, true),
+		cloudAsset,
 	}
 }
 
@@ -186,6 +203,7 @@ export function normalizeSilenceSession(value: unknown): SilenceSession | null {
 	return {
 		video: normalizeVideo(value.video),
 		analysis: normalizeAnalysis(value.analysis),
+		speech: normalizeSpeech(value.speech),
 		settings: normalizeSettings(value.settings),
 		overrides: normalizeOverrides(value.overrides),
 		exportSettings: normalizeExportSettings(value.exportSettings),

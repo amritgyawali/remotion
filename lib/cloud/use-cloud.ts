@@ -9,9 +9,8 @@
  * decided their laptop should stop encoding video has decided it for good, not
  * for one tab.
  *
- * The default is deliberately `device`. Cloud mode uploads the source file to a
- * third party, and that is a choice a person makes, not one a page makes for
- * them on first load.
+ * Cloud is the product default. An explicit Local choice is persisted, so a
+ * user can keep sensitive or bandwidth-heavy work on this machine.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -21,12 +20,11 @@ import type { CloudStatus, RunLocation } from './types'
 const PREFERENCE_KEY = 'rvs:run-location'
 
 function readPreference(): RunLocation {
-	if (typeof window === 'undefined') return 'device'
+	if (typeof window === 'undefined') return 'cloud'
 	try {
-		return window.localStorage.getItem(PREFERENCE_KEY) === 'cloud' ? 'cloud' : 'device'
+		return window.localStorage.getItem(PREFERENCE_KEY) === 'device' ? 'device' : 'cloud'
 	} catch {
-		// Private mode, or storage blocked. Device is the safe answer.
-		return 'device'
+		return 'cloud'
 	}
 }
 
@@ -49,7 +47,7 @@ export function useCloud(): CloudState {
 	const [probed, setProbed] = useState(false)
 	// The server cannot read localStorage, so the first render must match it.
 	// The stored preference is applied after hydration instead.
-	const [preference, setPreference] = useState<RunLocation>('device')
+	const [preference, setPreference] = useState<RunLocation>('cloud')
 
 	useEffect(() => {
 		setPreference(readPreference())

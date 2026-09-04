@@ -33,6 +33,8 @@ import { readBlob, removeBlob, requestPersistentStorage, writeBlob } from '../li
 import { useAutosave, useRestoredSnapshot } from '../lib/persist/use-vault'
 import { sendToStudio, useIncomingHandoff } from '../lib/handoff'
 import { useCloud } from '../lib/cloud/use-cloud'
+import { useCloudMedia } from '../lib/cloud/use-cloud-media'
+import { useCloudProjectAutosave } from '../lib/cloud/use-project-autosave'
 import { runToolInCloud, toolRunsInCloud } from '../lib/cloud/run-tool'
 import CloudProjectsPanel from './cloud/CloudProjectsPanel'
 import ToolsTopBar from './tools/ToolsTopBar'
@@ -78,6 +80,13 @@ export default function ToolsStudio() {
 	const [restoredAt, setRestoredAt] = useState<number | null>(null)
 
 	const cloud = useCloud()
+	const { asset: cloudAsset, error: cloudMediaError, setAsset: setCloudAsset } = useCloudMedia({
+		cloud,
+		file: video?.file ?? null,
+	})
+	useEffect(() => {
+		if (cloud.location === 'cloud' && cloudMediaError) setLoadError(`Cloud upload: ${cloudMediaError}`)
+	}, [cloud.location, cloudMediaError])
 	const [cloudNote, setCloudNote] = useState<string | null>(null)
 
 	const runAbortRef = useRef<AbortController | null>(null)
@@ -158,8 +167,9 @@ export default function ToolsStudio() {
 		setShowResult(false)
 		setVideoBanked(false)
 		setVideoBlobId(null)
+		setCloudAsset(null)
 		void removeBlob(TOOLS_VIDEO_BLOB_ID)
-	}, [])
+	}, [setCloudAsset])
 
 	/* -------------------------------------------------------------- tool */
 
@@ -196,7 +206,11 @@ export default function ToolsStudio() {
 		// A batch tool works off its own queue rather than the loaded clip, so it is
 		// the queue that has to be non-empty - the studio may hold no clip at all.
 		const isBatch = Boolean(selectedTool.multiFile)
-		if (isBatch ? batchFiles.length === 0 : !video?.file) return
+		if (cloud.location === 'cloud' && (isBatch || !cloudTool)) {
+			setRunError('This operation needs the local media engine. Switch to Local to run it on this machine.')
+			return
+		}
+		if (isBatch ? batchFiles.length === 0 : !video?.file && !(cloud.location === 'cloud' && cloudAsset && cloudTool)) return
 		runAbortRef.current?.abort()
 		const controller = new AbortController()
 		runAbortRef.current = controller
@@ -223,10 +237,11 @@ export default function ToolsStudio() {
 				 * work is per-pixel - stays on the device, and the button copy says so
 				 * rather than failing here.
 				 */
-				if (cloud.location === 'cloud' && !isBatch && video?.file && cloudTool) {
+				if (cloud.location === 'cloud' && !isBatch && (video?.file || cloudAsset) && cloudTool) {
 					const cloudResult = await runToolInCloud({
 						toolId: selectedTool.id,
-						file: video.file,
+						file: video?.file,
+						asset: cloudAsset,
 						params: currentParams,
 						output,
 						secondaryFile,
@@ -277,7 +292,7 @@ export default function ToolsStudio() {
 				}
 			}
 		})()
-	}, [batchFiles, cloud.location, cloudTool, currentParams, output, secondaryFile, selectedTool, video])
+	}, [batchFiles, cloud.location, cloudAsset, cloudTool, currentParams, output, secondaryFile, selectedTool, video])
 
 	const handleCancelRun = useCallback(() => {
 		runAbortRef.current?.abort()
@@ -342,6 +357,7 @@ export default function ToolsStudio() {
 			let warning: string | null = null
 
 			if (session.video?.blobId) {
+				setCloudAsset(session.video.cloudAsset)
 				const stored = await readBlob(session.video.blobId)
 				if (stored) {
 					const file = new File([stored.blob], session.video.name, { type: stored.type })
@@ -365,6 +381,24 @@ export default function ToolsStudio() {
 					warning =
 						'Your tool settings came back, but the clip itself was dropped by the browser to free space. Pick the file again.'
 				}
+			} else if (session.video?.cloudAsset) {
+				const facts = session.video
+				const asset = facts.cloudAsset!
+				setCloudAsset(asset)
+				setVideo({
+					url: asset.secureUrl,
+					name: facts.name,
+					kind: 'url',
+					sizeInBytes: facts.sizeInBytes,
+					durationInSeconds: facts.durationInSeconds,
+					width: facts.width,
+					height: facts.height,
+					fps: facts.fps,
+					hasAudio: facts.hasAudio,
+					file: null,
+				})
+				setVideoBanked(true)
+				notes.push(`${facts.name} from Cloudinary`)
 			}
 
 			setRestoredAt(updatedAt)
@@ -386,6 +420,7 @@ export default function ToolsStudio() {
 						height: video.height,
 						fps: video.fps,
 						hasAudio: video.hasAudio,
+						cloudAsset,
 					}
 				: null,
 			selectedToolId,
@@ -394,7 +429,13 @@ export default function ToolsStudio() {
 			activeCategory: category,
 			query,
 		}
-	}, [category, output, paramsByTool, query, selectedToolId, video, videoBlobId])
+	}, [category, cloudAsset, output, paramsByTool, query, selectedToolId, video, videoBlobId])
+
+	const cloudSnapshot = useMemo(
+		() => snapshot ? { name: video?.name ?? 'Tools workspace', version: TOOLS_SESSION_VERSION, data: snapshot } : null,
+		[snapshot, video?.name],
+	)
+	useCloudProjectAutosave({ studio: 'tools', cloud, snapshot: cloudSnapshot })
 
 	const vault = useAutosave<ToolsSession>({
 		key: TOOLS_SESSION_KEY,
@@ -567,9 +608,7 @@ export default function ToolsStudio() {
 					<CloudProjectsPanel
 						studio="tools"
 						cloud={cloud}
-						snapshot={() =>
-							snapshot ? { name: video?.name ?? 'Tools workspace', version: TOOLS_SESSION_VERSION, data: snapshot } : null
-						}
+						snapshot={() => cloudSnapshot}
 						onOpen={async (data) => {
 							const session = normalizeToolsSession(data)
 							if (!session) return
@@ -578,11 +617,17 @@ export default function ToolsStudio() {
 							setOutput(session.output)
 							setCategory((session.activeCategory as ToolCategory) ?? null)
 							setQuery(session.query)
-							// The clip itself lives in the cloud library, not in the
-							// snapshot, so a restored workspace names it rather than
-							// carrying it - the person re-picks or re-uploads the file.
+							if (session.video?.cloudAsset) {
+								const facts = session.video
+								const asset = facts.cloudAsset!
+								setCloudAsset(asset)
+								setVideo({ ...facts, url: asset.secureUrl, kind: 'url', file: null })
+								setVideoBanked(true)
+							}
 							setCloudNote(
-								session.video
+								session.video?.cloudAsset
+									? `Settings and "${session.video.name}" restored from the cloud.`
+									: session.video
 									? `Settings restored. Load "${session.video.name}" again to run them.`
 									: 'Settings restored.',
 							)

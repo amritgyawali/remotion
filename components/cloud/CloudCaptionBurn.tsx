@@ -5,6 +5,7 @@ import { formatBytes } from '../../lib/format'
 import { runSubtitlesInCloud } from '../../lib/cloud/run-tool'
 import { CLOUD_SUBTITLE_FONTS, DEFAULT_CLOUD_SUBTITLE_STYLE } from '../../lib/cloud/transform'
 import type { CloudState } from '../../lib/cloud/use-cloud'
+import type { CloudAsset } from '../../lib/cloud/types'
 import { IconAlert, IconCheck, IconCloud, IconDownload, IconInfo, IconStop } from '../Icons'
 
 /**
@@ -24,6 +25,7 @@ import { IconAlert, IconCheck, IconCloud, IconDownload, IconInfo, IconStop } fro
 export default function CloudCaptionBurn({
 	cloud,
 	file,
+	asset,
 	srt,
 	cueCount,
 	format,
@@ -31,6 +33,7 @@ export default function CloudCaptionBurn({
 	cloud: CloudState
 	/** the original bytes; a pasted URL has none, and cannot be uploaded */
 	file: File | null
+	asset?: CloudAsset | null
 	/** the caption track, serialised only when it is actually needed */
 	srt: () => string
 	cueCount: number
@@ -60,7 +63,7 @@ export default function CloudCaptionBurn({
 
 	const run = useCallback(
 		(previewSec?: number) => {
-			if (!file) return
+			if (!file && !asset) return
 			abortRef.current?.abort()
 			const controller = new AbortController()
 			abortRef.current = controller
@@ -74,6 +77,7 @@ export default function CloudCaptionBurn({
 				try {
 					const finished = await runSubtitlesInCloud({
 						file,
+						asset,
 						srt: srt(),
 						output: { format, quality: previewSec ? 'draft' : 'high' },
 						style: { fontFamily: font, fontSize: size, boxOpacity },
@@ -99,10 +103,10 @@ export default function CloudCaptionBurn({
 				}
 			})()
 		},
-		[boxOpacity, file, font, format, size, srt],
+		[asset, boxOpacity, file, font, format, size, srt],
 	)
 
-	if (!cloud.available) return null
+	if (!cloud.available || cloud.location !== 'cloud') return null
 
 	return (
 		<div className="cloud-burn">
@@ -125,7 +129,7 @@ export default function CloudCaptionBurn({
 						box, no animation and no object layer - not the design on the left.
 					</p>
 
-					{!file ? (
+					{!file && !asset ? (
 						<div className="notice notice--warn" style={{ marginTop: 10 }}>
 							<span className="notice-icon">
 								<IconAlert size={14} />
