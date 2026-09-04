@@ -35,6 +35,7 @@
  */
 
 import { readBlob, writeBlob } from '../persist/idb'
+import { memoryBudget } from '../media/memory-budget'
 
 export type SegmentationModelId = 'balanced' | 'precise'
 
@@ -258,21 +259,36 @@ export async function createPersonSegmenter(options: CreateSegmenterOptions): Pr
 	if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
 
 	options.onProgress?.({ phase: 'runtime', ratio: 0.7 })
-	const segmenter = await vision.ImageSegmenter.createFromOptions(fileset, {
-		baseOptions: { modelAssetBuffer: modelBytes, delegate: 'GPU' },
-		runningMode: 'VIDEO',
-		outputConfidenceMasks: true,
-		outputCategoryMask: false,
-	}).catch(async (error) => {
-		// A machine that cannot give MediaPipe a WebGL context of its own still
-		// runs the model on the CPU, several times slower but correctly.
-		console.warn('[segmentation] GPU delegate unavailable, falling back to CPU:', error)
-		return vision.ImageSegmenter.createFromOptions(fileset, {
-			baseOptions: { modelAssetBuffer: modelBytes, delegate: 'CPU' },
+
+	/**
+	 * Which processor to ask for first.
+	 *
+	 * The GPU delegate is the faster one and stays the default. But on a small
+	 * machine the graphics memory it wants is the same pool the video decoder
+	 * and the compositor are already drawing from - it is not spare capacity,
+	 * it is the capacity that is about to run out - and a bake that finishes
+	 * slowly beats one that takes the tab, or the machine, down with it. So a
+	 * machine that reports four gigabytes or less is given the processor first
+	 * and the graphics card as the fallback, which is the same pair of attempts
+	 * in the other order.
+	 */
+	const budget = memoryBudget()
+	const order: Array<'GPU' | 'CPU'> = budget.preferCpuSegmentation ? ['CPU', 'GPU'] : ['GPU', 'CPU']
+
+	const open = (delegate: 'GPU' | 'CPU') =>
+		vision.ImageSegmenter.createFromOptions(fileset, {
+			baseOptions: { modelAssetBuffer: modelBytes, delegate },
 			runningMode: 'VIDEO',
 			outputConfidenceMasks: true,
 			outputCategoryMask: false,
 		})
+
+	const segmenter = await open(order[0]).catch(async (error) => {
+		// A machine that cannot give MediaPipe a context of the first kind still
+		// runs the model on the other, correctly, and usually several times
+		// slower - which is the whole reason the first choice is not fixed.
+		console.warn(`[segmentation] ${order[0]} delegate unavailable, falling back to ${order[1]}:`, error)
+		return open(order[1])
 	})
 
 	const subject = resolveSubjectChannel(segmenter.getLabels())
@@ -280,7 +296,26 @@ export async function createPersonSegmenter(options: CreateSegmenterOptions): Pr
 	options.onProgress?.({ phase: 'ready', ratio: 1 })
 
 	let smoothing = Math.min(0.95, Math.max(0, options.smoothing ?? 0.6))
+
+	/**
+	 * Two mask buffers, used alternately, instead of one per frame.
+	 *
+	 * The smoothed mask has to outlive the call that produced it: the caller
+	 * holds it as `lastMask` and may hand the very same array back to the
+	 * compositor for several frames while the picture is still. So the buffer
+	 * cannot simply be overwritten in place - but it does not need a fresh
+	 * allocation either. Two are enough. While one is being written the other
+	 * is both the previous frame's mask and the one the caller is still
+	 * reading, and by the time the pair swaps back the caller has moved on.
+	 *
+	 * At the precise model's 256x256 that is 256 KB per frame that is no longer
+	 * allocated and collected - around a third of a gigabyte of churn over a
+	 * two minute bake, on the machine least able to afford it.
+	 */
+	const pool: [Float32Array | null, Float32Array | null] = [null, null]
+	let slot = 0
 	let previous: Float32Array | null = null
+
 	let maskCanvas: OffscreenCanvas | null = null
 	let maskCtx: OffscreenCanvasRenderingContext2D | null = null
 	let maskImage: ImageData | null = null
@@ -308,11 +343,33 @@ export async function createPersonSegmenter(options: CreateSegmenterOptions): Pr
 			const height = channel.height
 			const raw = channel.getAsFloat32Array()
 
-			const current = new Float32Array(raw.length)
-			const keep = previous && previous.length === raw.length ? smoothing : 0
-			for (let i = 0; i < raw.length; i++) {
-				const person = subject.invert ? 1 - raw[i] : raw[i]
-				current[i] = keep > 0 && previous ? previous[i] * keep + person * (1 - keep) : person
+			const length = raw.length
+			// A model whose output size changed mid-clip invalidates both buffers,
+			// which is also the first-frame case: neither is allocated yet.
+			if (!pool[slot] || pool[slot]!.length !== length) {
+				pool[0] = new Float32Array(length)
+				pool[1] = new Float32Array(length)
+				previous = null
+			}
+			const current = pool[slot]!
+			slot ^= 1
+
+			const keep = previous && previous.length === length ? smoothing : 0
+			// The invert test and the smoothing test are both loop-invariant, so
+			// they are hoisted into four tight loops rather than re-evaluated
+			// sixty-five thousand times a frame. Each body is then a straight line
+			// of float maths the JIT can keep in registers.
+			if (keep > 0 && previous) {
+				const blend = 1 - keep
+				if (subject.invert) {
+					for (let i = 0; i < length; i++) current[i] = previous[i] * keep + (1 - raw[i]) * blend
+				} else {
+					for (let i = 0; i < length; i++) current[i] = previous[i] * keep + raw[i] * blend
+				}
+			} else if (subject.invert) {
+				for (let i = 0; i < length; i++) current[i] = 1 - raw[i]
+			} else {
+				current.set(raw)
 			}
 			previous = current
 			result.close()
@@ -340,6 +397,13 @@ export async function createPersonSegmenter(options: CreateSegmenterOptions): Pr
 		},
 		close() {
 			previous = null
+			pool[0] = null
+			pool[1] = null
+			maskImage = null
+			// Dropping the canvas too: a bake that ran on a 4K clip is holding a
+			// mask surface the browser will not reclaim while the reference lives.
+			maskCanvas = null
+			maskCtx = null
 			try {
 				segmenter.close()
 			} catch {

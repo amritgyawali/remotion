@@ -51,6 +51,7 @@ import { anchorFilterFor, findHeadAnchor, FALLBACK_ANCHOR, type HeadAnchor, type
 import { createObjectCompositor, type ObjectCompositorSettings } from './object-compositor'
 import { shotAtMs, type ObjectSettings, type ObjectShot } from './object-plan'
 import { loadObjectSprite, objectRequestFor, type ObjectSprite } from './object-sprite'
+import { memoryBudget } from '../media/memory-budget'
 
 /** The long side of the copy handed to the segmentation model. */
 const MODEL_INPUT_WIDTH = 256
@@ -77,17 +78,33 @@ const MOTION_THRESHOLD = 0.002
 /** Never reuse a mask for longer than this, whatever the difference says. */
 const MAX_SKIPPED_FRAMES = 3
 
-/** Every Nth pixel of the model input is compared, in both axes. */
+/** Every Nth pixel of the motion copy is compared, in both axes. */
 const MOTION_STRIDE = 3
+
+/**
+ * The width of the picture the motion test reads back, which is not the model's.
+ *
+ * `getImageData` allocates its result every call, and the model input is
+ * 256 pixels wide - about 460 KB a frame on a tall clip, thrown away
+ * immediately, for every frame that carries an object. The question being
+ * asked is only "has anything in this picture moved", and that survives being
+ * asked of a thumbnail: a head turn moves tens of percent of a 64-wide frame,
+ * while sensor noise averages out harder the smaller the picture gets. Reading
+ * 64 pixels across costs about 9 KB instead, and it lets the model's own canvas
+ * stay on the GPU, because nothing reads it back any more.
+ */
+const MOTION_WIDTH = 64
 
 /**
  * How many rasterised objects are kept in memory at once.
  *
  * One is on screen; the second is the one that follows it, so a plan that
  * re-enters a shot does not pay for the picture twice. Three is the smallest
- * number that never re-rasterises during ordinary forward playback.
+ * number that never re-rasterises during ordinary forward playback - and on a
+ * machine that cannot afford three, `memoryBudget()` says two, which
+ * re-rasterises only when a plan goes backwards.
  */
-const MAX_LIVE_SPRITES = 3
+const DEFAULT_MAX_LIVE_SPRITES = 3
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value))
 
@@ -169,6 +186,10 @@ export async function prepareObjectLayer(args: PrepareObjectLayerArgs): Promise<
 	 */
 	const sprites = new Map<string, Promise<ObjectSprite>>()
 	const spriteOrder: string[] = []
+	// Read once for the whole bake rather than per frame: it describes the
+	// machine, which does not change between frames.
+	const budget = memoryBudget()
+	const maxLiveSprites = Math.max(1, Math.min(DEFAULT_MAX_LIVE_SPRITES, budget.maxLiveSprites))
 	const release = (pending: Promise<ObjectSprite> | undefined) => {
 		// A load still in flight is disposed when it lands: there is nothing to
 		// free yet, and dropping the reference would leak the canvas it is about
@@ -191,7 +212,7 @@ export async function prepareObjectLayer(args: PrepareObjectLayerArgs): Promise<
 		})
 		sprites.set(shot.id, pending)
 		spriteOrder.push(shot.id)
-		while (spriteOrder.length > MAX_LIVE_SPRITES) {
+		while (spriteOrder.length > maxLiveSprites) {
 			const evicted = spriteOrder.shift()
 			if (!evicted || evicted === shot.id) continue
 			release(sprites.get(evicted))
@@ -227,11 +248,20 @@ export async function prepareObjectLayer(args: PrepareObjectLayerArgs): Promise<
 	const inputWidth = MODEL_INPUT_WIDTH
 	const inputHeight = Math.max(64, Math.round((MODEL_INPUT_WIDTH * height) / Math.max(width, 1)))
 	const inputCanvas = new OffscreenCanvas(inputWidth, inputHeight)
-	// `willReadFrequently` because the motion test reads this canvas back on
-	// every frame that carries an object - without it Chrome keeps the surface
-	// on the GPU and every read is a stall.
-	const inputCtx = inputCanvas.getContext('2d', { willReadFrequently: true })
-	if (!inputCtx) {
+	// Deliberately *not* `willReadFrequently`: nothing reads this canvas back
+	// any more. It is drawn to and then handed straight to the model, so letting
+	// Chrome keep it on the GPU is what makes that hand-off a texture bind
+	// rather than an upload. The motion test has its own small canvas below.
+	const inputCtx = inputCanvas.getContext('2d')
+
+	// The thumbnail the motion test reads, and the only surface here that is
+	// ever pulled back to the CPU.
+	const motionWidth = Math.min(MOTION_WIDTH, inputWidth)
+	const motionHeight = Math.max(2, Math.round((motionWidth * inputHeight) / Math.max(inputWidth, 1)))
+	const motionCanvas = new OffscreenCanvas(motionWidth, motionHeight)
+	const motionCtx = motionCanvas.getContext('2d', { willReadFrequently: true })
+
+	if (!inputCtx || !motionCtx) {
 		segmenter.close()
 		compositor.dispose()
 		disposeSprites()
@@ -264,8 +294,10 @@ export async function prepareObjectLayer(args: PrepareObjectLayerArgs): Promise<
 	 * picture whose changes can possibly change the mask.
 	 */
 	const motionSince = (): number => {
-		const image = inputCtx.getImageData(0, 0, inputWidth, inputHeight)
-		const pixels = image.data
+		// The model's canvas, scaled down on the way through. One small readback
+		// a frame, against one full-size one before.
+		motionCtx.drawImage(inputCanvas, 0, 0, motionWidth, motionHeight)
+		const pixels = motionCtx.getImageData(0, 0, motionWidth, motionHeight).data
 		if (!motionReference || motionReference.length !== pixels.length) {
 			motionReference = new Uint8ClampedArray(pixels)
 			return 1
@@ -277,6 +309,10 @@ export async function prepareObjectLayer(args: PrepareObjectLayerArgs): Promise<
 			total += Math.abs(pixels[i] - motionReference[i]) + Math.abs(pixels[i + 1] - motionReference[i + 1])
 			counted += 2
 		}
+		// The reference is deliberately *not* updated here. It is the last frame
+		// the model actually saw, so a slow drift accumulates against it rather
+		// than being re-zeroed every frame; the caller nulls it when the model
+		// runs. See the call site.
 		return total / (counted * 255)
 	}
 

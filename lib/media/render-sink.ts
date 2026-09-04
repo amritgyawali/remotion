@@ -22,6 +22,8 @@
 
 import type { StreamTargetChunk, Target } from 'mediabunny'
 
+import { storageEstimate } from '../persist/idb'
+
 export type RenderSink = {
 	/** Hand this to `new Output({ target })`. */
 	target: Target
@@ -46,6 +48,23 @@ const EXPORT_DIRECTORY = 'studio-exports'
  * separate writes.
  */
 const FLUSH_BYTES = 4 * 1024 * 1024
+
+/**
+ * The least free origin storage an export is allowed to start with.
+ *
+ * The browser's quota is a share of the free space on the disk the profile
+ * lives on, so a nearly full disk does not report itself as a disk problem: it
+ * reports itself as an export that encoded for two minutes and then threw
+ * `QuotaExceededError` on a flush, with the half-written file discarded and
+ * nothing to show for the wait. Checking first turns that into a sentence
+ * before anything is encoded.
+ *
+ * A hundred and twenty-eight megabytes is deliberately low. It is under any
+ * real export of any real clip, so it never refuses work that would have
+ * finished, and an origin with less than that left is not one flush away from
+ * failing - it is already past the point where the browser starts evicting.
+ */
+const MINIMUM_HEADROOM_BYTES = 128 * 1024 * 1024
 
 /** Files this tab is still using, and so must not sweep. */
 const inUse = new Set<string>()
@@ -102,13 +121,48 @@ function safeName(base: string): string {
 	return base.replace(/[^a-z0-9._-]+/gi, '-').slice(-60) || 'export'
 }
 
+/** A byte count a person can read, for a message about disk space. */
+function readableBytes(bytes: number): string {
+	if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
+	return `${Math.round(bytes / (1024 * 1024))} MB`
+}
+
+/**
+ * Refuses an export the browser has nowhere to put, before it encodes a frame.
+ *
+ * `storageEstimate` reports the whole origin - the vault the studio keeps
+ * uploads and models in as well as the export directory - which is the right
+ * number, because they share one quota. A browser that will not answer at all
+ * is not treated as a failure: an unknown quota is not a small one, and
+ * refusing to export because a browser is private about its disk would be
+ * worse than letting the flush decide.
+ */
+export async function assertExportHeadroom(): Promise<void> {
+	const estimate = await storageEstimate()
+	if (!estimate || estimate.quota <= 0) return
+	const headroom = estimate.quota - estimate.usage
+	if (headroom >= MINIMUM_HEADROOM_BYTES) return
+	throw new Error(
+		`This browser has only ${readableBytes(Math.max(0, headroom))} of storage left for the studio, which is ` +
+			'not enough to write a video into. The browser sizes that allowance from the free space on the ' +
+			'drive it is installed on, so freeing a few gigabytes there - or clearing this site’s data from ' +
+			'Settings - is what gives it back.',
+	)
+}
+
 export async function createRenderSink(baseName: string): Promise<RenderSink> {
 	const { BufferTarget, StreamTarget } = await import('mediabunny')
 
 	const directory = await openExportDirectory()
+	// Stale exports are swept before the space is counted, not after: a session
+	// that has already rendered a dozen times is holding most of the quota in
+	// files nobody is reading, and refusing the next export over space that is
+	// about to be freed anyway would be a bug about bookkeeping, not about disk.
+	if (directory) await sweep(directory)
+	await assertExportHeadroom()
+
 	if (directory) {
 		try {
-			await sweep(directory)
 			const name = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}-${safeName(baseName)}`
 			const handle = await directory.getFileHandle(name, { create: true })
 			const writable = await handle.createWritable({ keepExistingData: false })
@@ -187,6 +241,17 @@ export function describeRenderFailure(error: unknown): Error {
 	// path trims the encoder priming that causes it (see tools/packet-timing.ts),
 	// so reaching here means one of them was missed - and the person reading it
 	// should be told that, not handed the muxer's sentence.
+	// `QuotaExceededError` on a flush, which is what a full disk looks like from
+	// inside the tab. The preflight in `createRenderSink` catches the common
+	// case; this catches an export that started with room and ran out of it,
+	// which a long render on a nearly full drive genuinely can.
+	if (/quota ?exceeded|exceeded the quota|no space left|disk is full/i.test(message)) {
+		return new Error(
+			'The browser ran out of room to write this video while it was encoding. Its allowance comes from ' +
+				'the free space on the drive it is installed on, so freeing a few gigabytes there - or clearing ' +
+				'this site’s data from Settings - is what fixes it. Nothing was left half-written.',
+		)
+	}
 	if (/timestamps? must be non-negative/i.test(message)) {
 		return new Error(
 			'This clip’s audio starts a few milliseconds before the video does - the encoder’s priming delay - ' +

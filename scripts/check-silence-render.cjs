@@ -15,6 +15,13 @@
  *   maths          - the folded sample mapping and the memory-copy fast path
  *                    agree with the per-sample formula they replaced, to well
  *                    under a sample
+ *   the sink       - an export is refused before it encodes anything when the
+ *                    browser has no room to write the file, and a quota that
+ *                    runs out mid-encode is reported as disk space rather than
+ *                    as the muxer's own words. Both are checked here because
+ *                    render-sink.ts is the one file every export in the studio
+ *                    goes through, and a nearly full profile drive is not a
+ *                    failure a browser leg can stage on demand
  *   cut            - a splice-heavy export: the file opens, seeks, carries
  *                    picture and sound, is exactly as long as the plan
  *                    promised, and lands on disk rather than in the heap
@@ -32,8 +39,12 @@
  *   node scripts/check-silence-render.cjs --headful
  */
 
+require('sucrase/register')
+
 const { spawn } = require('node:child_process')
 const path = require('node:path')
+
+const sink = require('../lib/media/render-sink.ts')
 
 const argv = process.argv.slice(2)
 const flag = (name, fallback = null) => {
@@ -167,6 +178,132 @@ function runMaths() {
 		fastPath === 0,
 		fastPath === 0 ? undefined : fastPath.toExponential(2) + ' worst case',
 	)
+}
+
+/* -------------------------------------------------------------------------- */
+/*  The sink                                                                  */
+/* -------------------------------------------------------------------------- */
+
+const GIGABYTE = 1024 * 1024 * 1024
+
+/**
+ * Stands in for `navigator.storage` so the quota can be set to numbers a real
+ * machine only reaches by actually filling its disk.
+ */
+function withQuota(estimate) {
+	Object.defineProperty(globalThis, 'navigator', {
+		value: estimate ? { storage: { estimate: async () => estimate, persisted: async () => false } } : {},
+		configurable: true,
+		writable: true,
+	})
+}
+
+/** Whether `assertExportHeadroom` let an export start, and what it said if not. */
+async function headroomVerdict(estimate) {
+	withQuota(estimate)
+	try {
+		await sink.assertExportHeadroom()
+		return { allowed: true, message: '' }
+	} catch (error) {
+		return { allowed: false, message: error instanceof Error ? error.message : String(error) }
+	}
+}
+
+async function runSinkChecks() {
+	process.stdout.write('\nthe sink\n')
+	const before = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
+
+	try {
+		const roomy = await headroomVerdict({ usage: 4 * 1024 * 1024, quota: GIGABYTE })
+		record('sink', 'an export with room to write starts', roomy.allowed, roomy.message.slice(0, 60))
+
+		const tight = await headroomVerdict({ usage: GIGABYTE - 8 * 1024 * 1024, quota: GIGABYTE })
+		record('sink', 'one with 8 MB left is refused before it encodes', !tight.allowed)
+		record(
+			'sink',
+			'and is told how much is left',
+			/8 MB/.test(tight.message),
+			tight.message.slice(0, 48),
+		)
+		record(
+			'sink',
+			'and that the drive is what gives it back',
+			/drive/i.test(tight.message) && /free/i.test(tight.message),
+		)
+
+		// A browser that will not answer must not be read as a browser with no
+		// room: an unknown quota is not a small one, and refusing every export in
+		// a private window would be a worse bug than the one this prevents.
+		const silent = await headroomVerdict(null)
+		record('sink', 'a browser that reports no quota at all is not refused', silent.allowed, silent.message.slice(0, 60))
+		const zero = await headroomVerdict({ usage: 0, quota: 0 })
+		record('sink', 'nor is one that reports zero', zero.allowed, zero.message.slice(0, 60))
+	} finally {
+		if (before) Object.defineProperty(globalThis, 'navigator', before)
+	}
+
+	const quota = sink.describeRenderFailure(new Error('QuotaExceededError: the quota has been exceeded.')).message
+	record('sink', 'a quota failure mid-encode is reported as disk space', /room to write/i.test(quota))
+	record('sink', 'and never as the browser’s own word for it', !/quota/i.test(quota), quota.slice(0, 48))
+
+	// The messages this file already had, which the new branch sits above and
+	// must not have swallowed.
+	const memory = sink.describeRenderFailure(new Error('RangeError: Array buffer allocation failed')).message
+	record('sink', 'an out-of-memory export still says memory, not disk', /out of memory/i.test(memory))
+	const gpu = sink.describeRenderFailure(new Error('InvalidStateError: context lost')).message
+	record('sink', 'and a lost GPU context still says graphics memory', /graphics memory/i.test(gpu))
+	const passthrough = sink.describeRenderFailure(new Error('something else entirely')).message
+	record('sink', 'anything else is passed through unchanged', passthrough === 'something else entirely')
+}
+
+/* -------------------------------------------------------------------------- */
+/*  The memory budget                                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The tiers are what stop a bake taking a small machine down with it, and the
+ * one thing that must never regress is the direction they fail in: an unknown
+ * machine has to be treated as a middling one, never as a large one. That is
+ * the case a browser without `deviceMemory` hits - every Firefox and Safari -
+ * and it is the case no manual test on a developer's laptop ever reaches.
+ */
+function runBudgetChecks() {
+	process.stdout.write('\nthe memory budget\n')
+	const { memoryTier } = require('../lib/media/memory-budget.ts')
+
+	// `navigator.deviceMemory` is rounded down to a power of two and clamped to
+	// 8, so a 7.8 GB machine reports 4 and a 6 GB one reports 4 as well. The
+	// tier boundaries are written against those reported values, not real ones.
+	record('budget', 'a machine reporting 4 GB is tight', memoryTier(4, null) === 'tight')
+	record('budget', 'and one reporting 0.5 GB is too', memoryTier(0.5, null) === 'tight')
+	record('budget', 'a machine reporting 8 GB is roomy', memoryTier(8, null) === 'roomy')
+
+	const unknown = memoryTier(null, null)
+	record('budget', 'a browser that will not say is modest, never roomy', unknown === 'modest', unknown)
+	record(
+		'budget',
+		'a small heap ceiling alone is enough to be tight',
+		memoryTier(null, 512 * 1024 * 1024) === 'tight',
+	)
+	record(
+		'budget',
+		'and a desktop heap ceiling alone is not',
+		memoryTier(null, 4 * 1024 * 1024 * 1024) === 'modest',
+	)
+
+	// deviceMemory decides it where it exists: it describes the machine, while
+	// the heap ceiling describes the tab and reads the same on every 64-bit
+	// desktop whatever the machine underneath has.
+	record(
+		'budget',
+		'the machine outranks the heap ceiling when both are known',
+		memoryTier(4, 4 * 1024 * 1024 * 1024) === 'tight',
+	)
+
+	const { memoryBudget } = require('../lib/media/memory-budget.ts')
+	const budget = memoryBudget()
+	record('budget', 'every tier caps sprites below the old fixed 2048', budget.maxSpritePixels <= 2048)
+	record('budget', 'and keeps at least one sprite alive', budget.maxLiveSprites >= 1)
 }
 
 /* -------------------------------------------------------------------------- */
@@ -598,6 +735,8 @@ async function runStudio() {
 
 async function main() {
 	runMaths()
+	await runSinkChecks()
+	runBudgetChecks()
 
 	let server = null
 	if (!MATHS_ONLY) {

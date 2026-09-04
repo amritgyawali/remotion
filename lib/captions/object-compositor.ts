@@ -113,21 +113,37 @@ const SHADOW_OFFSET = 0.02
 /** The light wrap's blur, as a fraction of the object's height. */
 const WRAP_BLUR = 0.05
 
-type Scratch = { canvas: OffscreenCanvas | HTMLCanvasElement; ctx: Ctx2D }
+type Scratch = {
+	canvas: OffscreenCanvas | HTMLCanvasElement
+	ctx: Ctx2D
+	/**
+	 * A pixel buffer the size of this canvas, kept between frames.
+	 *
+	 * `createImageData` hands back a fresh zeroed buffer every time it is
+	 * called, and the matte is written once per frame for the whole length of a
+	 * bake. At mask size that is about a hundred and fifty kilobytes of garbage
+	 * per frame - a few hundred megabytes over a two minute clip, all of it
+	 * identical in shape and all of it collected again immediately. Holding one
+	 * buffer per canvas and overwriting it costs one allocation for the whole
+	 * render, and every byte of it is rewritten before it is read, so nothing
+	 * needs clearing.
+	 */
+	image: ImageData | null
+}
 
 function makeScratch(): Scratch {
 	if (typeof OffscreenCanvas !== 'undefined') {
 		const canvas = new OffscreenCanvas(2, 2)
 		const ctx = canvas.getContext('2d')
 		if (!ctx) throw new Error('This browser has no 2D canvas context to composite the object with.')
-		return { canvas, ctx }
+		return { canvas, ctx, image: null }
 	}
 	const canvas = document.createElement('canvas')
 	canvas.width = 2
 	canvas.height = 2
 	const ctx = canvas.getContext('2d')
 	if (!ctx) throw new Error('This browser has no 2D canvas context to composite the object with.')
-	return { canvas, ctx }
+	return { canvas, ctx, image: null }
 }
 
 function sized(scratch: Scratch, width: number, height: number): Scratch {
@@ -136,8 +152,23 @@ function sized(scratch: Scratch, width: number, height: number): Scratch {
 	if (scratch.canvas.width !== w || scratch.canvas.height !== h) {
 		scratch.canvas.width = w
 		scratch.canvas.height = h
+		// Resizing a canvas resets its contents, and the held buffer is now the
+		// wrong shape. Dropping it here is what keeps `pixelsFor` a pure lookup.
+		scratch.image = null
 	}
 	return scratch
+}
+
+/**
+ * The scratch's own pixel buffer at its current size, allocated at most once
+ * per size change rather than once per frame.
+ */
+function pixelsFor(scratch: Scratch, width: number, height: number): ImageData {
+	const existing = scratch.image
+	if (existing && existing.width === width && existing.height === height) return existing
+	const created = scratch.ctx.createImageData(width, height)
+	scratch.image = created
+	return created
 }
 
 export type Rect = { x: number; y: number; width: number; height: number }
@@ -194,8 +225,8 @@ export function affectedRect(
  * is under forty thousand pixels.
  */
 function writeMatte(scratch: Scratch, mask: MaskFrame, settings: ObjectCompositorSettings): Scratch {
-	const { canvas, ctx } = sized(scratch, mask.width, mask.height)
-	const image = ctx.createImageData(mask.width, mask.height)
+	const { ctx } = sized(scratch, mask.width, mask.height)
+	const image = pixelsFor(scratch, mask.width, mask.height)
 	const pixels = image.data
 	const contrast = 1 + Math.min(1, Math.max(0, settings.matte)) * (MAX_MATTE_CONTRAST - 1)
 	const shift = settings.edgeShift * 0.4
@@ -210,7 +241,9 @@ function writeMatte(scratch: Scratch, mask: MaskFrame, settings: ObjectComposito
 		pixels[p + 3] = shaped <= 0 ? 0 : shaped >= 1 ? 255 : Math.round(shaped * 255)
 	}
 	ctx.putImageData(image, 0, 0)
-	return { canvas, ctx }
+	// The scratch itself, not a copy of two of its fields: the held buffer has
+	// to travel with the canvas it belongs to or the next frame reallocates it.
+	return scratch
 }
 
 /** Draws the matte, scaled and softened, over a rectangle of the frame. */
