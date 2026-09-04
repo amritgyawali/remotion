@@ -1,9 +1,12 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import { formatBytes } from '../../lib/format'
 import type { ToolDef } from '../../lib/tools/registry'
 import type { OutputSettings, RunOutput, RunProgress } from '../../lib/tools/runners'
-import { IconAlert, IconBolt, IconCaptions, IconCheck, IconDownload, IconInfo, IconScissors, IconSpinner, IconStop } from '../Icons'
+import type { CloudState } from '../../lib/cloud/use-cloud'
+import { RunLocationNote } from '../cloud/RunLocationToggle'
+import { IconAlert, IconBolt, IconCaptions, IconCheck, IconCloud, IconDevice, IconDownload, IconInfo, IconScissors, IconSpinner, IconStop } from '../Icons'
 
 const PHASE_LABEL: Record<string, string> = {
 	reading: 'Reading the file',
@@ -29,6 +32,10 @@ export default function ToolsOutputPanel({
 	onCancel,
 	onDownload,
 	onSendTo,
+	cloud,
+	cloudTool,
+	cloudNote,
+	children,
 }: {
 	tool: ToolDef | null
 	hasVideo: boolean
@@ -45,6 +52,11 @@ export default function ToolsOutputPanel({
 	onCancel: () => void
 	onDownload: (index: number) => void
 	onSendTo: (target: 'silence' | 'captions') => void
+	cloud: CloudState
+	/** this tool, with these settings, has a cloud equivalent */
+	cloudTool: boolean
+	cloudNote: string | null
+	children?: ReactNode
 }) {
 	const runnable = tool !== null && tool.status === 'ready' && !tool.link
 	const showOutputSettings = runnable && tool.outputKind === 'video'
@@ -52,7 +64,18 @@ export default function ToolsOutputPanel({
 	// never touches the clip - it runs over the files queued against it.
 	const isBatch = runnable && Boolean(tool.multiFile)
 	const hasInput = isBatch ? batchCount > 0 : hasVideo
-	const ready = runnable && hasInput && webCodecs
+
+	/**
+	 * Which engine this press will actually use.
+	 *
+	 * A batch queue and the per-pixel tools have no cloud equivalent, so asking
+	 * for the cloud does not silently change what runs - it falls back here, and
+	 * the note below says so before anyone presses anything.
+	 */
+	const usingCloud = cloud.location === 'cloud' && !isBatch && cloudTool
+	// Without WebCodecs the device cannot encode at all - but the cloud can, and
+	// that is exactly the browser this feature rescues.
+	const ready = runnable && hasInput && (webCodecs || usingCloud)
 
 	return (
 		<aside className="panel panel--right">
@@ -135,12 +158,39 @@ export default function ToolsOutputPanel({
 					</div>
 				) : null}
 
-				{!webCodecs ? (
+				{!webCodecs && !usingCloud ? (
 					<div className="notice notice--warn">
 						<span className="notice-icon">
 							<IconAlert size={14} />
 						</span>
-						<span>This browser has no WebCodecs encoder, so tools can't export here. Chrome or Edge on a desktop will.</span>
+						<span>
+							This browser has no WebCodecs encoder, so tools can&apos;t export here.
+							{cloud.available
+								? ' Switch the run location to Cloud in the header and this tool will work anyway.'
+								: ' Chrome or Edge on a desktop will.'}
+						</span>
+					</div>
+				) : null}
+
+				{cloudNote ? (
+					<div className="notice notice--info">
+						<span className="notice-icon">
+							<IconInfo size={14} />
+						</span>
+						<span>{cloudNote}</span>
+					</div>
+				) : null}
+
+				{runnable && cloud.location === 'cloud' && !usingCloud ? (
+					<div className="notice notice--warn">
+						<span className="notice-icon">
+							<IconDevice size={14} />
+						</span>
+						<span>
+							{isBatch
+								? 'A batch queue is processed file by file on this device - the cloud takes one file per job.'
+								: `"${tool?.name}" needs per-pixel work the cloud transformer cannot express, so this one runs here.`}
+						</span>
 					</div>
 				) : null}
 
@@ -160,9 +210,20 @@ export default function ToolsOutputPanel({
 				) : (
 					<>
 						<button className="btn btn--primary btn--block btn--lg" disabled={!ready} onClick={onRun}>
-							{tool ? <tool.icon size={14} /> : <IconBolt size={14} />}{' '}
-							{isBatch && batchCount > 0 ? `Run over ${batchCount} ${batchCount === 1 ? 'file' : 'files'}` : 'Run'}
+							{usingCloud ? <IconCloud size={14} /> : tool ? <tool.icon size={14} /> : <IconBolt size={14} />}{' '}
+							{isBatch && batchCount > 0
+								? `Run over ${batchCount} ${batchCount === 1 ? 'file' : 'files'}`
+								: usingCloud
+									? 'Run in the cloud'
+									: 'Run'}
 						</button>
+						{/*
+						  * Shown whether or not a tool is picked. Where the work happens
+						  * is the first thing to decide on a phone, not the last, and
+						  * gating the sentence behind a selection hides it exactly when
+						  * someone is choosing.
+						  */}
+						<RunLocationNote cloud={cloud} />
 						{isBatch && batchCount === 0 ? (
 							<div className="notice notice--info" style={{ marginTop: 10 }}>
 								<span>Add the files you want processed on the left, then run them all in one go.</span>
@@ -225,6 +286,8 @@ export default function ToolsOutputPanel({
 						) : null}
 					</div>
 				) : null}
+
+				{children}
 			</div>
 		</aside>
 	)

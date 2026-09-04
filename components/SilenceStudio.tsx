@@ -62,6 +62,10 @@ import {
 import { readBlob, removeBlob, requestPersistentStorage, writeBlob } from '../lib/persist/idb'
 import { useAutosave, useRestoredSnapshot } from '../lib/persist/use-vault'
 import { sendToStudio, useIncomingHandoff } from '../lib/handoff'
+import { useCloud } from '../lib/cloud/use-cloud'
+import { runSpliceInCloud } from '../lib/cloud/run-tool'
+import { MAX_CLOUD_SPLICES, cloudSpliceLimitReason } from '../lib/cloud/transform'
+import CloudProjectsPanel from './cloud/CloudProjectsPanel'
 import SilenceTopBar from './silence/SilenceTopBar'
 import SilenceSourcePanel from './silence/SilenceSourcePanel'
 import SilenceTimeline from './silence/SilenceTimeline'
@@ -118,6 +122,8 @@ export default function SilenceStudio() {
 	const [previewOriginal, setPreviewOriginal] = useState(false)
 
 	const [exportSettings, setExportSettings] = useState<ExportSettings>(DEFAULT_EXPORT_SETTINGS)
+	const cloud = useCloud()
+	const [cloudNote, setCloudNote] = useState<string | null>(null)
 	const [rendering, setRendering] = useState(false)
 	const [renderProgress, setRenderProgress] = useState<RenderProgress | null>(null)
 	const [renderResult, setRenderResult] = useState<SilenceRenderResult | null>(null)
@@ -317,6 +323,36 @@ export default function SilenceStudio() {
 
 	/* ------------------------------------------------------------ export */
 
+	/**
+	 * The cut, as a list of stretches to keep.
+	 *
+	 * The on-device renderer walks the plan's segments directly; the cloud wants
+	 * seconds and a speed per kept stretch, and nothing else. Dropped segments
+	 * simply never appear, which is what makes the splice a cut.
+	 */
+	const cloudSegments = useMemo(
+		() =>
+			plan.segments
+				.filter((segment) => segment.mode !== 'drop')
+				.map((segment) => ({
+					startSec: segment.sourceStartMs / 1000,
+					endSec: segment.sourceEndMs / 1000,
+					speed: segment.speed,
+				})),
+		[plan],
+	)
+
+	/** Why the cloud cannot take this particular cut, or null when it can. */
+	const cloudRefusal = useMemo(() => {
+		if (!video) return 'Load a clip first.'
+		if (exportSettings.scale !== 1) {
+			return 'The cloud export keeps the source resolution, so clear the downscale to use it.'
+		}
+		return cloudSpliceLimitReason(cloudSegments.length)
+	}, [cloudSegments.length, exportSettings.scale, video])
+
+	const usingCloud = cloud.location === 'cloud' && cloudRefusal === null
+
 	const handleRender = useCallback(() => {
 		if (!video?.file) {
 			setRenderError('The original file is no longer in memory. Re-select the clip and try again.')
@@ -343,6 +379,47 @@ export default function SilenceStudio() {
 
 		void (async () => {
 			try {
+				if (usingCloud) {
+					/*
+					 * The cloud path produces the same file the device path does, but
+					 * it is Cloudinary that walks the cut - so the facts below come
+					 * from the source clip and the plan rather than from an encoder
+					 * that ran here. Only the sizes are measured.
+					 */
+					const cut = await runSpliceInCloud({
+						file: video.file as File,
+						segments: cloudSegments,
+						output: { format: exportSettings.format, quality: exportSettings.quality },
+						includeAudio: exportSettings.includeAudio && video.hasAudio,
+						signal: controller.signal,
+						onProgress: ({ phase, ratio }) =>
+							setRenderProgress({
+								phase: ratio < 0.6 ? 'preparing' : ratio < 0.95 ? 'encoding' : 'finishing',
+								ratio,
+								framesDone: 0,
+								framesTotal: 0,
+								secondsDone: (plan.outputDurationMs / 1000) * ratio,
+							}),
+					})
+					if (controller.signal.aborted) return
+					setCloudNote(
+						`Cut in the cloud: ${cloudSegments.length} ${cloudSegments.length === 1 ? 'piece' : 'pieces'} spliced from ${formatSpan(plan.sourceDurationMs)} of source, without decoding a frame here.`,
+					)
+					setRenderResult({
+						blob: cut.blob,
+						url: cut.url,
+						format: exportSettings.format,
+						width: video.width,
+						height: video.height,
+						fps: exportSettings.fps ?? Math.round(video.fps) ?? 30,
+						durationSeconds: plan.outputDurationMs / 1000,
+						sizeInBytes: cut.sizeInBytes,
+						videoCodec: exportSettings.format === 'webm' ? 'vp9' : 'h264',
+						audioCodec: exportSettings.includeAudio && video.hasAudio ? 'aac' : null,
+					})
+					return
+				}
+
 				const result = await renderCutVideo({
 					source: video.file as File,
 					plan,
@@ -367,7 +444,7 @@ export default function SilenceStudio() {
 				}
 			}
 		})()
-	}, [exportSettings, plan, video])
+	}, [cloudSegments, exportSettings, plan, usingCloud, video])
 
 	const handleCancelRender = useCallback(() => {
 		renderAbortRef.current?.abort()
@@ -560,6 +637,7 @@ export default function SilenceStudio() {
 					{ id: 'export', label: 'Export', done: renderResult !== null },
 				]}
 				webCodecs={webCodecs}
+				cloud={cloud}
 				savedLabel={savedLabel}
 				save={{ status: vault.status, savedAt: vault.savedAt, error: vault.error }}
 				onReset={handleReset}
@@ -697,7 +775,35 @@ export default function SilenceStudio() {
 					onCancel={handleCancelRender}
 					onDownload={handleDownload}
 					onSendToCaptions={handleSendToCaptions}
-				/>
+					cloud={cloud}
+					cloudRefusal={cloudRefusal}
+					cloudNote={cloudNote}
+				>
+					<CloudProjectsPanel
+						studio="silence"
+						cloud={cloud}
+						snapshot={() =>
+							snapshot
+								? { name: video?.name ?? 'Silence workspace', version: SILENCE_SESSION_VERSION, data: snapshot }
+								: null
+						}
+						onOpen={(data) => {
+							const session = normalizeSilenceSession(data)
+							if (!session) return
+							setSettings(session.settings)
+							setOverrides(session.overrides)
+							setExportSettings(session.exportSettings)
+							// The clip and its loudness map are too big for a snapshot, so
+							// a cloud workspace restores the decisions and asks for the
+							// file again rather than pretending it has one.
+							setCloudNote(
+								session.video
+									? `Settings restored. Load "${session.video.name}" again to cut it.`
+									: 'Settings restored.',
+							)
+						}}
+					/>
+				</SilenceExportPanel>
 			</div>
 
 			<nav className="mobile-tabs" aria-label="Silence studio sections">

@@ -1,16 +1,21 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import { formatBytes, formatSeconds } from '../../lib/format'
 import { formatSpan, type CutPlan } from '../../lib/silence/plan'
 import type { RenderProgress, SilenceRenderResult } from '../../lib/silence/render'
 import type { ExportSettings } from '../../lib/silence/session'
 import type { CaptionVideoSource } from '../../lib/captions/types'
+import type { CloudState } from '../../lib/cloud/use-cloud'
+import { RunLocationNote } from '../cloud/RunLocationToggle'
 import {
 	IconAlert,
 	IconCaptions,
 	IconCheck,
 	IconDownload,
 	IconFilm,
+	IconCloud,
+	IconDevice,
 	IconInfo,
 	IconScissors,
 	IconSpinner,
@@ -51,11 +56,20 @@ export default function SilenceExportPanel({
 	onCancel,
 	onDownload,
 	onSendToCaptions,
+	cloud,
+	cloudRefusal,
+	cloudNote,
+	children,
 }: {
 	video: CaptionVideoSource | null
 	plan: CutPlan
 	settings: ExportSettings
 	webCodecs: boolean
+	cloud: CloudState
+	/** why this cut cannot go to the cloud, or null when it can */
+	cloudRefusal: string | null
+	cloudNote: string | null
+	children?: ReactNode
 	rendering: boolean
 	progress: RenderProgress | null
 	result: SilenceRenderResult | null
@@ -77,7 +91,10 @@ export default function SilenceExportPanel({
 				(plan.outputDurationMs / 1000)
 			: 0
 
-	const ready = video !== null && plan.outputDurationMs > 0 && webCodecs
+	const usingCloud = cloud.location === 'cloud' && cloudRefusal === null
+	// Cloud mode is the only way this studio works at all in a browser with no
+	// WebCodecs encoder, so the encoder is not a requirement when it is on.
+	const ready = video !== null && plan.outputDurationMs > 0 && (webCodecs || usingCloud)
 
 	return (
 		<aside className="panel panel--right">
@@ -325,15 +342,35 @@ export default function SilenceExportPanel({
 					</div>
 				) : null}
 
-				{!webCodecs ? (
+				{!webCodecs && !usingCloud ? (
 					<div className="notice notice--warn">
 						<span className="notice-icon">
 							<IconAlert size={14} />
 						</span>
 						<span>
-							This browser has no WebCodecs video encoder, so the cut cannot be written here. Chrome
-							or Edge on a desktop will do it.
+							This browser has no WebCodecs video encoder, so the cut cannot be written here.
+							{cloud.available
+								? ' Switch the run location to Cloud in the header and the splice happens there instead.'
+								: ' Chrome or Edge on a desktop will do it.'}
 						</span>
+					</div>
+				) : null}
+
+				{cloudNote ? (
+					<div className="notice notice--info">
+						<span className="notice-icon">
+							<IconCloud size={14} />
+						</span>
+						<span>{cloudNote}</span>
+					</div>
+				) : null}
+
+				{cloud.location === 'cloud' && cloudRefusal && video ? (
+					<div className="notice notice--warn">
+						<span className="notice-icon">
+							<IconDevice size={14} />
+						</span>
+						<span>{cloudRefusal}</span>
 					</div>
 				) : null}
 
@@ -356,9 +393,13 @@ export default function SilenceExportPanel({
 						</button>
 					</>
 				) : (
-					<button className="btn btn--primary btn--block btn--lg" disabled={!ready} onClick={onRender}>
-						<IconScissors size={14} /> Cut and export
-					</button>
+					<>
+						<button className="btn btn--primary btn--block btn--lg" disabled={!ready} onClick={onRender}>
+							{usingCloud ? <IconCloud size={14} /> : <IconScissors size={14} />}{' '}
+							{usingCloud ? 'Cut in the cloud' : 'Cut and export'}
+						</button>
+						<RunLocationNote cloud={cloud} />
+					</>
 				)}
 
 				{result ? (
@@ -396,6 +437,8 @@ export default function SilenceExportPanel({
 						</span>
 					</div>
 				) : null}
+
+				{children}
 			</div>
 		</aside>
 	)

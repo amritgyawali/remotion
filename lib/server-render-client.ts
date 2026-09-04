@@ -20,6 +20,7 @@ export const DEFAULT_CAPABILITIES: ServerCapabilities = {
 	maxPixels: 8_294_400,
 	maxDurationSeconds: 300,
 	blobDelivery: false,
+	cloudDelivery: false,
 	concurrency: 'auto',
 }
 
@@ -333,6 +334,8 @@ export async function renderOnServer(args: {
 	fileName: string
 	accessKey?: string
 	overrides?: { width: number; height: number; fps: number; durationInFrames: number }
+	/** leave the finished file in the cloud library instead of streaming it back */
+	deliver?: 'stream' | 'cloud'
 	onProgress: (progress: RenderProgress) => void
 	signal: AbortSignal
 }): Promise<RenderOutput> {
@@ -354,6 +357,7 @@ export async function renderOnServer(args: {
 			settings: args.settings,
 			overrides: args.overrides,
 			fileName: args.fileName,
+			deliver: args.deliver ?? 'stream',
 		} satisfies ServerRenderRequest),
 	})
 

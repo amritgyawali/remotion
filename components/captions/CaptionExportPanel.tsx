@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import { useDeviceProfile } from '../../lib/device'
 import { formatBytes, formatSeconds } from '../../lib/format'
 import { computeBitrate, evenDimension, FORMAT_INFO, QUALITY_PRESETS, SCALE_OPTIONS } from '../../lib/presets'
@@ -45,6 +46,7 @@ export default function CaptionExportPanel({
 	onDownloadVtt,
 	onDownloadSource,
 	onSendToSilence,
+	children,
 }: {
 	render: RenderController
 	composition: CompiledComposition | null
@@ -56,6 +58,8 @@ export default function CaptionExportPanel({
 	onDownloadVtt: () => void
 	onDownloadSource: () => void
 	onSendToSilence: () => void
+	/** the cloud panels, which the studio owns because they need its files */
+	children?: ReactNode
 }) {
 	const { settings, capabilities, progress, output, rendering } = render
 	const device = useDeviceProfile()
@@ -451,6 +455,8 @@ export default function CaptionExportPanel({
 					The .tsx file is the exact composition this preview renders - open it in Remotion Studio,
 					or upload it to the code studio to keep editing.
 				</p>
+
+				{children}
 			</div>
 		</div>
 	)

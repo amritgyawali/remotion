@@ -23,6 +23,7 @@
 import { shotFade, type ObjectMotion, type ObjectShot } from './object-plan'
 import { placeObject, type HeadAnchor, type ObjectSizeMode, type SafeArea } from './object-anchor'
 import type { ObjectPlacementRequest } from './object-compositor'
+import { memoryBudget } from '../media/memory-budget'
 
 type Ctx2D = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D
 
@@ -39,8 +40,17 @@ export type ObjectSprite = {
 	dispose(): void
 }
 
-/** Beyond this the sprite is scaled up rather than rendered bigger. */
-const MAX_SPRITE_PIXELS = 2_048
+/**
+ * Beyond this the sprite is scaled up rather than rendered bigger.
+ *
+ * The ceiling comes from the machine rather than from a constant: at 2,048 a
+ * single sprite is a sixteen megabyte canvas, which is a rounding error on a
+ * developer's laptop and a meaningful share of what a small machine has left
+ * once a decoder and an encoder are both running. Scaling a 1,024-pixel raster
+ * up to fill a 1080p frame is a softness nobody has ever noticed behind a
+ * speaker's head; running out of memory half way through a bake is not.
+ */
+const maxSpritePixels = (): number => memoryBudget().maxSpritePixels
 
 /** Extra resolution so `pulse` and `pop` can grow the sprite without softening it. */
 const MOTION_HEADROOM = 1.2
@@ -90,7 +100,7 @@ export type LoadSpriteArgs = {
  */
 export async function loadObjectSprite(shot: ObjectShot, args: LoadSpriteArgs): Promise<ObjectSprite> {
 	const target = Math.min(
-		MAX_SPRITE_PIXELS,
+		maxSpritePixels(),
 		Math.max(64, Math.round(args.frameHeight * shot.scale * MOTION_HEADROOM)),
 	)
 

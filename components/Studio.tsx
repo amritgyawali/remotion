@@ -21,6 +21,8 @@ import {
 import { useAutosave, useRestoredSnapshot } from '../lib/persist/use-vault'
 import { RestoreNotice } from './SaveState'
 import RenderPanel from './RenderPanel'
+import CloudProjectsPanel from './cloud/CloudProjectsPanel'
+import { useCloud } from '../lib/cloud/use-cloud'
 import SourcePanel from './SourcePanel'
 import StagePanel from './StagePanel'
 import TopBar from './TopBar'
@@ -113,6 +115,8 @@ export default function Studio() {
 			mobileTab,
 		}
 	}, [aiMessages, aiPrompt, mobileTab, project, render.settings, restoring, selectedId])
+
+	const cloud = useCloud()
 
 	const vault = useAutosave<StudioSession>({
 		key: STUDIO_SESSION_KEY,
@@ -486,7 +490,33 @@ export default function Studio() {
 						accessKey={render.accessKey}
 						onAccessKey={render.setAccessKey}
 						log={render.log}
-					/>
+					>
+						<CloudProjectsPanel
+							studio="video"
+							cloud={cloud}
+							snapshot={() =>
+								session
+									? {
+											name: project?.name ?? 'Video workspace',
+											version: STUDIO_SESSION_VERSION,
+											data: session,
+										}
+									: null
+							}
+							onOpen={(data) => {
+								const opened = normalizeStudioSession(data, { render: INITIAL_SETTINGS })
+								if (!opened) return
+								// The whole project - files and all - is inside the snapshot
+								// here, so unlike the media studios this really does come
+								// back complete.
+								if (opened.project) setProject(opened.project)
+								setSelectedId(opened.selectedId)
+								setAiMessages(opened.messages)
+								setAiPrompt(opened.prompt)
+								render.updateSettings(opened.render)
+							}}
+						/>
+					</RenderPanel>
 				</div>
 					<nav className="mobile-tabs" aria-label="Studio sections">
 						{MOBILE_TABS.map((tab) => {

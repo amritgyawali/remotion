@@ -32,6 +32,9 @@ import {
 import { readBlob, removeBlob, requestPersistentStorage, writeBlob } from '../lib/persist/idb'
 import { useAutosave, useRestoredSnapshot } from '../lib/persist/use-vault'
 import { sendToStudio, useIncomingHandoff } from '../lib/handoff'
+import { useCloud } from '../lib/cloud/use-cloud'
+import { runToolInCloud, toolRunsInCloud } from '../lib/cloud/run-tool'
+import CloudProjectsPanel from './cloud/CloudProjectsPanel'
 import ToolsTopBar from './tools/ToolsTopBar'
 import ToolsSourcePanel from './tools/ToolsSourcePanel'
 import ToolsOutputPanel from './tools/ToolsOutputPanel'
@@ -74,6 +77,9 @@ export default function ToolsStudio() {
 	const [restoreWarning, setRestoreWarning] = useState<string | null>(null)
 	const [restoredAt, setRestoredAt] = useState<number | null>(null)
 
+	const cloud = useCloud()
+	const [cloudNote, setCloudNote] = useState<string | null>(null)
+
 	const runAbortRef = useRef<AbortController | null>(null)
 
 	useEffect(() => {
@@ -86,6 +92,16 @@ export default function ToolsStudio() {
 		if (!selectedTool) return {}
 		return withResolvedDefaults(selectedTool, paramsByTool[selectedTool.id] ?? {}, video)
 	}, [paramsByTool, selectedTool, video])
+
+	/**
+	 * Whether the selected tool, with these exact settings, has something the
+	 * cloud can do. It is params-sensitive on purpose: "Crop" with every slider
+	 * at zero is a no-op, and offering to upload a gigabyte for it would be a lie.
+	 */
+	const cloudTool = useMemo(
+		() => (selectedTool ? toolRunsInCloud(selectedTool.id, currentParams, output) : false),
+		[currentParams, output, selectedTool],
+	)
 
 	/* ------------------------------------------------------------- video */
 
@@ -201,6 +217,37 @@ export default function ToolsStudio() {
 			// rather than carry a stand-in for a clip that was never loaded.
 			let batchProbe: CaptionVideoSource | null = null
 			try {
+				/**
+				 * The cloud path, when this visitor asked for it and this tool has a
+				 * cloud equivalent. Everything else - batch queues, and the tools whose
+				 * work is per-pixel - stays on the device, and the button copy says so
+				 * rather than failing here.
+				 */
+				if (cloud.location === 'cloud' && !isBatch && video?.file && cloudTool) {
+					const cloudResult = await runToolInCloud({
+						toolId: selectedTool.id,
+						file: video.file,
+						params: currentParams,
+						output,
+						secondaryFile,
+						signal: controller.signal,
+						onProgress: ({ phase, ratio }) => setProgress({ phase, ratio }),
+					})
+					if (controller.signal.aborted) return
+					setOutputs([
+						{
+							blob: cloudResult.blob,
+							url: cloudResult.url,
+							name: cloudResult.name,
+							sizeInBytes: cloudResult.sizeInBytes,
+							kind: cloudResult.kind,
+							meta: cloudResult.meta,
+						},
+					])
+					setShowResult(true)
+					return
+				}
+
 				if (isBatch) batchProbe = await probeVideo({ file: batchFiles[0] })
 				if (controller.signal.aborted) return
 				const primary = isBatch ? batchFiles[0] : (video?.file as File)
@@ -230,7 +277,7 @@ export default function ToolsStudio() {
 				}
 			}
 		})()
-	}, [batchFiles, currentParams, output, secondaryFile, selectedTool, video])
+	}, [batchFiles, cloud.location, cloudTool, currentParams, output, secondaryFile, selectedTool, video])
 
 	const handleCancelRun = useCallback(() => {
 		runAbortRef.current?.abort()
@@ -395,6 +442,7 @@ export default function ToolsStudio() {
 		<div className="app">
 			<ToolsTopBar
 				webCodecs={webCodecs}
+				cloud={cloud}
 				save={{ status: vault.status, savedAt: vault.savedAt, error: vault.error }}
 				onReset={handleReset}
 				canReset={video !== null || selectedToolId !== null}
@@ -512,7 +560,35 @@ export default function ToolsStudio() {
 					onCancel={handleCancelRun}
 					onDownload={handleDownload}
 					onSendTo={handleSendTo}
-				/>
+					cloud={cloud}
+					cloudTool={cloudTool}
+					cloudNote={cloudNote}
+				>
+					<CloudProjectsPanel
+						studio="tools"
+						cloud={cloud}
+						snapshot={() =>
+							snapshot ? { name: video?.name ?? 'Tools workspace', version: TOOLS_SESSION_VERSION, data: snapshot } : null
+						}
+						onOpen={async (data) => {
+							const session = normalizeToolsSession(data)
+							if (!session) return
+							setSelectedToolId(session.selectedToolId)
+							setParamsByTool(session.paramsByTool)
+							setOutput(session.output)
+							setCategory((session.activeCategory as ToolCategory) ?? null)
+							setQuery(session.query)
+							// The clip itself lives in the cloud library, not in the
+							// snapshot, so a restored workspace names it rather than
+							// carrying it - the person re-picks or re-uploads the file.
+							setCloudNote(
+								session.video
+									? `Settings restored. Load "${session.video.name}" again to run them.`
+									: 'Settings restored.',
+							)
+						}}
+					/>
+				</ToolsOutputPanel>
 			</div>
 
 			<nav className="mobile-tabs" aria-label="Tools studio sections">

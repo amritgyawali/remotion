@@ -68,6 +68,12 @@ export type ServerRenderRequest = {
 	settings: RenderSettings
 	fileName: string
 	overrides?: RenderOverrides
+	/**
+	 * Where the finished file should be left. `cloud` uploads it to Cloudinary
+	 * and returns a permanent URL, so a long render never has to be streamed
+	 * back through the browser's memory; anything else keeps the old behaviour.
+	 */
+	deliver?: 'stream' | 'cloud'
 }
 
 export type ServerRenderDone = {
@@ -137,5 +143,7 @@ export type ServerCapabilities = {
 	maxPixels: number
 	maxDurationSeconds: number
 	blobDelivery: boolean
+	/** the finished file can be left in the Cloudinary library instead of streamed back */
+	cloudDelivery: boolean
 	concurrency: string
 }

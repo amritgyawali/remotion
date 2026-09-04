@@ -131,6 +131,9 @@ import CaptionSoundPanel from './captions/CaptionSoundPanel'
 import CaptionToolsPanel, { type ToolsActions } from './captions/CaptionToolsPanel'
 import CaptionSourcePanel, { type TranscriptMode } from './captions/CaptionSourcePanel'
 import CaptionTopBar from './captions/CaptionTopBar'
+import CloudCaptionBurn from './cloud/CloudCaptionBurn'
+import CloudProjectsPanel from './cloud/CloudProjectsPanel'
+import { useCloud } from '../lib/cloud/use-cloud'
 import CueTrack from './captions/CueTrack'
 import ShortcutSheet from './captions/ShortcutSheet'
 import { RestoreNotice } from './SaveState'
@@ -432,6 +435,9 @@ export default function CaptionStudio() {
 	const [restoredAt, setRestoredAt] = useState<number | null>(null)
 	const [restoreSummary, setRestoreSummary] = useState<string | null>(null)
 	const [restoreWarning, setRestoreWarning] = useState<string | null>(null)
+	const cloud = useCloud()
+	/** what opening a cloud workspace changed, said once next to the panel */
+	const [cloudOpened, setCloudOpened] = useState<string | null>(null)
 	/** false when only the settings could be kept - the clip must be re-picked */
 	const [videoBanked, setVideoBanked] = useState(false)
 	const [videoBlobId, setVideoBlobId] = useState<string | null>(null)
@@ -624,6 +630,42 @@ export default function CaptionStudio() {
 		whisperLanguage,
 		whisperModel,
 	])
+
+	/**
+	 * Opens a workspace saved in the cloud.
+	 *
+	 * Only the decisions come back - captions, timing, look, sound, objects.
+	 * The clip deliberately does not: a snapshot points at a blob in *this*
+	 * browser's storage, and a workspace opened on another machine would be
+	 * pointing at nothing. Naming the file it wants is more use than silently
+	 * restoring an empty player.
+	 */
+	const openCloudSession = useCallback(
+		(raw: unknown) => {
+			const opened = normalizeCaptionSession(raw, { render: INITIAL_SETTINGS })
+			if (!opened) return
+
+			setFps(opened.fps)
+			cuesRef.current = opened.cues
+			setCues(opened.cues)
+			setOrigin(opened.origin)
+			setStyle(opened.style)
+			setSound(opened.sound)
+			setLayout(opened.layout)
+			setHandEdited(opened.handEdited)
+			setMode(opened.mode)
+			setTranscriptText(opened.transcriptText)
+			setObjectPlan(opened.objects)
+			setTab(opened.tab)
+			updateRenderSettings(settingsForDevice(opened.render))
+			setCloudOpened(
+				opened.video
+					? `Workspace open. Load "${opened.video.name}" again to render it.`
+					: 'Workspace open.',
+			)
+		},
+		[updateRenderSettings],
+	)
 
 	const vault = useAutosave<CaptionSession>({
 		key: CAPTION_SESSION_KEY,
@@ -2798,7 +2840,30 @@ export default function CaptionStudio() {
 								onDownloadVtt={handleDownloadVtt}
 								onSendToSilence={handleSendToSilence}
 								onDownloadSource={handleDownloadSource}
-							/>
+							>
+								<CloudCaptionBurn
+									cloud={cloud}
+									file={video?.file ?? null}
+									srt={() => cuesToSrt(cues)}
+									cueCount={cues.length}
+									format={render.settings.format === 'webm' ? 'webm' : 'mp4'}
+								/>
+								<CloudProjectsPanel
+									studio="captions"
+									cloud={cloud}
+									snapshot={() =>
+										session
+											? {
+													name: video?.name ?? 'Caption workspace',
+													version: CAPTION_SESSION_VERSION,
+													data: session,
+												}
+											: null
+									}
+									onOpen={openCloudSession}
+									note={cloudOpened}
+								/>
+							</CaptionExportPanel>
 						)}
 					</div>
 				</aside>
