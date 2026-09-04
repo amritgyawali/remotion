@@ -42,14 +42,19 @@ export class Player {
 	private audioCtx: AudioContext | null = null
 	private pumps = new Map<string, AudioPump>()
 	private muted = false
+	private readonly previewScale: number
+	/** One decoder/compositor pass at a time; newer frames replace queued stale work. */
+	private renderInFlight: Promise<void> | null = null
+	private renderQueued = false
 	/** Which assets the *current* frame could not resolve - cleared, not just added to, every render. */
 	private offlineAssetIds = new Set<string>()
 
-	constructor(canvas: OffscreenCanvas | HTMLCanvasElement, doc: ProjectDoc, pool: AssetSinkPool, resolveBlob: BlobResolver) {
+	constructor(canvas: OffscreenCanvas | HTMLCanvasElement, doc: ProjectDoc, pool: AssetSinkPool, resolveBlob: BlobResolver, previewScale = 1) {
 		this.canvas = canvas
 		this.doc = doc
 		this.pool = pool
 		this.resolveBlob = resolveBlob
+		this.previewScale = previewScale
 	}
 
 	subscribe(listener: PlayerListener): () => void {
@@ -139,16 +144,34 @@ export class Player {
 		this.rafHandle = requestAnimationFrame(this.loop)
 	}
 
-	private async renderCurrent(): Promise<void> {
-		const token = ++this.renderToken
-		const result = await renderFrame(this.doc, this.pool, this.resolveBlob, this.frame, this.canvas)
-		// A slower-than-a-frame render must not clobber a newer one that already
-		// landed - dropping the stale result is the backpressure policy here.
-		if (token !== this.renderToken) return
-		// Replaced, not merged: a reconnect that makes every asset resolvable
-		// again must be able to clear this back to empty, not just grow it.
-		this.offlineAssetIds = result.offlineAssetIds
-		this.emit()
+	private renderCurrent(): Promise<void> {
+		this.renderToken++
+		this.renderQueued = true
+		if (!this.renderInFlight) {
+			this.renderInFlight = this.drainRenderQueue().finally(() => {
+				this.renderInFlight = null
+			})
+		}
+		return this.renderInFlight
+	}
+
+	private async drainRenderQueue(): Promise<void> {
+		while (this.renderQueued) {
+			this.renderQueued = false
+			const token = this.renderToken
+			const frame = this.frame
+			const result = await renderFrame(this.doc, this.pool, this.resolveBlob, frame, this.canvas, {
+				previewScale: this.previewScale,
+			})
+			// A seek or playback tick arrived while decoding. Skip the obsolete result
+			// and loop once for the newest frame instead of starting parallel decoders.
+			if (token !== this.renderToken || frame !== this.frame) {
+				this.renderQueued = true
+				continue
+			}
+			this.offlineAssetIds = result.offlineAssetIds
+			this.emit()
+		}
 	}
 
 	private ensureAudioContext(): AudioContext | null {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useDeferredValue, useMemo } from 'react'
 import { CATEGORIES, TOOLS, type ToolCategory, type ToolDef } from '../../lib/tools/registry'
 import { IconSearch } from '../Icons'
 
@@ -17,8 +17,9 @@ export default function ToolCatalog({
 	onCategory: (value: ToolCategory | null) => void
 	onSelect: (id: string) => void
 }) {
+	const deferredQuery = useDeferredValue(query)
 	const filtered = useMemo(() => {
-		const needle = query.trim().toLowerCase()
+		const needle = deferredQuery.trim().toLowerCase()
 		return TOOLS.filter((tool) => {
 			if (category && tool.category !== category) return false
 			if (!needle) return true
@@ -28,7 +29,7 @@ export default function ToolCatalog({
 				tool.id.includes(needle)
 			)
 		})
-	}, [category, query])
+	}, [category, deferredQuery])
 
 	return (
 		<div className="tool-catalog">

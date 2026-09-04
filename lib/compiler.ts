@@ -56,6 +56,40 @@ type RawComposition = {
 
 const DEFAULTS = { width: 1080, height: 1920, fps: 30, durationInFrames: 300 }
 
+/**
+ * Editing one file used to re-run Sucrase over every unchanged project file.
+ * Keep a small process-local LRU of compiled modules: it contains code only,
+ * never media, and turns repeated timeline/style edits into one-file compiles.
+ */
+const TRANSPILE_CACHE_LIMIT = 64
+const transpileCache = new Map<string, string>()
+
+function cachedTranspile(
+	path: string,
+	source: string,
+	transform: typeof import('sucrase')['transform'],
+): string {
+	const key = `${path}\u0000${source}`
+	const cached = transpileCache.get(key)
+	if (cached !== undefined) {
+		transpileCache.delete(key)
+		transpileCache.set(key, cached)
+		return cached
+	}
+	const compiled = transform(source, {
+		transforms: ['typescript', 'jsx', 'imports'],
+		jsxRuntime: 'automatic',
+		production: true,
+		filePath: path,
+	}).code
+	transpileCache.set(key, compiled)
+	if (transpileCache.size > TRANSPILE_CACHE_LIMIT) {
+		const oldest = transpileCache.keys().next().value
+		if (oldest !== undefined) transpileCache.delete(oldest)
+	}
+	return compiled
+}
+
 function isComponentLike(value: unknown): boolean {
 	if (typeof value === 'function') return true
 	if (typeof value === 'object' && value !== null && '$$typeof' in value) return true
@@ -276,12 +310,7 @@ export async function compileProject(project: VirtualProject): Promise<CompileRe
 
 		let compiled: string
 		try {
-			compiled = transform(source, {
-				transforms: ['typescript', 'jsx', 'imports'],
-				jsxRuntime: 'automatic',
-				production: true,
-				filePath: path,
-			}).code
+			compiled = cachedTranspile(path, source, transform)
 		} catch (error) {
 			throw new CompileError(
 				`Syntax error in ${path}\n${error instanceof Error ? error.message : String(error)}`,

@@ -41,14 +41,15 @@ import ToolsTopBar from './tools/ToolsTopBar'
 import ToolsSourcePanel from './tools/ToolsSourcePanel'
 import ToolsOutputPanel from './tools/ToolsOutputPanel'
 import { RestoreNotice } from './SaveState'
-import { IconClose, IconDownload, IconFilm, IconTools } from './Icons'
+import WorkflowSteps from './WorkflowSteps'
+import { IconClose, IconFilm, IconTools } from './Icons'
 
 type Pane = 'source' | 'preview' | 'export'
 
-const TOOLS_PANES: Array<{ id: Pane; label: string; icon: typeof IconTools }> = [
-	{ id: 'source', label: 'Tools', icon: IconTools },
-	{ id: 'preview', label: 'Preview', icon: IconFilm },
-	{ id: 'export', label: 'Output', icon: IconDownload },
+const TOOLS_PANES: Array<{ id: Pane; label: string; hint: string }> = [
+	{ id: 'source', label: 'Tools', hint: 'Choose an edit and settings' },
+	{ id: 'preview', label: 'Preview', hint: 'Compare before and after' },
+	{ id: 'export', label: 'Output', hint: 'Download or continue editing' },
 ]
 
 export default function ToolsStudio() {
@@ -636,17 +637,15 @@ export default function ToolsStudio() {
 				</ToolsOutputPanel>
 			</div>
 
-			<nav className="mobile-tabs" aria-label="Tools studio sections">
-				{TOOLS_PANES.map((item) => {
-					const Icon = item.icon
-					return (
-						<button key={item.id} className="mobile-tab" data-active={pane === item.id} aria-current={pane === item.id} onClick={() => setPane(item.id)}>
-							<Icon size={17} />
-							{item.label}
-						</button>
-					)
-				})}
-			</nav>
+			<WorkflowSteps<Pane>
+				label="Tools studio workflow"
+				active={pane}
+				onStep={setPane}
+				steps={TOOLS_PANES.map((item) => ({
+					...item,
+					done: item.id === 'source' ? video !== null && selectedTool !== null : item.id === 'preview' ? Boolean(previewUrl || outputs[0]?.url) : outputs.length > 0,
+				}))}
+			/>
 		</div>
 	)
 }

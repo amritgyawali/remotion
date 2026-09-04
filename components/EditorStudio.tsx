@@ -39,7 +39,7 @@ import { renderEditorExport, ExportCancelled, type ExportProgress, type ExportRe
 import { EDITOR_SCHEMA_VERSION, clipEndFrame, type Asset, type ChromaKeySpec, type Clip, type CropRect, type ProjectDoc, type TextStyle, type Track, type TrackKind, type UiState } from '../lib/editor/types'
 import type { HistoryEntry } from '../lib/editor/commands'
 import { formatSeconds } from '../lib/format'
-import { isTauriNative } from '../lib/device'
+import { isTauriNative, useDeviceProfile } from '../lib/device'
 import { useCloud } from '../lib/cloud/use-cloud'
 import { ensureUploaded } from '../lib/cloud/run-tool'
 import { useCloudProjectAutosave } from '../lib/cloud/use-project-autosave'
@@ -47,8 +47,10 @@ import { editorCloudProject } from '../lib/editor/cloud-project'
 import { DEFAULT_CAPABILITIES, fetchServerCapabilities, renderOnServer } from '../lib/server-render-client'
 import type { ServerCapabilities } from '../lib/types'
 import CloudProjectsPanel from './cloud/CloudProjectsPanel'
+import WorkflowSteps from './WorkflowSteps'
 
 const SESSION_KEY = 'editor-studio'
+type EditorPane = 'media' | 'edit' | 'adjust'
 
 type EditorSnapshot = { doc: ProjectDoc; undo: HistoryEntry[]; redo: HistoryEntry[]; ui: UiState }
 
@@ -76,6 +78,8 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 	const [exportError, setExportError] = useState<string | null>(null)
 	const [renderCapabilities, setRenderCapabilities] = useState<ServerCapabilities>(DEFAULT_CAPABILITIES)
 	const [renderAccessKey, setRenderAccessKey] = useState('')
+	const [editorPane, setEditorPane] = useState<EditorPane>('edit')
+	const device = useDeviceProfile()
 
 	const poolRef = useRef<AssetSinkPool>(new AssetSinkPool())
 	const blobsRef = useRef<Map<string, Blob>>(new Map())
@@ -179,7 +183,7 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 
 	useEffect(() => {
 		if (!hydrated || !canvasRef.current) return
-		const player = new Player(canvasRef.current, engine.getDoc(), poolRef.current, resolveBlob)
+		const player = new Player(canvasRef.current, engine.getDoc(), poolRef.current, resolveBlob, device.previewScale)
 		playerRef.current = player
 		const unsubscribe = player.subscribe((next) => {
 			setUi((prev) => (prev.playheadFrame === next.frame ? prev : { ...prev, playheadFrame: next.frame }))
@@ -193,7 +197,7 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 			playerRef.current = null
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [hydrated])
+	}, [hydrated, device.previewScale])
 
 	useEffect(() => {
 		playerRef.current?.setDoc(doc)
@@ -703,8 +707,19 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 				</div>
 			) : null}
 
-			<div className="editor-workspace">
-				<aside className="editor-rail editor-rail--left">
+			<WorkflowSteps<EditorPane>
+				label="Editor workflow"
+				active={editorPane}
+				onStep={setEditorPane}
+				steps={[
+					{ id: 'media', label: 'Media', hint: 'Import clips', done: Object.keys(doc.assets).length > 0 },
+					{ id: 'edit', label: 'Timeline', hint: 'Cut and arrange', done: Object.keys(doc.clips).length > 0 },
+					{ id: 'adjust', label: 'Adjust', hint: 'Polish and export', done: exportResult !== null },
+				]}
+			/>
+
+			<div className="editor-workspace" data-tab={editorPane}>
+				<aside className="editor-rail editor-rail--left editor-pane--media">
 					<MediaPool
 						assets={Object.values(doc.assets)}
 						thumbUrls={thumbUrls}
@@ -722,7 +737,7 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 					</button>
 				</aside>
 
-				<div className="editor-center">
+				<div className="editor-center editor-pane--edit">
 					<PreviewStage
 						ref={canvasRef}
 						doc={doc}
@@ -742,7 +757,7 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 					<Timeline ref={timelineRef} doc={doc} ui={ui} fps={doc.settings.fps} handlers={timelineHandlers} dropPreview={dropPreview} />
 				</div>
 
-				<aside className="editor-rail editor-rail--right">
+				<aside className="editor-rail editor-rail--right editor-pane--adjust">
 					<Inspector
 						selectedClip={selectedClip}
 						selectionCount={ui.selection.length}

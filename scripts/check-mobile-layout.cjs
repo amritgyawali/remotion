@@ -70,6 +70,7 @@ const DEVICES = [
 	{ name: 'Phone landscape', width: 667, height: 375 },
 	{ name: 'Tablet portrait', width: 768, height: 1024 },
 	{ name: 'Tablet wide', width: 960, height: 1200 },
+	{ name: 'Desktop', width: 1440, height: 900 },
 ]
 
 /**
@@ -89,7 +90,7 @@ const ROUTES = [
 	{ path: '/captions', name: 'Subtitle Studio', panes: ['Source', 'Preview', 'Design'] },
 	{ path: '/silence', name: 'Silence Studio', panes: ['Source', 'Preview', 'Export'] },
 	{ path: '/tools', name: 'Tools Studio', panes: ['Tools', 'Preview', 'Output'] },
-	{ path: '/editor', name: 'Editor Studio', regions: ['.editor-center', '.editor-rail--left', '.editor-rail--right'] },
+	{ path: '/editor', name: 'Editor Studio', panes: ['Media', 'Timeline', 'Adjust'] },
 	{ path: '/resume', name: 'Resume Studio', regions: ['.resume-preview-stage', '.resume-controls'] },
 ]
 
@@ -144,7 +145,7 @@ const clickTab = (index) => {
 const measurePanes = () => {
 	const viewportHeight = window.innerHeight
 	const viewportWidth = window.innerWidth
-	const boxes = Array.from(document.querySelectorAll('.workspace > .panel, .workspace > section, .workspace > aside'))
+	const boxes = Array.from(document.querySelectorAll('.workspace > .panel, .workspace > section, .workspace > aside, .editor-workspace > .editor-rail, .editor-workspace > .editor-center'))
 		.map((node) => {
 			const rect = node.getBoundingClientRect()
 			const style = getComputedStyle(node)
@@ -374,7 +375,7 @@ async function startDevServer() {
 	const root = path.resolve(__dirname, '..')
 	const child = spawn(
 		process.platform === 'win32' ? 'npx.cmd' : 'npx',
-		['next', 'dev', '--webpack', '-p', String(PORT)],
+		['next', 'dev', '--webpack', '-H', '127.0.0.1', '-p', String(PORT)],
 		{ cwd: root, stdio: 'ignore', shell: process.platform === 'win32' },
 	)
 	const base = `http://localhost:${PORT}`

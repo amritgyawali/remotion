@@ -80,6 +80,7 @@ import type { SegmentationModelId } from './segmentation'
 import { mergeClips, mergeFileName } from './merge'
 import { detectSceneCuts } from './scene-detect'
 import { buildZip, type ZipEntry } from './zip-writer'
+import { deviceProfile } from '../device'
 
 export type OutputSettings = { format: VideoFilterFormat; quality: VideoFilterQuality }
 
@@ -564,29 +565,49 @@ export async function runTool(tool: ToolDef, ctx: RunContext): Promise<RunResult
 			const dot = name.lastIndexOf('.')
 			return dot > 0 ? `${name.slice(0, dot)} (${seen + 1})${name.slice(dot)}` : `${name} (${seen + 1})`
 		}
-		for (let i = 0; i < ctx.batchFiles.length; i++) {
-			const file = ctx.batchFiles[i]
-			ctx.onProgress({ phase: `file ${i + 1} of ${ctx.batchFiles.length}`, ratio: i / ctx.batchFiles.length })
-			// Probing mints an object URL per file. Without the release a long batch
-			// would pin every input in memory until the tab navigated away.
-			const probe = await probeFile(file)
-			try {
-				const sub = await runTool(subTool, {
-					file,
-					probe,
-					params: {},
-					secondaryFile: null,
-					batchFiles: [],
-					output: ctx.output,
-					signal: ctx.signal,
-					onProgress: (p) => ctx.onProgress({ phase: `file ${i + 1}/${ctx.batchFiles.length}: ${p.phase}`, ratio: (i + p.ratio) / ctx.batchFiles.length }),
-				})
-				for (const output of sub.outputs) {
-					zipEntries.push({ name: uniqueName(output.name), data: new Uint8Array(await output.blob.arrayBuffer()) })
-					URL.revokeObjectURL(output.url)
+		const progressByFile = new Array(ctx.batchFiles.length).fill(0) as number[]
+		const results = new Array<RunOutput[]>(ctx.batchFiles.length)
+		let cursor = 0
+		const concurrency = Math.min(ctx.batchFiles.length, deviceProfile().batchConcurrency)
+		const report = (index: number, phase: string, ratio: number) => {
+			progressByFile[index] = Math.min(1, Math.max(0, ratio))
+			const overall = progressByFile.reduce((sum, value) => sum + value, 0) / progressByFile.length
+			ctx.onProgress({ phase: `file ${index + 1}/${ctx.batchFiles.length}: ${phase}`, ratio: overall })
+		}
+		const worker = async () => {
+			for (;;) {
+				const i = cursor++
+				if (i >= ctx.batchFiles.length) return
+				const file = ctx.batchFiles[i]
+				report(i, 'opening', 0.01)
+				// Probing mints an object URL per file. Without the release a long batch
+				// would pin every input in memory until the tab navigated away.
+				const probe = await probeFile(file)
+				try {
+					const sub = await runTool(subTool, {
+						file,
+						probe,
+						params: {},
+						secondaryFile: null,
+						batchFiles: [],
+						output: ctx.output,
+						signal: ctx.signal,
+						onProgress: (progress) => report(i, progress.phase, progress.ratio),
+					})
+					results[i] = sub.outputs
+					report(i, 'done', 1)
+				} finally {
+					releaseVideoSource(probe)
 				}
-			} finally {
-				releaseVideoSource(probe)
+			}
+		}
+		await Promise.all(Array.from({ length: concurrency }, () => worker()))
+		// Preserve the user's queue order even when two desktop encoders finish in
+		// the opposite order; deterministic zip contents make reruns predictable.
+		for (const outputs of results) {
+			for (const output of outputs) {
+				zipEntries.push({ name: uniqueName(output.name), data: new Uint8Array(await output.blob.arrayBuffer()) })
+				URL.revokeObjectURL(output.url)
 			}
 		}
 		const zip = buildZip(zipEntries)

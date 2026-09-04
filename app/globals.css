@@ -8120,3 +8120,312 @@ textarea::placeholder {
 .cloud-burn-body {
 	margin-top: 12px;
 }
+
+/* ========================================================================== *
+ * Unified workflow + high-throughput workspace
+ *
+ * The same ordered control is a compact progress rail on desktop and the
+ * bottom step dock on touch layouts. Side panels get only the width their
+ * controls need; the preview receives the rest of the screen.
+ * ========================================================================== */
+
+.app > .workflow-tabs {
+	order: 1;
+	display: flex;
+	gap: 8px;
+	padding: 7px 18px;
+	border-top: 0;
+	border-bottom: 1px solid var(--border);
+	background: color-mix(in srgb, var(--surface) 82%, transparent);
+	box-shadow: none;
+}
+
+/* CaptionTopBar's legacy status pills are replaced by the clickable guide. */
+.topbar .steps {
+	display: none;
+}
+
+.app > .workspace,
+.app > .editor-workspace {
+	order: 2;
+}
+
+.workflow-tab {
+	position: relative;
+	flex: 1 1 0;
+	min-width: 0;
+	min-height: 46px;
+	flex-direction: row;
+	justify-content: flex-start;
+	gap: 10px;
+	padding: 6px 10px;
+	border: 1px solid transparent;
+	text-align: left;
+}
+
+.workflow-tab + .workflow-tab::before {
+	content: '';
+	position: absolute;
+	left: -9px;
+	top: 50%;
+	width: 8px;
+	height: 1px;
+	background: var(--border-strong);
+}
+
+.workflow-tab[data-active='true'] {
+	border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+	box-shadow: inset 0 1px 0 color-mix(in srgb, white 7%, transparent);
+}
+
+.workflow-step-marker {
+	display: grid;
+	place-items: center;
+	width: 25px;
+	height: 25px;
+	flex: none;
+	border-radius: 50%;
+	border: 1px solid var(--border-strong);
+	background: var(--surface-2);
+	color: var(--text-tertiary);
+	font-size: 11px;
+	font-weight: 680;
+}
+
+.workflow-step-marker:empty::before {
+	content: attr(data-step);
+}
+
+.workflow-tab[data-done='true'] .workflow-step-marker {
+	border-color: color-mix(in srgb, var(--green) 46%, var(--border));
+	background: var(--green-soft);
+	color: var(--green);
+}
+
+.workflow-tab[data-active='true'] .workflow-step-marker {
+	border-color: var(--accent);
+	background: var(--accent-soft);
+	color: var(--accent-hover);
+}
+
+.workflow-step-copy {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	line-height: 1.25;
+}
+
+.workflow-step-copy strong {
+	overflow: hidden;
+	color: var(--text-secondary);
+	font-size: 12px;
+	font-weight: 630;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.workflow-step-copy::after {
+	content: attr(data-hint);
+	overflow: hidden;
+	color: var(--text-tertiary);
+	font-size: 10.5px;
+	font-weight: 450;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.workflow-tab[data-active='true'] .workflow-step-copy strong {
+	color: var(--text);
+}
+
+/* Wider picture, narrower controls. Editing remains beside the preview on
+   every desktop-sized viewport instead of consuming the row beneath it. */
+.workspace {
+	grid-template-columns: clamp(268px, 18vw, 310px) minmax(0, 1.5fr) clamp(286px, 19vw, 326px);
+}
+
+.workspace--captions {
+	grid-template-columns: clamp(284px, 19vw, 320px) minmax(0, 1.6fr) clamp(300px, 20vw, 338px);
+}
+
+.workspace--silence {
+	grid-template-columns: clamp(276px, 18.5vw, 312px) minmax(0, 1.55fr) clamp(286px, 19vw, 320px);
+}
+
+.stage {
+	padding: clamp(12px, 1.45vw, 22px);
+}
+
+.stage-frame {
+	max-width: 100%;
+	max-height: 100%;
+}
+
+.editor-workspace {
+	grid-template-columns: clamp(220px, 16vw, 244px) minmax(0, 1fr) clamp(268px, 19vw, 304px);
+}
+
+.editor-timeline {
+	height: 220px;
+	min-height: 220px;
+}
+
+.editor-stage-canvas-wrap {
+	padding: clamp(10px, 1.2vw, 18px);
+}
+
+/* Long editing lists only lay out rows near the viewport. This is especially
+   noticeable with hundreds of captions or a full media bin. */
+.tool-card,
+.cue-row,
+.editor-media-item,
+.cloud-project-row {
+	content-visibility: auto;
+	contain-intrinsic-size: auto 58px;
+}
+
+@media (min-width: 1600px) {
+	.workspace {
+		grid-template-columns: 300px minmax(0, 1.7fr) 318px;
+	}
+
+	.workspace--captions {
+		grid-template-columns: 310px minmax(0, 1.75fr) 330px;
+	}
+
+	.editor-workspace {
+		grid-template-columns: 238px minmax(0, 1fr) 292px;
+	}
+}
+
+@media (max-width: 1000px) {
+	.app > .workflow-tabs {
+		order: 3;
+		gap: 4px;
+		padding: 7px 8px calc(7px + env(safe-area-inset-bottom));
+		border-top: 1px solid var(--border);
+		border-bottom: 0;
+		box-shadow: 0 -14px 30px -24px rgba(0, 0, 0, 0.9);
+	}
+
+	.workflow-tab {
+		justify-content: center;
+		min-height: 50px;
+		padding: 5px 4px;
+	}
+
+	.workflow-tab + .workflow-tab::before,
+	.workflow-step-copy::after {
+		display: none;
+	}
+
+	.workflow-step-marker {
+		width: 23px;
+		height: 23px;
+	}
+
+	.workflow-step-copy strong {
+		font-size: 11px;
+	}
+
+	/* Caption editing now uses the same one-screen shell as the other media
+	   studios; each long form scrolls inside its own pane. */
+	.app:has(.workspace--captions) {
+		height: 100vh;
+		height: 100dvh;
+		overflow: hidden;
+	}
+
+	.workspace--captions .panel-scroll {
+		overflow-y: auto;
+	}
+
+	.workspace--captions .stage {
+		min-height: 0;
+	}
+}
+
+@media (max-width: 1000px) {
+	.editor-workspace[data-tab] {
+		display: flex;
+		flex: 1;
+		overflow: hidden;
+	}
+
+	.editor-workspace[data-tab] > .editor-pane--media,
+	.editor-workspace[data-tab] > .editor-pane--edit,
+	.editor-workspace[data-tab] > .editor-pane--adjust {
+		display: none;
+	}
+
+	.editor-workspace[data-tab='media'] > .editor-pane--media,
+	.editor-workspace[data-tab='edit'] > .editor-pane--edit,
+	.editor-workspace[data-tab='adjust'] > .editor-pane--adjust {
+		display: flex;
+	}
+
+	.editor-center {
+		order: 0;
+		flex: 1 1 auto;
+		height: auto;
+		min-height: 0;
+	}
+
+	.editor-rail {
+		flex: 1 1 auto;
+		max-height: none;
+		overflow-y: auto;
+		padding: 16px;
+	}
+
+	.editor-rail--left,
+	.editor-rail--right {
+		border: 0;
+	}
+
+	.editor-stage {
+		flex: 1 1 auto;
+		min-height: 0;
+	}
+
+	.editor-timeline {
+		height: clamp(150px, 25vh, 210px);
+		min-height: 150px;
+	}
+}
+
+@media (max-width: 480px) {
+	.editor-center {
+		height: auto;
+		min-height: 0;
+	}
+
+	.editor-stage-canvas-wrap {
+		padding: 8px;
+	}
+
+	.editor-transport {
+		height: 48px;
+		padding: 0 8px;
+	}
+
+	/* Keep the high-frequency play/frame/mute controls at full touch size. The
+	   timeline itself supplies start/end navigation and pinch zoom. */
+	.editor-transport button:nth-of-type(1),
+	.editor-transport button:nth-of-type(5),
+	.editor-transport button:nth-of-type(7),
+	.editor-transport button:nth-of-type(8) {
+		display: none;
+	}
+
+	.editor-transport .icon-btn {
+		width: 40px;
+		height: 40px;
+	}
+
+	.editor-timecode {
+		margin-left: 2px;
+		padding-inline: 6px;
+		font-size: 11px;
+	}
+}

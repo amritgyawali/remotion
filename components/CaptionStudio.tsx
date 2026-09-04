@@ -140,16 +140,15 @@ import { ensureUploaded } from '../lib/cloud/run-tool'
 import CueTrack from './captions/CueTrack'
 import ShortcutSheet from './captions/ShortcutSheet'
 import { RestoreNotice } from './SaveState'
+import WorkflowSteps from './WorkflowSteps'
 import {
 	IconAlert,
 	IconCaptions,
 	IconClose,
 	IconDownload,
-	IconFilm,
 	IconKeyboard,
 	IconLayers,
 	IconScissors,
-	IconSliders,
 	IconSpinner,
 	IconTools,
 	IconType,
@@ -250,10 +249,10 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 type CaptionPane = 'source' | 'preview' | 'design'
 
-const CAPTION_PANES: Array<{ id: CaptionPane; label: string; icon: typeof IconFilm }> = [
-	{ id: 'source', label: 'Source', icon: IconUpload },
-	{ id: 'preview', label: 'Preview', icon: IconFilm },
-	{ id: 'design', label: 'Design', icon: IconSliders },
+const CAPTION_PANES: Array<{ id: CaptionPane; label: string; hint: string }> = [
+	{ id: 'source', label: 'Source', hint: 'Add video and words' },
+	{ id: 'preview', label: 'Preview', hint: 'Check timing on-screen' },
+	{ id: 'design', label: 'Design', hint: 'Style, sound, and render' },
 ]
 
 /** Number keys, in the order the panel tabs are drawn. */
@@ -2921,23 +2920,15 @@ export default function CaptionStudio() {
 				</aside>
 			</div>
 
-			<nav className="mobile-tabs" aria-label="Subtitle studio sections">
-				{CAPTION_PANES.map((item) => {
-					const Icon = item.icon
-					return (
-						<button
-							key={item.id}
-							className="mobile-tab"
-							data-active={pane === item.id}
-							aria-current={pane === item.id}
-							onClick={() => setPane(item.id)}
-						>
-							<Icon size={17} />
-							{item.label}
-						</button>
-					)
-				})}
-			</nav>
+			<WorkflowSteps<CaptionPane>
+				label="Subtitle studio workflow"
+				active={pane}
+				onStep={setPane}
+				steps={CAPTION_PANES.map((item) => ({
+					...item,
+					done: item.id === 'source' ? video !== null : item.id === 'preview' ? cues.length > 0 && composition !== null : render.output !== null,
+				}))}
+			/>
 
 			{shortcutsOpen ? <ShortcutSheet onClose={closeShortcuts} /> : null}
 		</div>

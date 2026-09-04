@@ -27,13 +27,13 @@ import { useCloudProjectAutosave } from '../lib/cloud/use-project-autosave'
 import SourcePanel from './SourcePanel'
 import StagePanel from './StagePanel'
 import TopBar from './TopBar'
-import { IconFilm, IconSliders, IconSparkle } from './Icons'
 import type { AiChatMessage, AiGenerationRequest, AiGenerationResult } from './AiCreator'
+import WorkflowSteps from './WorkflowSteps'
 
-const MOBILE_TABS: Array<{ id: MobileTab; label: string; icon: typeof IconFilm }> = [
-	{ id: 'create', label: 'Create', icon: IconSparkle },
-	{ id: 'preview', label: 'Preview', icon: IconFilm },
-	{ id: 'export', label: 'Export', icon: IconSliders },
+const MOBILE_TABS: Array<{ id: MobileTab; label: string; hint: string }> = [
+	{ id: 'create', label: 'Create', hint: 'Add code or describe it' },
+	{ id: 'preview', label: 'Preview', hint: 'Review every frame' },
+	{ id: 'export', label: 'Export', hint: 'Choose quality and render' },
 ]
 
 const INITIAL_SETTINGS: RenderSettings = {
@@ -529,23 +529,20 @@ export default function Studio() {
 						/>
 					</RenderPanel>
 				</div>
-					<nav className="mobile-tabs" aria-label="Studio sections">
-						{MOBILE_TABS.map((tab) => {
-							const Icon = tab.icon
-							return (
-								<button
-									key={tab.id}
-									className="mobile-tab"
-									data-active={mobileTab === tab.id}
-									aria-current={mobileTab === tab.id}
-									onClick={() => setMobileTab(tab.id)}
-								>
-									<Icon size={17} />
-									{tab.label}
-								</button>
-							)
-						})}
-					</nav>
+					<WorkflowSteps<MobileTab>
+						label="Video studio workflow"
+						active={mobileTab}
+						onStep={setMobileTab}
+						steps={MOBILE_TABS.map((tab) => ({
+							...tab,
+							done:
+								tab.id === 'create'
+									? project !== null
+									: tab.id === 'preview'
+										? composition !== null && !compileError
+										: render.output !== null,
+						}))}
+					/>
 				</>
 			)}
 		</div>

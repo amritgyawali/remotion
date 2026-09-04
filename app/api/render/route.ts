@@ -29,6 +29,21 @@ const MAX_FRAMES = Number(process.env.MAX_RENDER_FRAMES ?? 1800)
 const MAX_PIXELS = Number(process.env.MAX_RENDER_PIXELS ?? 8_294_400) // 4K
 const CHUNK_SIZE = 512 * 1024
 
+/**
+ * Leave one core for streaming progress and muxing, then use every remaining
+ * core for Chromium tabs. Explicit env values remain authoritative.
+ */
+function renderConcurrency(): number {
+	const configured = process.env.REMOTION_CONCURRENCY?.trim().toLowerCase()
+	const cores = Math.max(1, os.availableParallelism?.() ?? os.cpus().length)
+	if (configured === 'max') return cores
+	if (configured && configured !== 'auto') {
+		const parsed = Number(configured)
+		if (Number.isFinite(parsed) && parsed > 0) return Math.max(1, Math.min(cores, Math.floor(parsed)))
+	}
+	return cores <= 2 ? 1 : Math.min(12, cores - 1)
+}
+
 function capabilities() {
 	return {
 		enabled: SERVER_READY,
@@ -39,7 +54,7 @@ function capabilities() {
 		maxDurationSeconds: maxDuration,
 		blobDelivery: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
 		cloudDelivery: cloudEnabled(),
-		concurrency: process.env.REMOTION_CONCURRENCY ?? 'auto',
+		concurrency: String(renderConcurrency()),
 	}
 }
 
@@ -268,11 +283,7 @@ export async function POST(request: NextRequest) {
 
 				const extension = FORMAT_INFO[format].extension
 				const outputPath = path.join(workDir, `out.${extension}`)
-				const concurrency =
-					process.env.REMOTION_CONCURRENCY &&
-					!['max', 'auto'].includes(process.env.REMOTION_CONCURRENCY)
-						? Number(process.env.REMOTION_CONCURRENCY)
-						: null
+				const concurrency = renderConcurrency()
 				const chromiumOptions = {
 					// WebGL (@remotion/three) needs ANGLE. Headless Linux hosts have no
 					// graphics stack, so they use ANGLE's SwiftShader backend instead.
@@ -293,7 +304,7 @@ export async function POST(request: NextRequest) {
 						logLevel: 'error',
 					})
 				} else {
-					progress('rendering', 0.32, `Rendering ${totalFrames} frames with auto-tuned concurrency`)
+					progress('rendering', 0.32, `Rendering ${totalFrames} frames across ${concurrency} workers`)
 					await renderMedia({
 						composition: { ...composition, width, height, durationInFrames: totalFrames },
 						serveUrl,

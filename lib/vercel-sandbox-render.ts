@@ -54,10 +54,17 @@ const codecFor = (format: OutputFormat): 'h264' | 'vp9' | 'gif' | 'prores' => {
 }
 
 const configuredConcurrency = (): number | null => {
-	const value = process.env.REMOTION_CONCURRENCY
-	if (!value || value === 'auto' || value === 'max') return null
-	const parsed = Number(value)
-	return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : null
+	const value = process.env.REMOTION_CONCURRENCY?.trim().toLowerCase()
+	const vcpus = sandboxVcpus()
+	if (value === 'max') return vcpus
+	if (value && value !== 'auto') {
+		const parsed = Number(value)
+		if (Number.isFinite(parsed) && parsed > 0) return Math.max(1, Math.min(vcpus, Math.floor(parsed)))
+	}
+	// A detached Sandbox has no web traffic to protect, but Chrome, FFmpeg, and
+	// the progress agent still need headroom. Three render tabs on the default
+	// four-vCPU machine is consistently faster than Remotion's conservative auto.
+	return vcpus <= 2 ? 1 : Math.max(2, vcpus - 1)
 }
 
 async function createOrRestoreSandbox(): Promise<Sandbox> {

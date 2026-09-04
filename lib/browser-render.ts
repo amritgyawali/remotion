@@ -441,7 +441,7 @@ async function renderMediaWithSound(args: BrowserRenderArgs): Promise<RenderOutp
 			// 'no-preference' still picks the hardware encoder where one exists.
 			hardwareAcceleration: 'no-preference',
 			keyframeIntervalInSeconds: preset.keyframeIntervalSeconds,
-			pageResponsiveness: 'medium',
+			pageResponsiveness: deviceProfile().renderPageResponsiveness,
 			// Let Remotion use OPFS when available so long 4K renders are not held
 			// entirely in RAM. It falls back to an ArrayBuffer on older browsers.
 			licenseKey: process.env.NEXT_PUBLIC_REMOTION_LICENSE_KEY?.trim() || 'free-license',

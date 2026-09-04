@@ -75,23 +75,21 @@ import SilenceTimeline from './silence/SilenceTimeline'
 import SilencePreview from './silence/SilencePreview'
 import SilenceExportPanel from './silence/SilenceExportPanel'
 import { RestoreNotice } from './SaveState'
+import WorkflowSteps from './WorkflowSteps'
 import {
 	IconCaptions,
 	IconCheck,
 	IconClose,
-	IconDownload,
 	IconScissors,
-	IconSliders,
 	IconSpinner,
-	IconWaveform,
 } from './Icons'
 
 type Pane = 'source' | 'preview' | 'export'
 
-const SILENCE_PANES: Array<{ id: Pane; label: string; icon: typeof IconScissors }> = [
-	{ id: 'source', label: 'Detect', icon: IconSliders },
-	{ id: 'preview', label: 'Preview', icon: IconWaveform },
-	{ id: 'export', label: 'Export', icon: IconDownload },
+const SILENCE_PANES: Array<{ id: Pane; label: string; hint: string }> = [
+	{ id: 'source', label: 'Detect', hint: 'Add video and find pauses' },
+	{ id: 'preview', label: 'Preview', hint: 'Review and tune the cut' },
+	{ id: 'export', label: 'Export', hint: 'Render the tightened video' },
 ]
 
 /** Two settings objects are the same preset only if every field matches. */
@@ -860,23 +858,15 @@ export default function SilenceStudio() {
 				</SilenceExportPanel>
 			</div>
 
-			<nav className="mobile-tabs" aria-label="Silence studio sections">
-				{SILENCE_PANES.map((item) => {
-					const Icon = item.icon
-					return (
-						<button
-							key={item.id}
-							className="mobile-tab"
-							data-active={pane === item.id}
-							aria-current={pane === item.id}
-							onClick={() => setPane(item.id)}
-						>
-							<Icon size={17} />
-							{item.label}
-						</button>
-					)
-				})}
-			</nav>
+			<WorkflowSteps<Pane>
+				label="Silence studio workflow"
+				active={pane}
+				onStep={setPane}
+				steps={SILENCE_PANES.map((item) => ({
+					...item,
+					done: item.id === 'source' ? analysis !== null : item.id === 'preview' ? plan.outputDurationMs > 0 : renderResult !== null,
+				}))}
+			/>
 		</div>
 	)
 }

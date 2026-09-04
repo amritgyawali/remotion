@@ -45,6 +45,14 @@ export type Canvas2D = OffscreenCanvasRenderingContext2D | CanvasRenderingContex
 /** Resolves an asset's bytes for one frame. Returns `null` when the source is not currently available. */
 export type BlobResolver = (assetId: string) => Blob | null
 
+export type RenderFrameOptions = {
+	/**
+	 * Scale only the preview backing canvas. Timeline geometry stays in project
+	 * pixels and exports omit this option, so quality is never silently reduced.
+	 */
+	previewScale?: number
+}
+
 function clamp01(value: number): number {
 	return Math.min(1, Math.max(0, value))
 }
@@ -374,10 +382,14 @@ export async function renderFrame(
 	resolveBlob: BlobResolver,
 	frameIndex: number,
 	canvas: OffscreenCanvas | HTMLCanvasElement,
+	options: RenderFrameOptions = {},
 ): Promise<{ offlineAssetIds: Set<string> }> {
 	const { width, height, fps, backgroundColor } = doc.settings
-	if (canvas.width !== width) canvas.width = width
-	if (canvas.height !== height) canvas.height = height
+	const previewScale = Math.min(1, Math.max(0.25, options.previewScale ?? 1))
+	const backingWidth = Math.max(2, Math.round(width * previewScale))
+	const backingHeight = Math.max(2, Math.round(height * previewScale))
+	if (canvas.width !== backingWidth) canvas.width = backingWidth
+	if (canvas.height !== backingHeight) canvas.height = backingHeight
 	const ctx = canvas.getContext('2d') as Canvas2D | null
 	const offlineAssetIds = new Set<string>()
 	if (!ctx) return { offlineAssetIds }
@@ -387,13 +399,19 @@ export async function renderFrame(
 	ctx.globalAlpha = 1
 	ctx.filter = 'none'
 	ctx.fillStyle = backgroundColor
-	ctx.fillRect(0, 0, width, height)
+	ctx.fillRect(0, 0, backingWidth, backingHeight)
 	ctx.restore()
+	ctx.save()
+	ctx.setTransform(backingWidth / width, 0, 0, backingHeight / height, 0, 0)
 
-	const clips = activeClipsAtFrame(doc, frameIndex)
-	const crossfades = computeCrossfadeMultipliers(clips, frameIndex)
-	for (const clip of clips) {
-		await drawClip(ctx, doc, pool, resolveBlob, clip, frameIndex, fps, width, height, offlineAssetIds, crossfades.get(clip.id) ?? 1)
+	try {
+		const clips = activeClipsAtFrame(doc, frameIndex)
+		const crossfades = computeCrossfadeMultipliers(clips, frameIndex)
+		for (const clip of clips) {
+			await drawClip(ctx, doc, pool, resolveBlob, clip, frameIndex, fps, width, height, offlineAssetIds, crossfades.get(clip.id) ?? 1, previewScale)
+		}
+	} finally {
+		ctx.restore()
 	}
 
 	return { offlineAssetIds }
@@ -411,6 +429,7 @@ async function drawClip(
 	canvasHeight: number,
 	offlineAssetIds: Set<string>,
 	opacityMultiplier: number,
+	previewScale: number,
 ): Promise<void> {
 	if (clip.kind === 'text') {
 		drawTextClip(ctx, clip.text, withOpacityMultiplier(clip.transform, opacityMultiplier), canvasWidth, canvasHeight, frameIndex - clip.startFrame, clip.durationFrames)
@@ -441,7 +460,7 @@ async function drawClip(
 		}
 		const { sx, sy, sw, sh } = cropRectPx(clip.effects.crop, bitmap.width, bitmap.height)
 		if (clip.effects.chromaKey?.enabled) {
-			const scratch = new OffscreenCanvas(Math.max(2, Math.round(sw)), Math.max(2, Math.round(sh)))
+			const scratch = new OffscreenCanvas(Math.max(2, Math.round(sw * previewScale)), Math.max(2, Math.round(sh * previewScale)))
 			const scratchCtx = scratch.getContext('2d')
 			if (scratchCtx) {
 				scratchCtx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, scratch.width, scratch.height)
@@ -471,7 +490,7 @@ async function drawClip(
 	try {
 		const { sx, sy, sw, sh } = cropRectPx(clip.effects.crop, sink.naturalWidth, sink.naturalHeight)
 		if (clip.effects.chromaKey?.enabled) {
-			const scratch = new OffscreenCanvas(Math.max(2, Math.round(sw)), Math.max(2, Math.round(sh)))
+			const scratch = new OffscreenCanvas(Math.max(2, Math.round(sw * previewScale)), Math.max(2, Math.round(sh * previewScale)))
 			const scratchCtx = scratch.getContext('2d')
 			if (scratchCtx) {
 				sample.draw(scratchCtx, sx, sy, sw, sh, 0, 0, scratch.width, scratch.height)

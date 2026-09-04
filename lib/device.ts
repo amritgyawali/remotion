@@ -29,6 +29,12 @@ export type DeviceProfile = {
 	maxScale: number
 	/** how many frames may sit in the encoder queue before rendering waits */
 	encoderQueueDepth: number
+	/** live editor backing resolution; export always remains full resolution */
+	previewScale: number
+	/** bounded number of independent files processed by a batch tool */
+	batchConcurrency: number
+	/** how often Remotion yields while locally rendering */
+	renderPageResponsiveness: 'low' | 'medium' | 'high'
 	/** true when a long render on this device is worth warning about */
 	constrained: boolean
 }
@@ -41,6 +47,9 @@ const DESKTOP: DeviceProfile = {
 	maxDimension: 3840,
 	maxScale: 2,
 	encoderQueueDepth: 8,
+	previewScale: 1,
+	batchConcurrency: 2,
+	renderPageResponsiveness: 'low',
 	constrained: false,
 }
 
@@ -80,6 +89,7 @@ export function deviceProfile(): DeviceProfile {
 	const byMemory =
 		memoryGb === null ? (mobile ? 1920 : 3840) : memoryGb <= 2 ? 1280 : memoryGb <= 4 ? 1920 : 3840
 	const maxDimension = Math.min(byForm, byMemory)
+	const constrained = mobile || maxDimension < 3840 || cores <= 4
 
 	cached = {
 		mobile,
@@ -90,7 +100,17 @@ export function deviceProfile(): DeviceProfile {
 		maxScale: mobile || maxDimension <= 1920 ? 1 : 2,
 		// A deep queue is throughput on a desktop and a memory spike on a phone.
 		encoderQueueDepth: mobile ? 3 : cores >= 8 ? 8 : 6,
-		constrained: mobile || maxDimension < 3840 || cores <= 4,
+		// The preview is a display surface, not the export surface. A 540px-wide
+		// phone cannot show a 1080px backing store, so decoding and compositing the
+		// invisible pixels only burns battery and drops frames.
+		previewScale: mobile ? (memoryGb !== null && memoryGb <= 2 ? 0.4 : 0.55) : constrained ? 0.75 : 1,
+		// Multiple codecs fight over the same mobile decoder. Desktops with at
+		// least eight logical cores can safely process two independent batch items.
+		batchConcurrency: !mobile && cores >= 8 && (memoryGb === null || memoryGb >= 4) ? 2 : 1,
+		// `low` yields less often and maximises desktop throughput. Phones keep a
+		// responsive main thread so cancel, progress, and the OS watchdog still work.
+		renderPageResponsiveness: mobile ? 'high' : constrained ? 'medium' : 'low',
+		constrained,
 	}
 	return cached
 }
@@ -149,6 +169,9 @@ export async function refineDeviceProfileForNative(): Promise<DeviceProfile | nu
 		maxDimension,
 		maxScale: maxDimension >= 3840 ? 4 : maxDimension >= 1920 ? 2 : 1,
 		encoderQueueDepth: Math.min(16, Math.max(6, cores)),
+		previewScale: info.os === 'android' || info.os === 'ios' ? 0.6 : memoryGb >= 8 ? 1 : 0.75,
+		batchConcurrency: memoryGb >= 8 && cores >= 8 ? Math.min(3, Math.max(2, Math.floor(cores / 6))) : 1,
+		renderPageResponsiveness: info.os === 'android' || info.os === 'ios' ? 'high' : memoryGb >= 8 && cores >= 8 ? 'low' : 'medium',
 		constrained: memoryGb < 4,
 	}
 	cached = profile
