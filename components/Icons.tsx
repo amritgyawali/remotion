@@ -302,6 +302,28 @@ export const IconCloudOff = (props: IconProps) => (
 	</Base>
 )
 
+export const IconCloud = (props: IconProps) => (
+	<Base {...props}>
+		<path d="M6.5 19a4.5 4.5 0 0 1 .6-8.96 6 6 0 0 1 11.5 1.71A3.75 3.75 0 0 1 17.5 19h-11Z" />
+	</Base>
+)
+
+export const IconCloudUp = (props: IconProps) => (
+	<Base {...props}>
+		<path d="M6.5 18.5a4.5 4.5 0 0 1 .6-8.46 6 6 0 0 1 11.5 1.71 3.75 3.75 0 0 1 .4 6.75" />
+		<path d="M12 21v-7" />
+		<path d="m9 16.5 3-3 3 3" />
+	</Base>
+)
+
+export const IconDevice = (props: IconProps) => (
+	<Base {...props}>
+		<rect x="3" y="4" width="18" height="12" rx="2" />
+		<path d="M8 20h8" />
+		<path d="M12 16v4" />
+	</Base>
+)
+
 export const IconLayers = (props: IconProps) => (
 	<Base {...props}>
 		<path d="M12 3 3 7.5l9 4.5 9-4.5L12 3Z" />

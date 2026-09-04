@@ -40,6 +40,8 @@ import { EDITOR_SCHEMA_VERSION, clipEndFrame, type Asset, type ChromaKeySpec, ty
 import type { HistoryEntry } from '../lib/editor/commands'
 import { formatSeconds } from '../lib/format'
 import { isTauriNative } from '../lib/device'
+import { useCloud } from '../lib/cloud/use-cloud'
+import CloudProjectsPanel from './cloud/CloudProjectsPanel'
 
 const SESSION_KEY = 'editor-studio'
 
@@ -91,6 +93,8 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 		},
 	})
 	const hydrated = restore.phase !== 'loading'
+	const cloud = useCloud()
+	const [cloudOpened, setCloudOpened] = useState<string | null>(null)
 
 	const resolveAssetBlobs = useCallback(async (assets: Asset[]) => {
 		let changed = false
@@ -647,6 +651,36 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 						clipCount={Object.keys(doc.clips).length}
 						currentSourceSeconds={currentSourceSeconds}
 						{...inspectorHandlers}
+					/>
+
+					<CloudProjectsPanel
+						studio="editor"
+						cloud={cloud}
+						note={cloudOpened}
+						snapshot={() =>
+							snapshot ? { name: doc.name, version: EDITOR_SCHEMA_VERSION, data: snapshot } : null
+						}
+						onOpen={async (data) => {
+							const opened = data as EditorSnapshot | null
+							if (!opened?.doc?.assets) return
+							engine.hydrate(opened.doc, opened.undo ?? [], opened.redo ?? [])
+							setUi({ ...defaultUi(), ...opened.ui })
+							/*
+							 * The timeline comes back whole; the media does not. Clip bytes
+							 * live in this browser's storage, so a project opened on another
+							 * machine lands with every asset asking to be reconnected -
+							 * which is the flow this studio already has for a cleared cache.
+							 */
+							await resolveAssetBlobs(Object.values(opened.doc.assets))
+							const needing = await assetsNeedingPermission(Object.values(opened.doc.assets))
+							setNeedsReconnect(new Set(needing))
+							playerRef.current?.setDoc(engine.getDoc())
+							setCloudOpened(
+								needing.length > 0
+									? `Timeline open. ${needing.length} clip${needing.length === 1 ? '' : 's'} need their file pointing at again.`
+									: 'Timeline open.',
+							)
+						}}
 					/>
 				</aside>
 			</div>

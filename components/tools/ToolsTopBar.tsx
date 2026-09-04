@@ -6,14 +6,18 @@ import ThemeToggle from '../ThemeToggle'
 import { SaveBadge } from '../SaveState'
 import type { VaultStatus } from '../../lib/persist/use-vault'
 import { READY_COUNT, TOTAL_COUNT } from '../../lib/tools/registry'
+import type { CloudState } from '../../lib/cloud/use-cloud'
+import RunLocationToggle from '../cloud/RunLocationToggle'
 
 export default function ToolsTopBar({
 	webCodecs,
+	cloud,
 	save,
 	onReset,
 	canReset,
 }: {
 	webCodecs: boolean
+	cloud: CloudState
 	save: { status: VaultStatus; savedAt: number | null; error: string | null }
 	onReset: () => void
 	canReset: boolean
@@ -32,18 +36,22 @@ export default function ToolsTopBar({
 
 			<div className="topbar-spacer" />
 
+			<RunLocationToggle cloud={cloud} />
+
 			<SaveBadge status={save.status} savedAt={save.savedAt} error={save.error} />
 
-			<span
-				className={`badge ${webCodecs ? 'badge--green' : 'badge--red'}`}
-				title={
-					webCodecs
-						? 'This browser can decode and re-encode video locally, so nothing is uploaded'
-						: 'This browser has no WebCodecs support, so tools cannot export here'
-				}
-			>
-				{webCodecs ? 'local encoder ready' : 'no local encoder'}
-			</span>
+			{cloud.location === 'cloud' ? null : (
+				<span
+					className={`badge ${webCodecs ? 'badge--green' : 'badge--red'}`}
+					title={
+						webCodecs
+							? 'This browser can decode and re-encode video locally, so nothing is uploaded'
+							: 'This browser has no WebCodecs support, so tools cannot export here'
+					}
+				>
+					{webCodecs ? 'local encoder ready' : 'no local encoder'}
+				</span>
+			)}
 
 			<div className="topbar-actions">
 				<StudioNav current="tools" />

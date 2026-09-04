@@ -7,6 +7,10 @@ import { QUALITY_PRESETS, FORMAT_INFO, evenDimension } from '../../../lib/preset
 import type { OutputFormat, QualityPresetId, RenderSettings, ServerRenderRequest } from '../../../lib/types'
 import { validateRenderRequest, writeRenderProject } from '../../../lib/render-request'
 import { getRenderAccessKey, hasRenderAccess } from '../../../lib/render-server-auth'
+import { cloudEnabled } from '../../../lib/cloud/config'
+import { uploadBuffer } from '../../../lib/cloud/cloudinary'
+import { resolveIdentity, userIdOf } from '../../../lib/cloud/owner'
+import { recordAsset } from '../../../lib/cloud/store'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -34,6 +38,7 @@ function capabilities() {
 		maxPixels: MAX_PIXELS,
 		maxDurationSeconds: maxDuration,
 		blobDelivery: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
+		cloudDelivery: cloudEnabled(),
 		concurrency: process.env.REMOTION_CONCURRENCY ?? 'auto',
 	}
 }
@@ -327,10 +332,57 @@ export async function POST(request: NextRequest) {
 				const fileName = body.fileName || `render.${extension}`
 				const mimeType = FORMAT_INFO[format].mimeType
 
+				let publicUrl: string | undefined
+
+				/**
+				 * Cloud delivery, when the studio asked for it.
+				 *
+				 * This is the difference between a render that ends in the browser's
+				 * memory and one that ends in a library. The finished file goes
+				 * straight from this server's temp directory to Cloudinary, so a
+				 * 200 MB export never has to be base64'd through an event stream and
+				 * re-assembled by a tab that may not have the headroom for it.
+				 */
+				if (body.deliver === 'cloud' && cloudEnabled()) {
+					try {
+						progress('uploading', 0.9, 'Uploading the finished file to your cloud library')
+						const identity = await resolveIdentity()
+						const resource = await uploadBuffer({
+							owner: identity.owner,
+							data: await readFile(outputPath),
+							fileName,
+							resourceType: format === 'png' ? 'image' : 'video',
+						})
+						publicUrl = resource.secure_url
+						await recordAsset({
+							owner: identity.owner,
+							userId: userIdOf(identity),
+							publicId: resource.public_id,
+							resourceType: format === 'png' ? 'image' : 'video',
+							kind: 'output',
+							format: resource.format ?? null,
+							bytes: resource.bytes ?? size,
+							duration: resource.duration ?? null,
+							width: resource.width ?? width,
+							height: resource.height ?? height,
+							secureUrl: resource.secure_url,
+							originalName: fileName,
+						})
+					} catch (error) {
+						// A cloud that refuses the upload must not lose the render: fall
+						// through to whichever delivery path would have run anyway.
+						progress(
+							'uploading',
+							0.9,
+							`Cloud upload failed (${error instanceof Error ? error.message : 'unknown error'}); delivering the file directly instead`,
+						)
+						publicUrl = undefined
+					}
+				}
+
 				// Prefer Vercel Blob when it is configured - it keeps large files out of
 				// the response body and gives the user a permanent URL.
-				let publicUrl: string | undefined
-				if (process.env.BLOB_READ_WRITE_TOKEN) {
+				if (!publicUrl && process.env.BLOB_READ_WRITE_TOKEN) {
 					try {
 						progress('uploading', 0.9, 'Uploading to Vercel Blob')
 						const { put } = (await import('@vercel/blob')) as typeof import('@vercel/blob')

@@ -1,5 +1,7 @@
 'use client'
 
+import type { ReactNode } from 'react'
+
 import { useState } from 'react'
 import {
 	computeBitrate,
@@ -60,8 +62,11 @@ export default function RenderPanel({
 	accessKey,
 	onAccessKey,
 	log,
+	children,
 }: {
 	composition: CompiledComposition | null
+	/** the cloud panel, which the studio owns because it owns the snapshot */
+	children?: ReactNode
 	settings: RenderSettings
 	onSettings: (patch: Partial<RenderSettings>) => void
 	capabilities: ServerCapabilities
@@ -423,6 +428,8 @@ export default function RenderPanel({
 					) : null}
 				</div>
 			</div>
+
+			{children}
 		</aside>
 	)
 }

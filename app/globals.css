@@ -7863,3 +7863,260 @@ textarea::placeholder {
 		font-size: 16px;
 	}
 }
+
+/* ===========================================================================
+   Cloud mode
+   ---------------------------------------------------------------------------
+   One switch in every top bar, and the panel that lists what the server is
+   holding. Both are deliberately quiet: where a video is being encoded is
+   important information, but it is not the thing anyone came to the page to
+   look at.
+   =========================================================================== */
+
+.runloc {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 2px;
+	border-radius: 999px;
+	border: 1px solid var(--border);
+	background: color-mix(in srgb, var(--surface-2) 78%, transparent);
+	box-shadow: var(--inset-hi);
+	flex: none;
+}
+
+.runloc-option {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	height: 24px;
+	padding: 0 10px;
+	border: none;
+	border-radius: 999px;
+	background: transparent;
+	color: var(--text-tertiary);
+	font-size: 11.5px;
+	font-weight: 560;
+	letter-spacing: -0.005em;
+	white-space: nowrap;
+	cursor: pointer;
+	transition:
+		background var(--fast) var(--ease),
+		color var(--fast) var(--ease);
+}
+
+.runloc-option:hover:not([data-active='true']) {
+	color: var(--text);
+	background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.runloc-option[data-active='true'] {
+	background: var(--raised);
+	color: var(--text);
+	font-weight: 600;
+	box-shadow: var(--shadow-sm), var(--inset-hi);
+}
+
+/* The cloud side earns the accent: it is the one that leaves the device. */
+.runloc-option:last-child[data-active='true'] {
+	background: var(--accent-soft);
+	color: color-mix(in srgb, var(--accent) 82%, var(--text));
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+.runloc[data-compact='true'] .runloc-option {
+	padding: 0 8px;
+}
+
+.runloc-note {
+	display: flex;
+	align-items: flex-start;
+	gap: 7px;
+	margin: 10px 0 0;
+	color: var(--text-tertiary);
+	font-size: 11.5px;
+	line-height: 1.5;
+}
+
+.runloc-note svg {
+	flex: none;
+	margin-top: 2px;
+}
+
+.runloc-note[data-tone='cloud'] {
+	color: color-mix(in srgb, var(--accent) 62%, var(--text-secondary));
+}
+
+/* ------------------------------------------------------------- projects */
+
+.cloud-projects {
+	margin-top: 18px;
+	padding-top: 16px;
+	border-top: 1px solid var(--border);
+}
+
+.cloud-projects-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+}
+
+.cloud-projects-head h3 {
+	margin: 0;
+	font-size: 11px;
+	font-weight: 620;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--text-tertiary);
+}
+
+.cloud-projects-hint,
+.cloud-projects-empty,
+.cloud-projects-error {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin: 8px 0 0;
+	font-size: 11.5px;
+	line-height: 1.5;
+	color: var(--text-tertiary);
+}
+
+.cloud-projects-error {
+	color: color-mix(in srgb, var(--red, #ff6b6b) 78%, var(--text));
+}
+
+.cloud-projects-list {
+	list-style: none;
+	margin: 10px 0 0;
+	padding: 0;
+	display: grid;
+	gap: 4px;
+}
+
+.cloud-projects-list li {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	border-radius: var(--radius-sm);
+	border: 1px solid transparent;
+	transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+
+.cloud-projects-list li:hover {
+	background: color-mix(in srgb, var(--text) 4%, transparent);
+	border-color: var(--border);
+}
+
+.cloud-projects-list li[data-current='true'] {
+	border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+	background: var(--accent-soft);
+}
+
+.cloud-project-open {
+	flex: 1;
+	min-width: 0;
+	display: grid;
+	gap: 2px;
+	padding: 8px 10px;
+	border: none;
+	background: transparent;
+	color: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+
+.cloud-project-open strong {
+	display: block;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 12.5px;
+	font-weight: 560;
+	color: var(--text);
+}
+
+.cloud-project-open em {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-style: normal;
+	font-size: 11px;
+	color: var(--text-tertiary);
+	font-variant-numeric: tabular-nums;
+}
+
+.cloud-project-open:disabled {
+	opacity: 0.5;
+	cursor: progress;
+}
+
+.icon-btn--sm {
+	width: 26px;
+	height: 26px;
+	flex: none;
+}
+
+/* On a phone the header is already full; the words go, the switch stays. */
+@media (max-width: 640px) {
+	.runloc-option span {
+		display: none;
+	}
+
+	.runloc-option {
+		padding: 0 9px;
+	}
+}
+
+/* ------------------------------------------------------- cloud burn-in */
+
+.cloud-burn {
+	margin-top: 16px;
+	padding-top: 14px;
+	border-top: 1px solid var(--border);
+}
+
+.cloud-burn-toggle {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	padding: 8px 10px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	background: color-mix(in srgb, var(--surface-2) 60%, transparent);
+	color: var(--text-secondary);
+	font-size: 12.5px;
+	font-weight: 560;
+	text-align: left;
+	cursor: pointer;
+	transition: border-color var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+
+.cloud-burn-toggle:hover {
+	border-color: var(--border-hover);
+	color: var(--text);
+}
+
+.cloud-burn-toggle span:first-of-type {
+	flex: 1;
+}
+
+/* A chevron drawn rather than typed, so it rotates and never picks up a font. */
+.cloud-burn-chevron {
+	width: 7px;
+	height: 7px;
+	border-right: 1.5px solid currentColor;
+	border-bottom: 1.5px solid currentColor;
+	transform: rotate(45deg) translate(-2px, -2px);
+	transition: transform var(--fast) var(--ease);
+}
+
+.cloud-burn-chevron[data-open='true'] {
+	transform: rotate(-135deg) translate(-2px, -2px);
+}
+
+.cloud-burn-body {
+	margin-top: 12px;
+}

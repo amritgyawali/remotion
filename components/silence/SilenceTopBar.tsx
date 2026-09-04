@@ -5,6 +5,8 @@ import StudioNav from '../StudioNav'
 import ThemeToggle from '../ThemeToggle'
 import { SaveBadge } from '../SaveState'
 import type { VaultStatus } from '../../lib/persist/use-vault'
+import type { CloudState } from '../../lib/cloud/use-cloud'
+import RunLocationToggle from '../cloud/RunLocationToggle'
 
 export type StudioStep = {
 	id: string
@@ -15,6 +17,7 @@ export type StudioStep = {
 export default function SilenceTopBar({
 	steps,
 	webCodecs,
+	cloud,
 	savedLabel,
 	save,
 	onReset,
@@ -22,6 +25,7 @@ export default function SilenceTopBar({
 }: {
 	steps: StudioStep[]
 	webCodecs: boolean
+	cloud: CloudState
 	/** "4m 20s saved" - the one number this studio exists to produce */
 	savedLabel: string | null
 	save: { status: VaultStatus; savedAt: number | null; error: string | null }
@@ -64,9 +68,12 @@ export default function SilenceTopBar({
 				</span>
 			) : null}
 
+			<RunLocationToggle cloud={cloud} />
+
 			<SaveBadge status={save.status} savedAt={save.savedAt} error={save.error} />
 
 			<span
+				hidden={cloud.location === 'cloud'}
 				className={`badge ${webCodecs ? 'badge--green' : 'badge--red'}`}
 				title={
 					webCodecs

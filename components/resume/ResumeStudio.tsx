@@ -1,5 +1,8 @@
 'use client'
 
+import CloudProjectsPanel from '../cloud/CloudProjectsPanel'
+import { useCloud } from '../../lib/cloud/use-cloud'
+
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { scoreResume } from '../../lib/resume/ats'
 import { downloadTextFile, normalizeStoredWorkspace, safeDocumentName, type StoredResumeWorkspace } from '../../lib/resume/toolkit'
@@ -241,6 +244,9 @@ export default function ResumeStudio() {
 		}
 		return hasResumeSessionWork(next) ? next : null
 	}, [analysis, messages, mode, prompt, restoring, selectedArtifactId, selectedFile, textView, uploadBlobId, workspace])
+
+	const cloud = useCloud()
+	const [cloudOpened, setCloudOpened] = useState<string | null>(null)
 
 	const vault = useAutosave<ResumeSession>({
 		key: RESUME_SESSION_KEY,
@@ -496,6 +502,33 @@ export default function ResumeStudio() {
 							</div>
 						)}
 					</div>
+					<CloudProjectsPanel
+						studio="resume"
+						cloud={cloud}
+						note={cloudOpened}
+						snapshot={() =>
+							session ? { name: 'Resume workspace', version: RESUME_SESSION_VERSION, data: session } : null
+						}
+						onOpen={(data) => {
+							const opened = normalizeResumeSession(data)
+							if (!opened) return
+							// A resume is text, so unlike the video studios this really does
+							// come back whole - only the uploaded PDF stays behind.
+							applyWorkspace(opened.workspace, opened.selectedArtifactId === null)
+							if (opened.selectedArtifactId) setSelectedArtifactId(opened.selectedArtifactId)
+							setMode(opened.mode)
+							if (opened.messages.length > 0) setMessages(opened.messages)
+							setPrompt(opened.prompt)
+							setTextView(opened.textView)
+							setAnalysis(opened.analysis)
+							setCloudOpened(
+								opened.uploadName
+									? `Workspace open. Re-add "${opened.uploadName}" to run the ATS check on it.`
+									: 'Workspace open.',
+							)
+						}}
+					/>
+
 					<div className="resume-control-footer">
 						<SaveBadge status={vault.status} savedAt={vault.savedAt} error={vault.error} />
 						<button type="button" onClick={resetDraft}>Clear workspace</button>
