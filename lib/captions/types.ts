@@ -33,7 +33,7 @@ export type TranscriptOrigin = 'whisper' | 'cloud' | 'srt' | 'text' | 'none'
  * needs no download, no SharedArrayBuffer and no fast machine - and falls back
  * to the device when it does not, or when the cloud path fails mid-run.
  */
-export type TranscribeEngine = 'auto' | 'cloud' | 'device'
+export type TranscribeEngine = 'auto' | 'cloud' | 'gemini' | 'groq' | 'nvidia' | 'device'
 
 export type CaptionVideoSource = {
 	/** object URL for an upload, or the pasted https:// address */

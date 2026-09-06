@@ -158,7 +158,7 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback
 // legacy input - mapped to its replacement below - means a snapshot written
 // before the hosted recogniser was generalised still restores.
 const ORIGINS = ['whisper', 'cloud', 'srt', 'text', 'none'] as const
-const ENGINES = ['auto', 'cloud', 'device'] as const
+const ENGINES = ['auto', 'cloud', 'gemini', 'groq', 'nvidia', 'device'] as const
 const LEGACY_CLOUD = 'nvidia'
 const MODES = ['auto', 'write', 'import'] as const
 const TABS = ['design', 'sound', 'objects', 'tools', 'export'] as const
@@ -369,11 +369,11 @@ export function normalizeCaptionSession(
 		transcriptText: str(value.transcriptText, '').slice(0, 400_000),
 		speechProfile: str(value.speechProfile, 'nepali-english'),
 		whisperModel: oneOf(value.whisperModel, WHISPER_MODELS, 'small'),
-		whisperLanguage: str(value.whisperLanguage, 'ne'),
-		engine: oneOf(value.engine === LEGACY_CLOUD ? 'cloud' : value.engine, ENGINES, 'auto'),
+		whisperLanguage: str(value.whisperLanguage, 'auto'),
+		engine: oneOf(value.engine, ENGINES, 'auto'),
 		cloudModel: typeof value.cloudModel === 'string' ? value.cloudModel : null,
-		polish: bool(value.polish, true),
-		restoreEnglish: bool(value.restoreEnglish, true),
+		polish: bool(value.polish, false),
+		restoreEnglish: bool(value.restoreEnglish, false),
 		tab: oneOf(value.tab, TABS, 'design'),
 		objects: normalizeStoredObjects(value.objects),
 		render: normalizeStoredRenderSettings(value.render, defaults.render),

@@ -193,8 +193,8 @@ function hasCaptionSessionWork(session: CaptionSession): boolean {
 			session.whisperLanguage !== DEFAULT_PROFILE.language ||
 			session.engine !== 'auto' ||
 			session.cloudModel ||
-			!session.polish ||
-			!session.restoreEnglish ||
+			session.polish ||
+			session.restoreEnglish ||
 			session.tab !== 'design' ||
 			session.objects.shots.length > 0 ||
 			JSON.stringify(session.sound) !== DEFAULT_SOUND_SIGNATURE ||
@@ -343,10 +343,9 @@ export default function CaptionStudio() {
 	const [engine, setEngine] = useState<TranscribeEngine>('auto')
 	const [cloudStatus, setCloudStatus] = useState<CloudAsrStatus | null>(null)
 	const [cloudModel, setCloudModel] = useState<string | null>(null)
-	const [polish, setPolish] = useState(true)
-	// On by default: a Nepali transcript with कम्प्युटर in it is wrong for every
-	// viewer, and the pass never touches a word that is genuinely Nepali.
-	const [restoreEnglish, setRestoreEnglish] = useState(true)
+	const [polish, setPolish] = useState(false)
+	// Preserve recognizer wording by default; spelling changes are opt-in.
+	const [restoreEnglish, setRestoreEnglish] = useState(false)
 	const [engineUsed, setEngineUsed] = useState<'cloud' | 'device' | null>(null)
 	const [transcribing, setTranscribing] = useState(false)
 	const [transcribeProgress, setTranscribeProgress] = useState<TranscribeProgress>(IDLE_TRANSCRIBE)
@@ -944,7 +943,9 @@ export default function CaptionStudio() {
 			// Readability pass: a transcriber-timed cue can be 150ms long, which
 			// reads as a flash. Stretch into the following silence, never into the
 			// next line, so short lines get a comfortable hold.
-			const normalized = normalizeCues(
+			// Cloud words already have provider timestamps. Automatic readability
+			// stretching and overlap normalization would change that clock again.
+			const normalized = nextOrigin === 'cloud' ? next : normalizeCues(
 				enforceReadability(bounded, {
 					minCueMs: layout.minCueMs,
 					durationMs: durationMs || Number.MAX_SAFE_INTEGER,
@@ -2713,8 +2714,8 @@ export default function CaptionStudio() {
 								</span>
 								<h2>Drop in a video to subtitle</h2>
 								<p>
-									Your clip never leaves this device, and everything you do here is saved to
-									this browser as you work - a refresh mid-edit costs you nothing.
+									During transcription, your video stays local and cloud engines receive only extracted audio.
+									Your edits are saved to this browser as you work.
 								</p>
 								<ol className="stage-steps">
 									<li>

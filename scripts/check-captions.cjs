@@ -73,6 +73,8 @@ global.OfflineAudioContext = class {
 	}
 }
 
+delete process.env.GEMINI_API_KEY
+delete process.env.GOOGLE_API_KEY
 process.env.NVIDIA_API_KEY = 'nvapi-check'
 // These checks stub HTTP only; the gRPC transport has its own suite in
 // scripts/check-riva.cjs, which runs a real Riva-speaking server.
@@ -649,17 +651,17 @@ async function checkUploader() {
 		})
 	}
 
-	const partial = await transcribeInCloud({
-		source: new Blob([new Uint8Array(16)]),
-		language: 'ne',
-		model: null,
-		durationSeconds: 250,
-		onProgress: () => {},
-		signal: new AbortController().signal,
-	})
+	let partialError = null
+	try {
+		await transcribeInCloud({
+			source: new Blob([new Uint8Array(16)]), language: 'ne', model: null,
+			durationSeconds: 250, onProgress: () => {}, signal: new AbortController().signal,
+		})
+	} catch (error) { partialError = error }
 	check('a failing chunk is retried', attempts === 3, attempts)
-	check('the other chunks still produce a transcript', partial.words.length === 4, partial.words.length)
-	check('the loss is counted, not thrown', partial.failedChunks === 1, partial.failedChunks)
+	check('incomplete captions cannot be presented as a successful transcript',
+		/Transcription incomplete: 1 of 5 chunks failed/.test(partialError?.message), partialError?.message)
+
 }
 
 async function checkTranscribeRoute() {
@@ -785,7 +787,9 @@ async function checkRefineRoute() {
 	).json()
 	check('no key means the transcript is returned untouched', body.lines[0] === lines[0])
 	check('and the user is told why', /NVIDIA_API_KEY/.test(body.notice ?? ''), body.notice)
-	process.env.NVIDIA_API_KEY = 'nvapi-check'
+	delete process.env.GEMINI_API_KEY
+delete process.env.GOOGLE_API_KEY
+process.env.NVIDIA_API_KEY = 'nvapi-check'
 }
 
 /* ------------------------------------------------- the generated composition */
@@ -1484,13 +1488,17 @@ async function checkGroqPrimary() {
 		check('the fallback is listed as unavailable', status.providers.find((p) => p.id === 'nvidia').available === false)
 	} finally {
 		delete process.env.GROQ_API_KEY
-		process.env.NVIDIA_API_KEY = 'nvapi-check'
+		delete process.env.GEMINI_API_KEY
+delete process.env.GOOGLE_API_KEY
+process.env.NVIDIA_API_KEY = 'nvapi-check'
 	}
 
 	const noCloud = (() => {
 		delete process.env.NVIDIA_API_KEY
 		const out = transcribeRoute.GET()
-		process.env.NVIDIA_API_KEY = 'nvapi-check'
+		delete process.env.GEMINI_API_KEY
+delete process.env.GOOGLE_API_KEY
+process.env.NVIDIA_API_KEY = 'nvapi-check'
 		return out
 	})()
 	const noCloudBody = await noCloud.json()

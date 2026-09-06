@@ -29,7 +29,7 @@
     "tools:check:maths": "node scripts/check-tools-effects.cjs --maths-only",
     "toolkit:check": "node scripts/check-editor-toolkit.cjs",
     "toolkit:check:maths": "node scripts/check-editor-toolkit.cjs --maths-only",
-    "captions:check": "node scripts/check-captions.cjs",
+    "captions:check": "node scripts/check-captions.cjs && node scripts/check-gemini-captions.cjs",
     "objects:check": "node scripts/check-caption-objects.cjs",
     "objects:check:maths": "node scripts/check-caption-objects.cjs --maths-only",
     "silence:check": "node scripts/check-silence-render.cjs",
@@ -57,6 +57,7 @@
     "render:sample": "node scripts/render-local.mjs samples/code-becomes-geometry.tsx --preset max"
   },
   "dependencies": {
+    "@google/genai": "^2.21.0",
     "@grpc/grpc-js": "^1.14.4",
     "@grpc/proto-loader": "^0.7.15",
     "@mediapipe/tasks-vision": "^1.0.1",
