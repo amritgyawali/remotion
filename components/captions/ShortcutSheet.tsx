@@ -51,6 +51,7 @@ const GROUPS: Array<{ title: string; items: Shortcut[] }> = [
 			{ keys: ['Ctrl', 'Z'], label: 'Undo the last caption edit' },
 			{ keys: ['Ctrl', 'Shift', 'Z'], label: 'Redo' },
 			{ keys: ['Ctrl', 'S'], label: 'Save this session to the browser now' },
+			{ keys: ['Tab'], label: 'Reach the panel edge, then arrow keys resize it' },
 			{ keys: ['?'], label: 'Show or hide this sheet' },
 		],
 	},

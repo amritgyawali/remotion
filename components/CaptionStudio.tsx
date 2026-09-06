@@ -142,6 +142,7 @@ import CueTrack from './captions/CueTrack'
 import ShortcutSheet from './captions/ShortcutSheet'
 import { RestoreNotice } from './SaveState'
 import WorkflowSteps from './WorkflowSteps'
+import PanelResizer from './PanelResizer'
 import {
 	IconAlert,
 	IconCaptions,
@@ -2709,6 +2710,9 @@ export default function CaptionStudio() {
 			) : null}
 
 			<div className="workspace workspace--captions" data-tab={pane}>
+				{/* The seam between each rail and the preview, draggable and arrow-key operable. */}
+				<PanelResizer side="left" storageKey="captions" label="Resize the subtitle form" />
+				<PanelResizer side="right" storageKey="captions" label="Resize the subtitle rail" />
 				<CaptionSourcePanel
 					video={video}
 					videoBanked={videoBanked}
