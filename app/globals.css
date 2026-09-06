@@ -8429,3 +8429,481 @@ textarea::placeholder {
 		font-size: 11px;
 	}
 }
+
+/* ========================================================================== *
+ * Step-driven workspaces
+ *
+ * Every studio is a short, ordered flow, and each step gets the whole window
+ * laid out for the one job it does. The old shape put three panels on screen at
+ * all times, which is why a 9:16 clip previewed at about 130px wide on a 1080p
+ * display: two fixed rails and the timeline took the room the picture needed.
+ * A step that is not editing gives its rail back to the frame.
+ * ========================================================================== */
+
+.workflow-track {
+	display: flex;
+	flex: 1;
+	gap: 8px;
+	min-width: 0;
+}
+
+/* Back and Continue: the flow can be walked without aiming at a pill. */
+.workflow-nav {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	flex: none;
+	min-height: 46px;
+	padding: 0 12px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	background: var(--surface-2);
+	color: var(--text-secondary);
+	font-size: 12px;
+	font-weight: 620;
+	cursor: pointer;
+	transition: border-color var(--fast) var(--ease), color var(--fast) var(--ease),
+		background var(--fast) var(--ease);
+}
+
+.workflow-nav:hover:not(:disabled) {
+	border-color: var(--border-strong);
+	background: var(--surface-3, var(--surface-2));
+	color: var(--text);
+}
+
+.workflow-nav:disabled {
+	opacity: 0.38;
+	cursor: not-allowed;
+}
+
+/* The forward button is the one the eye should find first. */
+.workflow-nav--next:not(:disabled) {
+	border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+	background: var(--accent-soft);
+	color: var(--accent-hover);
+}
+
+.workflow-nav-label {
+	overflow: hidden;
+	max-width: 13ch;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.workflow-tab[data-locked='true'] {
+	opacity: 0.42;
+	cursor: not-allowed;
+}
+
+/* ------------------------------------------------- subtitle studio: steps */
+
+/* 1. Upload - the form leads, with the clip beside it to confirm what loaded. */
+.workspace--captions[data-tab='source'] {
+	grid-template-columns: clamp(340px, 27vw, 468px) minmax(0, 1fr);
+}
+
+.workspace--captions[data-tab='source'] > .panel--right {
+	display: none;
+}
+
+/* 2. Edit - the whole window is the picture and its timeline. */
+.workspace--captions[data-tab='edit'] {
+	grid-template-columns: minmax(0, 1fr);
+}
+
+.workspace--captions[data-tab='edit'] > .panel--left,
+.workspace--captions[data-tab='edit'] > .panel--right {
+	display: none;
+}
+
+/* 3. Style and tools - one rail of controls, the rest still preview. */
+.workspace--captions[data-tab='tools'] {
+	grid-template-columns: minmax(0, 1fr) clamp(324px, 24vw, 428px);
+}
+
+/* 4. Render - the same shape, so the picture never jumps on the last step. */
+.workspace--captions[data-tab='render'] {
+	grid-template-columns: minmax(0, 1fr) clamp(336px, 25vw, 452px);
+}
+
+.workspace--captions[data-tab='tools'] > .panel--left,
+.workspace--captions[data-tab='render'] > .panel--left {
+	display: none;
+}
+
+/* The timeline belongs to the steps that time captions. */
+.workspace--captions[data-tab='source'] .cue-track,
+.workspace--captions[data-tab='render'] .cue-track {
+	display: none;
+}
+
+/*
+ * Preview and timeline, as one block.
+ *
+ * A column by default, because that is what a wide clip wants. Beside a
+ * vertical clip in the edit step it becomes a row: the frame keeps the full
+ * height it can only get from an empty window, and the timeline fills the
+ * column the aspect ratio leaves empty rather than eating the height.
+ */
+.stage-body {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	min-height: 0;
+	min-width: 0;
+}
+
+.workspace--captions:is([data-tab='edit'], [data-tab='tools'])
+	.stage-body[data-orient='portrait'] {
+	flex-direction: row;
+}
+
+.workspace--captions:is([data-tab='edit'], [data-tab='tools'])
+	.stage-body[data-orient='portrait']
+	> .cue-track {
+	max-height: none;
+	border-top: 0;
+	border-left: 1px solid var(--border);
+}
+
+.workspace--captions[data-tab='edit'] .stage-body[data-orient='portrait'] > .cue-track {
+	width: clamp(360px, 32vw, 620px);
+}
+
+/* Styling already spends a rail on controls, so the timeline takes less here. */
+.workspace--captions[data-tab='tools'] .stage-body[data-orient='portrait'] > .cue-track {
+	width: clamp(300px, 22vw, 430px);
+}
+
+/* A wide clip wants the width, so its timeline stays underneath - short on the
+   styling step, where the rail is already spending room. */
+.workspace--captions[data-tab='edit'] .stage-body[data-orient='landscape'] > .cue-track {
+	max-height: 44%;
+}
+
+.workspace--captions[data-tab='tools'] .stage-body[data-orient='landscape'] > .cue-track {
+	max-height: 34%;
+}
+
+/* In the tall side column the rows are the scroll region, so they take the
+   leftover height rather than leaving a gap under the last caption. */
+.workspace--captions:is([data-tab='edit'], [data-tab='tools'])
+	.stage-body[data-orient='portrait']
+	> .cue-track
+	.cue-list {
+	flex: 1;
+}
+
+.workspace--captions[data-tab='edit'] .stage--captions {
+	padding: clamp(10px, 1.1vw, 20px);
+}
+
+/*
+ * Past "fit" the frame is allowed to be bigger than the stage, so the stage
+ * scrolls around it. `safe` keeps the top-left corner reachable - plain
+ * centring would push the overflow out of both scroll directions.
+ */
+.stage[data-zoomed='true'] {
+	overflow: auto;
+	justify-content: safe center;
+	align-items: safe center;
+	overscroll-behavior: contain;
+}
+
+/* Preview size, next to the controls that change what is being previewed. */
+.stage-zoom {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 2px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	background: var(--surface-2);
+}
+
+.stage-zoom .icon-btn {
+	width: 26px;
+	height: 26px;
+}
+
+.stage-zoom-value {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	min-width: 58px;
+	justify-content: center;
+	padding: 4px 8px;
+	border: 0;
+	border-radius: calc(var(--radius) - 3px);
+	background: transparent;
+	color: var(--text-secondary);
+	font-family: var(--mono);
+	font-size: 11px;
+	font-weight: 620;
+	cursor: pointer;
+}
+
+.stage-zoom-value:hover:not(:disabled) {
+	background: var(--surface-3, var(--surface));
+	color: var(--text);
+}
+
+.stage-zoom-value[data-active='true'] {
+	color: var(--text-tertiary);
+}
+
+.stage-zoom-value:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
+/* The render step's rail names itself instead of showing four tabs it cannot use. */
+.panel-step-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	min-height: 34px;
+}
+
+.panel-step-head .section-label {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	margin: 0;
+}
+
+/* ------------------------------------- other studios: emphasise the step */
+
+/*
+ * The remaining studios keep all three panels on a desktop - their side panels
+ * carry controls used while watching the preview - but the active step decides
+ * who gets the width. The rail being edited grows; the other one gives way.
+ */
+.workspace--silence[data-tab='source'],
+.workspace--tools[data-tab='source'] {
+	grid-template-columns: clamp(330px, 25vw, 430px) minmax(0, 1fr) clamp(230px, 15vw, 268px);
+}
+
+.workspace--silence[data-tab='preview'],
+.workspace--tools[data-tab='preview'] {
+	grid-template-columns: clamp(228px, 15vw, 268px) minmax(0, 1fr) clamp(228px, 15vw, 268px);
+}
+
+.workspace--silence[data-tab='export'],
+.workspace--tools[data-tab='export'] {
+	grid-template-columns: clamp(228px, 15vw, 268px) minmax(0, 1fr) clamp(330px, 25vw, 440px);
+}
+
+.workspace--create[data-tab='create'] {
+	grid-template-columns: clamp(340px, 26vw, 452px) minmax(0, 1fr) clamp(232px, 15vw, 272px);
+}
+
+.workspace--create[data-tab='preview'] {
+	grid-template-columns: clamp(232px, 15vw, 272px) minmax(0, 1fr) clamp(232px, 15vw, 272px);
+}
+
+.workspace--create[data-tab='export'] {
+	grid-template-columns: clamp(232px, 15vw, 272px) minmax(0, 1fr) clamp(330px, 25vw, 440px);
+}
+
+/* The editor's timeline is the work, so its own step gives it the height. */
+.editor-workspace[data-tab='edit'] .editor-timeline {
+	height: clamp(240px, 34vh, 400px);
+	min-height: 240px;
+}
+
+.editor-workspace[data-tab='media'] {
+	grid-template-columns: clamp(300px, 23vw, 400px) minmax(0, 1fr) clamp(230px, 16vw, 268px);
+}
+
+.editor-workspace[data-tab='adjust'] {
+	grid-template-columns: clamp(206px, 14vw, 236px) minmax(0, 1fr) clamp(300px, 22vw, 384px);
+}
+
+@media (max-width: 1000px) {
+	/*
+	 * One step at a time on a phone, using the step names above. The shared
+	 * `.workspace[data-tab] > .panel { display: none }` rule still hides
+	 * everything first; these say which panel each subtitle step reveals.
+	 */
+	.workspace--captions[data-tab] {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.workspace--captions[data-tab='source'] > .panel--stage,
+	.workspace--captions[data-tab='tools'] > .panel--stage,
+	.workspace--captions[data-tab='render'] > .panel--stage {
+		display: none;
+	}
+
+	.workspace--captions[data-tab='source'] > .panel--left,
+	.workspace--captions[data-tab='edit'] > .panel--stage,
+	.workspace--captions[data-tab='tools'] > .panel--right,
+	.workspace--captions[data-tab='render'] > .panel--right {
+		display: flex;
+	}
+
+	/*
+	 * No room to put the timeline beside anything on a phone. This has to match
+	 * the shape of the desktop rule it overrides - a shorter selector loses to
+	 * it on specificity no matter which one the media query wraps.
+	 */
+	.workspace--captions:is([data-tab='edit'], [data-tab='tools'])
+		.stage-body[data-orient='portrait'] {
+		flex-direction: column;
+	}
+
+	.workspace--captions:is([data-tab='edit'], [data-tab='tools'])
+		.stage-body[data-orient='portrait']
+		> .cue-track {
+		width: auto;
+		border-top: 1px solid var(--border);
+		border-left: 0;
+	}
+
+	/*
+	 * On a phone the picture and the rows cannot both fit a 800px column: the
+	 * timeline's own bars are 300px before a single caption row is drawn. So
+	 * the step scrolls instead of splitting, and the preview sticks to the top
+	 * of that scroll - the caption being timed stays on screen while its row is
+	 * being edited, which is the whole point of the step.
+	 */
+	.workspace--captions:is([data-tab='edit'], [data-tab='tools']) .stage-body {
+		overflow-y: auto;
+		overscroll-behavior-y: contain;
+	}
+
+	.workspace--captions:is([data-tab='edit'], [data-tab='tools']) .stage--captions {
+		position: sticky;
+		top: 0;
+		z-index: 2;
+		flex: none;
+		height: 46vh;
+		min-height: 190px;
+		background: var(--bg);
+	}
+
+	.workspace--captions:is([data-tab='edit'], [data-tab='tools']) .cue-track--advanced {
+		flex: none;
+		min-height: 0;
+		max-height: none;
+	}
+
+	/*
+	 * Once the timeline is allowed to shrink, only the caption rows may give
+	 * way. Its bars carry controls at a fixed height, and a shrunk bar draws
+	 * its buttons over the row beneath it.
+	 */
+	.cue-track-bar,
+	.cue-timeline-tools,
+	.cue-timeline-shell,
+	.cue-selection-bar {
+		flex-shrink: 0;
+	}
+
+	.cue-track--advanced .cue-list {
+		flex: 1;
+		min-height: 0;
+	}
+
+	.workflow-nav {
+		min-height: 50px;
+		padding: 0 9px;
+	}
+
+	.workflow-nav-label {
+		display: none;
+	}
+}
+
+/*
+ * On a phone the step pills are the whole width, and four of them plus two
+ * arrows leaves every label an ellipsis. The pills are the transport at this
+ * size - they are directly tappable - so the arrows stand down.
+ */
+@media (max-width: 560px) {
+	.workflow-nav {
+		display: none;
+	}
+}
+
+/* ------------------------------------------- timeline, sized by its column */
+
+/*
+ * The timeline is no longer always a full-width strip under the preview: on the
+ * edit and styling steps it is a column beside a vertical clip, roughly a third
+ * of the width it used to get. Width is what its rows react to, and that width
+ * no longer follows from the viewport, so it asks the element rather than the
+ * window. Everything below is the same reflow the narrow-viewport rules already
+ * did, keyed to the track instead.
+ */
+.cue-track--advanced {
+	container-type: inline-size;
+	container-name: cuetrack;
+}
+
+@container cuetrack (max-width: 560px) {
+	/*
+	 * The text drops onto its own line above the timecodes, and the buttons
+	 * stay in a column beside both. At this width the old single-line row
+	 * clipped the end timecode and the delete button off the right edge.
+	 */
+	.cue-row--advanced > .cue-row-content {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 5px;
+	}
+
+	.cue-row--advanced > .cue-actions {
+		flex-wrap: wrap;
+		justify-content: flex-end;
+		max-width: 62px;
+	}
+
+	.cue-times--advanced {
+		flex-wrap: wrap;
+	}
+
+	/* The selection hint wraps instead of scrolling out of both edges. */
+	.cue-selection-bar {
+		flex-wrap: wrap;
+		overflow-x: visible;
+		white-space: normal;
+	}
+
+	/* The zoom slider stops fighting the tool toggles for the same line. */
+	.cue-timeline-tools {
+		flex-wrap: wrap;
+	}
+
+	.cue-zoom-control {
+		flex-basis: 100%;
+		margin-left: 0;
+	}
+
+	.cue-zoom-control input {
+		flex: 1;
+		width: auto;
+	}
+
+	.cue-track-bar--advanced {
+		padding: 8px 10px;
+	}
+
+	.cue-timeline-shell,
+	.cue-timeline-tools {
+		padding-inline: 10px;
+	}
+
+	.cue-list--advanced {
+		padding-inline: 8px;
+	}
+}
+
+@container cuetrack (max-width: 400px) {
+	/* Below this the caption text is all that is worth full width. */
+	.cue-row--advanced .cue-times--advanced .cue-duration {
+		display: none;
+	}
+}

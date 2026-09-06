@@ -52,7 +52,7 @@ export default function Studio() {
 	const [compiling, setCompiling] = useState(false)
 	const [selectedId, setSelectedId] = useState<string | null>(null)
 	const [autoRenderEntry, setAutoRenderEntry] = useState<string | null>(null)
-	const [mobileTab, setMobileTab] = useState<MobileTab>('preview')
+	const [mobileTab, setMobileTab] = useState<MobileTab>('create')
 	// Held here, not in the composer: the composer is remounted when the opening
 	// screen gives way to the three-pane studio, and the transcript must survive it.
 	const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([])
@@ -470,7 +470,7 @@ export default function Studio() {
 				/>
 			) : (
 				<>
-				<div className="workspace" data-tab={mobileTab}>
+				<div className="workspace workspace--create" data-tab={mobileTab}>
 					<SourcePanel
 						project={project}
 						busy={compiling || render.rendering}
@@ -541,6 +541,10 @@ export default function Studio() {
 									: tab.id === 'preview'
 										? composition !== null && !compileError
 										: render.output !== null,
+							// Both later steps need something that compiles; until then
+							// they would show an empty stage and a disabled render form.
+							locked: tab.id === 'create' ? false : project === null,
+							lockedHint: 'Describe or drop in a video first',
 						}))}
 					/>
 				</>

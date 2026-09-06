@@ -34,6 +34,13 @@ const GROUPS: Array<{ title: string; items: Shortcut[] }> = [
 		],
 	},
 	{
+		title: 'Steps',
+		items: [
+			{ keys: ['['], label: 'Back one step' },
+			{ keys: [']'], label: 'Forward one step' },
+		],
+	},
+	{
 		title: 'Workspace',
 		items: [
 			{ keys: ['1'], label: 'Open the Design panel' },

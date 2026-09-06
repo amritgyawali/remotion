@@ -515,7 +515,7 @@ export default function ToolsStudio() {
 				</div>
 			) : null}
 
-			<div className="workspace" data-tab={pane}>
+			<div className="workspace workspace--tools" data-tab={pane}>
 				<ToolsSourcePanel
 					video={video}
 					videoBanked={videoBanked}
@@ -644,6 +644,9 @@ export default function ToolsStudio() {
 				steps={TOOLS_PANES.map((item) => ({
 					...item,
 					done: item.id === 'source' ? video !== null && selectedTool !== null : item.id === 'preview' ? Boolean(previewUrl || outputs[0]?.url) : outputs.length > 0,
+					// Nothing to compare and nothing to download until a clip is in.
+					locked: item.id === 'source' ? false : video === null,
+					lockedHint: 'Add a video first',
 				}))}
 			/>
 		</div>

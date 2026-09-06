@@ -140,7 +140,7 @@ export default function SilenceStudio() {
 
 	const [cues, setCues] = useState<CaptionCue[]>([])
 	const [sendState, setSendState] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle')
-	const [pane, setPane] = useState<Pane>('preview')
+	const [pane, setPane] = useState<Pane>('source')
 	const [webCodecs, setWebCodecs] = useState(true)
 	const [restoreSummary, setRestoreSummary] = useState<string | null>(null)
 	const [restoreWarning, setRestoreWarning] = useState<string | null>(null)
@@ -204,6 +204,8 @@ export default function SilenceStudio() {
 				})
 				if (controller.signal.aborted) return
 				setAnalysis(measured)
+				// There is a cut to look at now, which is the next step's whole job.
+				setPane('preview')
 				// The level track outlives the session: writing it here is what lets a
 				// refresh come back with the waveform already drawn.
 				void writeBlob(SILENCE_LEVELS_BLOB_ID, levelsToBlob(measured.frameDb), 'levels.bin')
@@ -865,6 +867,11 @@ export default function SilenceStudio() {
 				steps={SILENCE_PANES.map((item) => ({
 					...item,
 					done: item.id === 'source' ? analysis !== null : item.id === 'preview' ? plan.outputDurationMs > 0 : renderResult !== null,
+					// A step opens once the thing it works on exists: there is no cut
+					// to review before the pauses are measured, and nothing to render
+					// before there is a cut.
+					locked: item.id === 'source' ? false : analysis === null,
+					lockedHint: 'Add a video and find its pauses first',
 				}))}
 			/>
 		</div>
