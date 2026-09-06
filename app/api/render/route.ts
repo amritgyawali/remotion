@@ -135,6 +135,9 @@ export async function POST(request: NextRequest) {
 			scale,
 			previewSeconds,
 			audioEnabled,
+			// The server renderer runs headless Chrome through Remotion's own
+			// pipeline; the browser-only path choice does not reach it.
+			renderPath: 'fast',
 		},
 	}
 

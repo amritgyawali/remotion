@@ -32,6 +32,7 @@ import {
 import { readBlob, removeBlob, requestPersistentStorage, writeBlob } from '../lib/persist/idb'
 import { useAutosave, useRestoredSnapshot } from '../lib/persist/use-vault'
 import { sendToStudio, useIncomingHandoff } from '../lib/handoff'
+import { prefetchMediaEngine } from '../lib/lazy-chunk'
 import { useCloud } from '../lib/cloud/use-cloud'
 import { useCloudMedia } from '../lib/cloud/use-cloud-media'
 import { useCloudProjectAutosave } from '../lib/cloud/use-project-autosave'
@@ -97,6 +98,21 @@ export default function ToolsStudio() {
 		if (cloud.location === 'cloud' && cloudMediaError) setLoadError(`Cloud upload: ${cloudMediaError}`)
 	}, [cloud.location, cloudMediaError])
 	const [cloudNote, setCloudNote] = useState<string | null>(null)
+
+	/**
+	 * Warm the media engine as soon as there is a clip.
+	 *
+	 * The demuxer, decoders and muxer live in one code-split chunk that used to
+	 * be fetched at the moment Export was pressed - the worst moment, because
+	 * nothing can encode until it lands and a slow fetch reads as a stuck
+	 * render. Starting it here usually means the export begins with the bytes
+	 * already cached, and a failure now costs nothing: the export path fetches
+	 * it again, with retries.
+	 */
+	useEffect(() => {
+		if (!video) return
+		prefetchMediaEngine()
+	}, [video])
 
 	const runAbortRef = useRef<AbortController | null>(null)
 

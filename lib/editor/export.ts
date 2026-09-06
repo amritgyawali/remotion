@@ -19,6 +19,7 @@ import { activeClipsAtFrame, projectDurationFrames } from './model'
 import { renderFrame } from './compositor'
 import type { AssetSinkPool } from './sinks'
 import { framesToSeconds, type AudioClip, type ProjectDoc, type VideoClip } from './types'
+import { loadMediaEngine } from '../lazy-chunk'
 
 export type ExportFormat = 'mp4' | 'webm'
 export type ExportQuality = 'draft' | 'high' | 'max'
@@ -93,7 +94,7 @@ export async function renderEditorExport(
 
 	onProgress?.({ phase: 'preparing', ratio: 0, framesDone: 0, framesTotal })
 
-	const mediabunny = await import('mediabunny')
+	const mediabunny = await loadMediaEngine()
 	const { BufferTarget, CanvasSource, Mp4OutputFormat, Output, WebMOutputFormat, getFirstEncodableVideoCodec, AudioBufferSource } = mediabunny
 
 	const videoCodec = await getFirstEncodableVideoCodec(options.format === 'mp4' ? ['avc', 'hevc', 'vp9', 'av1'] : ['vp9', 'vp8', 'av1'], { width, height })

@@ -23,6 +23,7 @@ import { computeFrameDims, drawFrame, fitWithin, type CropRect, type FrameOpsDim
 import { encodeGif, type GifFrame } from './gif-encoder'
 import { createRenderSink, describeRenderFailure } from '../media/render-sink'
 import { createPacketRetimer } from './packet-timing'
+import { loadMediaEngine } from '../lazy-chunk'
 
 export type VideoFilterFormat = 'mp4' | 'webm'
 export type VideoFilterQuality = 'draft' | 'high' | 'max'
@@ -132,7 +133,7 @@ export async function renderVideoFilter(options: VideoFilterOptions): Promise<Vi
 	const { signal } = options
 	assertLive(signal)
 
-	const mediabunny = await import('mediabunny')
+	const mediabunny = await loadMediaEngine()
 	const {
 		ALL_FORMATS,
 		BlobSource,
@@ -434,7 +435,7 @@ export async function extractThumbnail(args: {
 	signal: AbortSignal
 }): Promise<ThumbnailResult> {
 	assertLive(args.signal)
-	const mediabunny = await import('mediabunny')
+	const mediabunny = await loadMediaEngine()
 	const { ALL_FORMATS, BlobSource, Input, VideoSampleSink } = mediabunny
 	const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(args.source) })
 	try {
@@ -507,7 +508,7 @@ export type AutoLevelsResult = { brightness: number; contrast: number; saturatio
  */
 export async function analyzeAutoLevels(source: Blob, signal: AbortSignal): Promise<AutoLevelsResult> {
 	assertLive(signal)
-	const mediabunny = await import('mediabunny')
+	const mediabunny = await loadMediaEngine()
 	const { ALL_FORMATS, BlobSource, Input, VideoSampleSink } = mediabunny
 	const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(source) })
 	try {
@@ -588,7 +589,7 @@ export async function analyzeAutoLevels(source: Blob, signal: AbortSignal): Prom
  */
 export async function detectLetterboxCrop(source: Blob, signal: AbortSignal): Promise<CropRect | null> {
 	assertLive(signal)
-	const mediabunny = await import('mediabunny')
+	const mediabunny = await loadMediaEngine()
 	const { ALL_FORMATS, BlobSource, Input, VideoSampleSink } = mediabunny
 	const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(source) })
 	try {
@@ -693,7 +694,7 @@ export async function estimateStabilization(
 	strength = 0.6,
 ): Promise<StabilizationPlan> {
 	assertLive(signal)
-	const mediabunny = await import('mediabunny')
+	const mediabunny = await loadMediaEngine()
 	const { ALL_FORMATS, BlobSource, Input, VideoSampleSink } = mediabunny
 	const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(source) })
 	try {
@@ -802,7 +803,7 @@ export type SecondaryVideoSource = {
  * has to know mediabunny opened it.
  */
 export async function openSecondaryVideoSource(source: Blob): Promise<SecondaryVideoSource> {
-	const mediabunny = await import('mediabunny')
+	const mediabunny = await loadMediaEngine()
 	const { ALL_FORMATS, BlobSource, Input, VideoSampleSink } = mediabunny
 	const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(source) })
 	const videoTrack = await input.getPrimaryVideoTrack()
@@ -853,7 +854,7 @@ export async function exportGif(args: {
 	onProgress?: (ratio: number) => void
 }): Promise<GifExportResult> {
 	assertLive(args.signal)
-	const mediabunny = await import('mediabunny')
+	const mediabunny = await loadMediaEngine()
 	const { ALL_FORMATS, BlobSource, Input, VideoSampleSink } = mediabunny
 	const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(args.source) })
 	try {

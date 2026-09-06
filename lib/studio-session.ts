@@ -96,6 +96,7 @@ export function normalizeStoredRender(value: unknown, fallback: RenderSettings):
 		audioEnabled: typeof value.audioEnabled === 'boolean' ? value.audioEnabled : fallback.audioEnabled,
 		scale: number(value.scale, fallback.scale, 0.25, 4),
 		previewSeconds: Math.round(number(value.previewSeconds, fallback.previewSeconds, 0, 3_600)),
+		renderPath: value.renderPath === 'compatible' ? 'compatible' : 'fast',
 	}
 }
 

@@ -63,6 +63,7 @@ import {
 import { readBlob, removeBlob, requestPersistentStorage, writeBlob } from '../lib/persist/idb'
 import { useAutosave, useRestoredSnapshot } from '../lib/persist/use-vault'
 import { sendToStudio, useIncomingHandoff } from '../lib/handoff'
+import { prefetchMediaEngine } from '../lib/lazy-chunk'
 import { useCloud } from '../lib/cloud/use-cloud'
 import { useCloudMedia } from '../lib/cloud/use-cloud-media'
 import { useCloudProjectAutosave } from '../lib/cloud/use-project-autosave'
@@ -145,6 +146,21 @@ export default function SilenceStudio() {
 	const [restoreSummary, setRestoreSummary] = useState<string | null>(null)
 	const [restoreWarning, setRestoreWarning] = useState<string | null>(null)
 	const [restoredAt, setRestoredAt] = useState<number | null>(null)
+
+	/**
+	 * Warm the media engine as soon as there is a clip.
+	 *
+	 * The demuxer, decoders and muxer live in one code-split chunk that used to
+	 * be fetched at the moment Export was pressed - the worst moment, because
+	 * nothing can encode until it lands and a slow fetch reads as a stuck
+	 * render. Starting it here usually means the export begins with the bytes
+	 * already cached, and a failure now costs nothing: the export path fetches
+	 * it again, with retries.
+	 */
+	useEffect(() => {
+		if (!video) return
+		prefetchMediaEngine()
+	}, [video])
 
 	const analysisAbortRef = useRef<AbortController | null>(null)
 	const renderAbortRef = useRef<AbortController | null>(null)

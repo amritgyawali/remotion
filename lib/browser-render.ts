@@ -10,7 +10,7 @@
  */
 
 import { deviceProfile } from './device'
-import { loadChunk, loadWebRenderer } from './lazy-chunk'
+import { isChunkLoadError, loadChunk, loadWebRenderer } from './lazy-chunk'
 import { computeBitrate, evenDimension, h264CodecString, QUALITY_PRESETS } from './presets'
 import type { CompiledComposition, RenderOutput, RenderProgress, RenderSettings } from './types'
 
@@ -40,12 +40,34 @@ function nextPaint(): Promise<void> {
 	})
 }
 
+
 function wait(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function assertLive(signal: AbortSignal): void {
 	if (signal.aborted) throw new RenderCancelled()
+}
+
+/**
+ * Resolves when the encoder has taken something off its queue.
+ *
+ * `dequeue` is the event WebCodecs provides for exactly this, and it is capped
+ * with a short timer so a browser that never fires it cannot wedge a render.
+ */
+function drained(encoder: VideoEncoder): Promise<void> {
+	return new Promise((resolve) => {
+		let settled = false
+		const done = () => {
+			if (settled) return
+			settled = true
+			encoder.removeEventListener('dequeue', done)
+			clearTimeout(timer)
+			resolve()
+		}
+		const timer = setTimeout(done, 50)
+		encoder.addEventListener('dequeue', done)
+	})
 }
 
 function ensureExtension(fileName: string, extension: string): string {
@@ -218,14 +240,26 @@ async function mountStage(
 	}
 }
 
-async function settle(host: HTMLElement): Promise<void> {
+/**
+ * Waits for the frame that was just set to be laid out and drawable.
+ *
+ * `decoded` carries the image sources already known good, so a still background
+ * is decoded on the first frame it appears and not on the 449 after it. The
+ * two-frame wait itself stays: cutting it to one measured as noise against the
+ * ~150ms this loop spends rasterising, and a composition that needs the second
+ * paint would have been captured a frame stale to save nothing.
+ */
+async function settle(host: HTMLElement, decoded?: Set<string>): Promise<void> {
 	await nextPaint()
 	const images = Array.from(host.querySelectorAll('img'))
-	if (images.length > 0) {
-		await Promise.all(
-			images.map((image) => (image.decode ? image.decode().catch(() => undefined) : undefined)),
-		)
-	}
+	const pending = decoded ? images.filter((image) => !decoded.has(image.currentSrc || image.src)) : images
+	if (pending.length === 0) return
+	await Promise.all(
+		pending.map(async (image) => {
+			if (image.decode) await image.decode().catch(() => undefined)
+			decoded?.add(image.currentSrc || image.src)
+		}),
+	)
 }
 
 /** Renders a single frame as a full resolution PNG. */
@@ -442,6 +476,15 @@ async function renderMediaWithSound(args: BrowserRenderArgs): Promise<RenderOutp
 			hardwareAcceleration: 'no-preference',
 			keyframeIntervalInSeconds: preset.keyframeIntervalSeconds,
 			pageResponsiveness: deviceProfile().renderPageResponsiveness,
+			/**
+			 * How much decoded source video Remotion may hold.
+			 *
+			 * Left unset, @remotion/media assumes 1GB on every device alike: more
+			 * than a 3GB phone can survive, and less than a workstation could use
+			 * to stop re-decoding a clip it has already seen. The device profile
+			 * has measured the machine, so it decides.
+			 */
+			mediaCacheSizeInBytes: deviceProfile().mediaCacheBytes,
 			// Let Remotion use OPFS when available so long 4K renders are not held
 			// entirely in RAM. It falls back to an ArrayBuffer on older browsers.
 			licenseKey: process.env.NEXT_PUBLIC_REMOTION_LICENSE_KEY?.trim() || 'free-license',
@@ -571,6 +614,9 @@ async function renderVisualOnly(args: BrowserRenderArgs): Promise<RenderOutput> 
 		await settle(stage.host)
 		await wait(150)
 
+		/** Image sources already decoded once, so later frames skip them. */
+		const decoded = new Set<string>()
+
 		let fontEmbedCSS = ''
 		try {
 			fontEmbedCSS = await getFontEmbedCSS(stage.host)
@@ -597,7 +643,7 @@ async function renderVisualOnly(args: BrowserRenderArgs): Promise<RenderOutput> 
 			if (encoderError) throw encoderError
 
 			stage.setFrame(frame)
-			await settle(stage.host)
+			await settle(stage.host, decoded)
 
 			const canvas = await toCanvas(stage.host, rasterOptions)
 			const videoFrame = new VideoFrame(canvas, {
@@ -608,9 +654,12 @@ async function renderVisualOnly(args: BrowserRenderArgs): Promise<RenderOutput> 
 			encoder.encode(videoFrame, { keyFrame: frame % keyFrameInterval === 0 })
 			videoFrame.close()
 
+			// The encoder says when it has drained. Polling every 4ms meant every
+			// wait ended up to 4ms late, on every frame the queue was full - the
+			// `dequeue` event resumes the moment there is actually room.
 			while (encoder.encodeQueueSize > queueDepth) {
 				assertLive(signal)
-				await wait(4)
+				await drained(encoder)
 			}
 
 			const now = performance.now()
@@ -672,7 +721,39 @@ export async function renderInBrowser(args: BrowserRenderArgs): Promise<RenderOu
 		)
 	}
 
-	return args.composition.needsWebRenderer
-		? renderMediaWithSound(args)
-		: renderVisualOnly(args)
+	/**
+	 * Which of the two renderers draws the frames.
+	 *
+	 * A composition that imports @remotion/media has no choice: the rasteriser
+	 * cannot decode its video, so the compositor draws it. For everything else
+	 * the choice used to be made silently in favour of the rasteriser, and it
+	 * is expensive. Measured on the Pascal Cascade sample at 1080x1920, a
+	 * 120-frame render cost 27.3s through the rasteriser against 6.2s through
+	 * the compositor - 66% of every frame was spent inside `toCanvas` alone -
+	 * and the rasteriser has no audio track at all, so that render was silent.
+	 *
+	 * The compositor is not a free win, which is why this is a setting and not
+	 * a replacement: it does not draw every background the rasteriser does
+	 * (gradient and repeating-gradient backgrounds are the ones that show up),
+	 * so a composition that looks wrong on `fast` has somewhere to go.
+	 */
+	if (args.settings.renderPath === 'compatible' && !args.composition.needsWebRenderer) {
+		return renderVisualOnly(args)
+	}
+
+	try {
+		return await renderMediaWithSound(args)
+	} catch (error) {
+		if (args.signal.aborted || error instanceof RenderCancelled) throw error
+		// A composition the compositor cannot draw still has the slow path, but
+		// a failed download is a network problem and retrying it here would only
+		// fail again, more slowly.
+		if (isChunkLoadError(error) || args.composition.needsWebRenderer) throw error
+		args.onProgress({
+			phase: 'preparing',
+			progress: 0,
+			message: 'Retrying with the compatibility renderer - the result will have no audio track',
+		})
+		return renderVisualOnly(args)
+	}
 }

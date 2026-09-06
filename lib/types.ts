@@ -52,6 +52,17 @@ export type RenderSettings = {
 	scale: number
 	/** render only the first N seconds, 0 = full composition */
 	previewSeconds: number
+	/**
+	 * Which browser renderer draws the frames.
+	 *
+	 * `fast` is Remotion's compositor: several times quicker, and the only one
+	 * of the two that can carry an audio track. `compatible` serialises the DOM
+	 * to an image once per frame, which is slow and silent but reproduces CSS
+	 * the compositor does not draw - notably gradient and repeating backgrounds.
+	 * Compositions that import @remotion/media always use the compositor,
+	 * because the rasteriser cannot decode their video at all.
+	 */
+	renderPath: 'fast' | 'compatible'
 }
 
 export type RenderOverrides = {

@@ -29,6 +29,14 @@ export type DeviceProfile = {
 	maxScale: number
 	/** how many frames may sit in the encoder queue before rendering waits */
 	encoderQueueDepth: number
+	/**
+	 * how much decoded source video Remotion may hold while rendering.
+	 *
+	 * @remotion/media defaults this to 1GB when nothing is passed, which is a
+	 * comfortable figure on a laptop and the reason a 3GB phone loses the tab
+	 * mid-render. The floor the library accepts is 240MB.
+	 */
+	mediaCacheBytes: number
 	/** live editor backing resolution; export always remains full resolution */
 	previewScale: number
 	/** bounded number of independent files processed by a batch tool */
@@ -46,7 +54,8 @@ const DESKTOP: DeviceProfile = {
 	cores: 4,
 	maxDimension: 3840,
 	maxScale: 2,
-	encoderQueueDepth: 8,
+	encoderQueueDepth: 16,
+	mediaCacheBytes: 1_000 * 1024 * 1024,
 	previewScale: 1,
 	batchConcurrency: 2,
 	renderPageResponsiveness: 'low',
@@ -99,7 +108,22 @@ export function deviceProfile(): DeviceProfile {
 		maxDimension,
 		maxScale: mobile || maxDimension <= 1920 ? 1 : 2,
 		// A deep queue is throughput on a desktop and a memory spike on a phone.
-		encoderQueueDepth: mobile ? 3 : cores >= 8 ? 8 : 6,
+		// A hardware encoder only reaches its rate when it has work queued ahead
+		// of it, and the frames waiting are the cheap part next to the decoded
+		// source already in flight - so a many-core desktop queues meaningfully
+		// deeper than the 8 it used to, and a phone still queues three.
+		encoderQueueDepth: mobile ? 3 : cores >= 8 ? 16 : 10,
+		// Half the memory the device admits to, inside the library's own bounds.
+		// Unset, @remotion/media assumes 1GB on every device alike.
+		mediaCacheBytes: Math.round(
+			Math.max(
+				240 * 1024 * 1024,
+				Math.min(
+					1_500 * 1024 * 1024,
+					(memoryGb === null ? (mobile ? 3 : 8) : memoryGb) * 0.35 * 1024 * 1024 * 1024,
+				),
+			),
+		),
 		// The preview is a display surface, not the export surface. A 540px-wide
 		// phone cannot show a 1080px backing store, so decoding and compositing the
 		// invisible pixels only burns battery and drops frames.
@@ -168,7 +192,13 @@ export async function refineDeviceProfileForNative(): Promise<DeviceProfile | nu
 		cores,
 		maxDimension,
 		maxScale: maxDimension >= 3840 ? 4 : maxDimension >= 1920 ? 2 : 1,
-		encoderQueueDepth: Math.min(16, Math.max(6, cores)),
+		encoderQueueDepth: Math.min(24, Math.max(8, cores * 2)),
+		// The native shell reports real system memory rather than the browser's
+		// capped 8GB guess, so the cache can be sized against what the machine
+		// actually has - inside the 240MB-20GB range the library accepts.
+		mediaCacheBytes: Math.round(
+			Math.max(240 * 1024 * 1024, Math.min(6_000 * 1024 * 1024, memoryGb * 0.35 * 1024 ** 3)),
+		),
 		previewScale: info.os === 'android' || info.os === 'ios' ? 0.6 : memoryGb >= 8 ? 1 : 0.75,
 		batchConcurrency: memoryGb >= 8 && cores >= 8 ? Math.min(3, Math.max(2, Math.floor(cores / 6))) : 1,
 		renderPageResponsiveness: info.os === 'android' || info.os === 'ios' ? 'high' : memoryGb >= 8 && cores >= 8 ? 'low' : 'medium',

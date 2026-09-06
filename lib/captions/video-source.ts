@@ -11,6 +11,7 @@
  */
 
 import type { CaptionVideoSource } from './types'
+import { loadMediaEngine } from '../lazy-chunk'
 
 export const ACCEPTED_VIDEO_TYPES = ['.mp4', '.mov', '.webm', '.m4v', '.mkv', '.avi', '.ogv']
 
@@ -76,7 +77,7 @@ export async function probeVideo(input: {
 	let parsed = false
 
 	try {
-		const { ALL_FORMATS, BlobSource, Input, UrlSource } = await import('mediabunny')
+		const { ALL_FORMATS, BlobSource, Input, UrlSource } = await loadMediaEngine()
 		const media = new Input({
 			formats: ALL_FORMATS,
 			source: file ? new BlobSource(file) : new UrlSource(url),

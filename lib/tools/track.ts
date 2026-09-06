@@ -32,6 +32,7 @@
 
 import { centeredAspectCrop, type CropRect } from './frame-ops'
 import { createPersonSegmenter, SegmentationUnavailableError, type SegmentationModelId, type SegmentationProgress } from './segmentation'
+import { loadMediaEngine } from '../lazy-chunk'
 
 export type TrackPlan = {
 	crop: CropRect
@@ -107,7 +108,7 @@ export async function planAutoReframe(options: TrackOptions): Promise<TrackPlan>
 	const { signal } = options
 	if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
 
-	const mediabunny = await import('mediabunny')
+	const mediabunny = await loadMediaEngine()
 	const { ALL_FORMATS, BlobSource, Input, VideoSampleSink } = mediabunny
 	const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(options.source) })
 

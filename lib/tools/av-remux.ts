@@ -22,6 +22,7 @@
 import { applyGainDb } from './audio-ops'
 import { createPacketRetimer } from './packet-timing'
 import { createRenderSink, describeRenderFailure } from '../media/render-sink'
+import { loadMediaEngine } from '../lazy-chunk'
 
 export type AudioOutputFormat = 'mp4' | 'webm'
 export type AudioOnlyFormat = 'wav' | 'webm'
@@ -110,7 +111,7 @@ export async function decodeWholeTrack(args: {
 	signal: AbortSignal
 	onProgress?: (ratio: number) => void
 }): Promise<{ buffer: AudioBuffer; codec: string | null } | null> {
-	const { ALL_FORMATS, AudioBufferSink, BlobSource, Input } = await import('mediabunny')
+	const { ALL_FORMATS, AudioBufferSink, BlobSource, Input } = await loadMediaEngine()
 	const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(args.source) })
 	try {
 		const track = await input.getPrimaryAudioTrack()
@@ -204,7 +205,7 @@ export async function remuxWithAudioEdit(options: RemuxOptions): Promise<RemuxRe
 	const { signal } = options
 	assertLive(signal)
 
-	const mediabunny = await import('mediabunny')
+	const mediabunny = await loadMediaEngine()
 	const {
 		ALL_FORMATS,
 		AudioBufferSource,
@@ -423,7 +424,7 @@ export async function extractAudioOnly(args: {
 	if (!decoded) throw new Error('That file has no audio track to extract.')
 	const buffer = args.transform ? args.transform(decoded.buffer) : decoded.buffer
 
-	const mediabunny = await import('mediabunny')
+	const mediabunny = await loadMediaEngine()
 	const { AudioBufferSource, BufferTarget, Output, WavOutputFormat, WebMOutputFormat, getFirstEncodableAudioCodec, QUALITY_HIGH } =
 		mediabunny
 

@@ -48,6 +48,7 @@ import { DEFAULT_CAPABILITIES, fetchServerCapabilities, renderOnServer } from '.
 import type { ServerCapabilities } from '../lib/types'
 import CloudProjectsPanel from './cloud/CloudProjectsPanel'
 import WorkflowSteps from './WorkflowSteps'
+import { prefetchMediaEngine } from '../lib/lazy-chunk'
 
 const SESSION_KEY = 'editor-studio'
 type EditorPane = 'media' | 'edit' | 'adjust'
@@ -80,6 +81,19 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 	const [renderAccessKey, setRenderAccessKey] = useState('')
 	const [editorPane, setEditorPane] = useState<EditorPane>('media')
 	const device = useDeviceProfile()
+
+	/**
+	 * Warm the media engine as soon as the bin has something in it.
+	 *
+	 * The demuxer, decoders and muxer are one code-split chunk that used to be
+	 * fetched when Export was pressed - nothing can encode until it lands, so a
+	 * slow fetch reads as a stuck export. Importing a clip is the earliest
+	 * honest signal that this project will need it.
+	 */
+	useEffect(() => {
+		if (Object.keys(doc.assets).length === 0) return
+		prefetchMediaEngine()
+	}, [doc.assets])
 
 	const poolRef = useRef<AssetSinkPool>(new AssetSinkPool())
 	const blobsRef = useRef<Map<string, Blob>>(new Map())
@@ -596,6 +610,7 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 						audioEnabled: exportSettings.includeAudio,
 						scale: exportSettings.scale,
 						previewSeconds: 0,
+						renderPath: 'fast',
 					},
 					fileName: `${current.name || 'editor-export'}.${exportSettings.format}`,
 					accessKey: renderAccessKey || undefined,

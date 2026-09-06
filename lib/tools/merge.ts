@@ -17,6 +17,7 @@ import { computeFrameDims, drawFrame, type FrameOpsDims } from './frame-ops'
 import { resampleChannel } from './audio-ops'
 import { decodeWholeTrack } from './av-remux'
 import { createRenderSink, describeRenderFailure } from '../media/render-sink'
+import { loadMediaEngine } from '../lazy-chunk'
 
 export type MergeFormat = 'mp4' | 'webm'
 export type MergeQuality = 'draft' | 'high' | 'max'
@@ -59,7 +60,7 @@ export async function mergeClips(args: {
 	const { signal } = args
 	assertLive(signal)
 
-	const mediabunny = await import('mediabunny')
+	const mediabunny = await loadMediaEngine()
 	const {
 		ALL_FORMATS,
 		AudioBufferSource,

@@ -30,6 +30,7 @@
 import { reverseAudio } from './audio-ops'
 import { decodeWholeTrack } from './av-remux'
 import { createRenderSink, describeRenderFailure } from '../media/render-sink'
+import { loadMediaEngine } from '../lazy-chunk'
 
 export type ReverseFormat = 'mp4' | 'webm'
 export type ReverseQuality = 'draft' | 'high' | 'max'
@@ -79,7 +80,7 @@ export async function renderReversed(args: {
 	const { signal } = args
 	assertLive(signal)
 
-	const mediabunny = await import('mediabunny')
+	const mediabunny = await loadMediaEngine()
 	const {
 		ALL_FORMATS,
 		AudioBufferSource,
