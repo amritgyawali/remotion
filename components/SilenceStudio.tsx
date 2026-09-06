@@ -77,6 +77,7 @@ import SilencePreview from './silence/SilencePreview'
 import SilenceExportPanel from './silence/SilenceExportPanel'
 import { RestoreNotice } from './SaveState'
 import WorkflowSteps from './WorkflowSteps'
+import PanelResizer from './PanelResizer'
 import {
 	IconCaptions,
 	IconCheck,
@@ -753,6 +754,9 @@ export default function SilenceStudio() {
 			) : null}
 
 			<div className="workspace workspace--silence workspace--flow" data-tab={pane}>
+				{/* The seam between each rail and the preview, draggable and arrow-key operable. */}
+				<PanelResizer side="left" storageKey="silence" label="Resize the silence form" />
+				<PanelResizer side="right" storageKey="silence" label="Resize the silence rail" />
 				<SilenceSourcePanel
 					video={video}
 					videoBanked={videoBanked}

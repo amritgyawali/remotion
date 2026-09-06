@@ -43,6 +43,7 @@ import ToolsSourcePanel from './tools/ToolsSourcePanel'
 import ToolsOutputPanel from './tools/ToolsOutputPanel'
 import { RestoreNotice } from './SaveState'
 import WorkflowSteps from './WorkflowSteps'
+import PanelResizer from './PanelResizer'
 import { IconClose, IconFilm, IconTools } from './Icons'
 
 type Pane = 'source' | 'preview' | 'export'
@@ -540,6 +541,9 @@ export default function ToolsStudio() {
 			) : null}
 
 			<div className="workspace workspace--tools workspace--flow" data-tab={pane}>
+				{/* The seam between each rail and the preview, draggable and arrow-key operable. */}
+				<PanelResizer side="left" storageKey="tools" label="Resize the tools form" />
+				<PanelResizer side="right" storageKey="tools" label="Resize the tools rail" />
 				<ToolsSourcePanel
 					video={video}
 					videoBanked={videoBanked}

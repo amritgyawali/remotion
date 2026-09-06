@@ -48,6 +48,7 @@ import { DEFAULT_CAPABILITIES, fetchServerCapabilities, renderOnServer } from '.
 import type { ServerCapabilities } from '../lib/types'
 import CloudProjectsPanel from './cloud/CloudProjectsPanel'
 import WorkflowSteps from './WorkflowSteps'
+import PanelResizer from './PanelResizer'
 import { prefetchMediaEngine } from '../lib/lazy-chunk'
 
 const SESSION_KEY = 'editor-studio'
@@ -750,6 +751,9 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 			/>
 
 			<div className="editor-workspace" data-tab={editorPane}>
+				{/* The seam beside each rail, draggable and arrow-key operable. */}
+				<PanelResizer side="left" storageKey="editor" min={180} max={520} label="Resize the media bin" />
+				<PanelResizer side="right" storageKey="editor" min={180} max={520} label="Resize the inspector" />
 				<aside className="editor-rail editor-rail--left editor-pane--media">
 					<MediaPool
 						assets={Object.values(doc.assets)}

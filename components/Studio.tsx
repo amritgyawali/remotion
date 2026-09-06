@@ -29,6 +29,7 @@ import StagePanel from './StagePanel'
 import TopBar from './TopBar'
 import type { AiChatMessage, AiGenerationRequest, AiGenerationResult } from './AiCreator'
 import WorkflowSteps from './WorkflowSteps'
+import PanelResizer from './PanelResizer'
 
 const MOBILE_TABS: Array<{ id: MobileTab; label: string; hint: string }> = [
 	{ id: 'create', label: 'Create', hint: 'Add code or describe it' },
@@ -474,6 +475,9 @@ export default function Studio() {
 			) : (
 				<>
 				<div className="workspace workspace--create workspace--flow" data-tab={mobileTab}>
+					{/* The seam between each rail and the preview, draggable and arrow-key operable. */}
+					<PanelResizer side="left" storageKey="video" label="Resize the video form" />
+					<PanelResizer side="right" storageKey="video" label="Resize the video rail" />
 					<SourcePanel
 						project={project}
 						busy={compiling || render.rendering}

@@ -8500,7 +8500,7 @@ textarea::placeholder {
 
 /* 1. Upload - the form leads, with the clip beside it to confirm what loaded. */
 .workspace--captions[data-tab='source'] {
-	grid-template-columns: clamp(340px, 27vw, 468px) minmax(0, 1fr);
+	grid-template-columns: var(--rail-left, clamp(340px, 27vw, 468px)) minmax(0, 1fr);
 }
 
 .workspace--captions[data-tab='source'] > .panel--right {
@@ -8519,12 +8519,12 @@ textarea::placeholder {
 
 /* 3. Style and tools - one rail of controls, the rest still preview. */
 .workspace--captions[data-tab='tools'] {
-	grid-template-columns: minmax(0, 1fr) clamp(324px, 24vw, 428px);
+	grid-template-columns: minmax(0, 1fr) var(--rail-right, clamp(324px, 24vw, 428px));
 }
 
 /* 4. Render - the same shape, so the picture never jumps on the last step. */
 .workspace--captions[data-tab='render'] {
-	grid-template-columns: minmax(0, 1fr) clamp(336px, 25vw, 452px);
+	grid-template-columns: minmax(0, 1fr) var(--rail-right, clamp(336px, 25vw, 452px));
 }
 
 .workspace--captions[data-tab='tools'] > .panel--left,
@@ -8682,11 +8682,30 @@ textarea::placeholder {
  * decides who gets the width instead.
  */
 .editor-workspace[data-tab='media'] {
-	grid-template-columns: clamp(300px, 23vw, 400px) minmax(0, 1fr) clamp(230px, 16vw, 268px);
+	grid-template-columns:
+		var(--rail-left, clamp(300px, 23vw, 400px))
+		minmax(0, 1fr)
+		var(--rail-right, clamp(230px, 16vw, 268px));
 }
 
 .editor-workspace[data-tab='adjust'] {
-	grid-template-columns: clamp(206px, 14vw, 236px) minmax(0, 1fr) clamp(300px, 22vw, 384px);
+	grid-template-columns:
+		var(--rail-left, clamp(206px, 14vw, 236px))
+		minmax(0, 1fr)
+		var(--rail-right, clamp(300px, 22vw, 384px));
+}
+
+.editor-workspace[data-tab='edit'] {
+	grid-template-columns:
+		var(--rail-left, clamp(196px, 13vw, 232px))
+		minmax(0, 1fr)
+		var(--rail-right, clamp(196px, 13vw, 232px));
+}
+
+/* The editor's rails are drawn in its own grid, so the seam is positioned
+   against that instead of the studio workspace. */
+.editor-workspace {
+	position: relative;
 }
 
 @media (max-width: 1000px) {
@@ -8891,7 +8910,7 @@ textarea::placeholder {
 
 /* 1. Set up - the form leads, with the picture beside it to check against. */
 .workspace--flow:is([data-tab='source'], [data-tab='create']) {
-	grid-template-columns: clamp(336px, 26vw, 464px) minmax(0, 1fr);
+	grid-template-columns: var(--rail-left, clamp(336px, 26vw, 464px)) minmax(0, 1fr);
 }
 
 .workspace--flow:is([data-tab='source'], [data-tab='create']) > .panel--right {
@@ -8910,7 +8929,7 @@ textarea::placeholder {
 
 /* 3. Finish - the output bench, with the picture still on screen beside it. */
 .workspace--flow[data-tab='export'] {
-	grid-template-columns: minmax(0, 1fr) clamp(336px, 25vw, 452px);
+	grid-template-columns: minmax(0, 1fr) var(--rail-right, clamp(336px, 25vw, 452px));
 }
 
 .workspace--flow[data-tab='export'] > .panel--left {
@@ -8956,10 +8975,6 @@ textarea::placeholder {
  * bin onto the timeline. So its steps widen rather than hide: the pane the step
  * is about gets the room, and the other keeps enough to drag from.
  */
-.editor-workspace[data-tab='edit'] {
-	grid-template-columns: clamp(196px, 13vw, 232px) minmax(0, 1fr) clamp(196px, 13vw, 232px);
-}
-
 /* Cutting is the timeline's job, so on its own step it gets the height. */
 .editor-workspace[data-tab='edit'] .editor-timeline {
 	height: clamp(240px, 34vh, 400px);
@@ -9051,4 +9066,96 @@ textarea::placeholder {
 	position: relative;
 	flex: none;
 	min-height: 0;
+}
+
+/* ========================================================================== *
+ * Resizing a side rail
+ *
+ * The steps size the rails, and this is how a person overrules them. The handle
+ * sits over the seam between a rail and the preview: a wide invisible target so
+ * it is easy to hit, and a hairline that only shows itself when you are on it,
+ * so a control used occasionally does not draw a line down the page all day.
+ * ========================================================================== */
+
+.workspace {
+	position: relative;
+}
+
+.panel-resizer {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	z-index: 5;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	/* Wider than it looks: the seam is 1px, the target is not. */
+	width: 13px;
+	margin-inline: -6px;
+	cursor: col-resize;
+	background: transparent;
+	border: 0;
+	padding: 0;
+	touch-action: none;
+	-webkit-tap-highlight-color: transparent;
+}
+
+/* Mounted but with no rail beside it: the editing step hides both rails. */
+.panel-resizer[data-idle] {
+	display: none;
+}
+
+.panel-resizer-grip {
+	width: 2px;
+	height: 100%;
+	border-radius: 2px;
+	background: transparent;
+	transition: background var(--fast) var(--ease);
+}
+
+.panel-resizer:hover .panel-resizer-grip,
+.panel-resizer:focus-visible .panel-resizer-grip,
+.panel-resizer[data-dragging] .panel-resizer-grip {
+	background: var(--accent);
+}
+
+.panel-resizer:focus-visible {
+	outline: none;
+}
+
+/* A dragged handle keeps its line while the pointer is anywhere on screen. */
+.panel-resizer[data-dragging] .panel-resizer-grip {
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/*
+ * While a drag is in progress the whole window shows the resize cursor and
+ * stops selecting text, otherwise dragging across the preview highlights it.
+ */
+.workspace:has(.panel-resizer[data-dragging]),
+.editor-workspace:has(.panel-resizer[data-dragging]) {
+	cursor: col-resize;
+	user-select: none;
+}
+
+/*
+ * A rail set by hand is a desktop affordance. Below the tablet break each step
+ * is a full-width pane, there is no seam to drag, and the stored width would
+ * fight the single-column grid - so the handle goes and the grid ignores it.
+ */
+@media (max-width: 1000px) {
+	.panel-resizer {
+		display: none;
+	}
+
+	.workspace[data-tab] {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+/* Pointer-only devices are the ones that can aim at a 13px seam. */
+@media (pointer: coarse) {
+	.panel-resizer {
+		display: none;
+	}
 }
