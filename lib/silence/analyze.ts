@@ -23,6 +23,7 @@
 
 import { detectSpeechFromFrames, type SpeechSegment, type VadResult } from '../captions/vad'
 import type { CutSettings } from './plan'
+import { loadMediaEngine } from '../lazy-chunk'
 
 /** Level is measured over windows this long. 10 ms is speech resolution. */
 export const FRAME_MS = 10
@@ -183,7 +184,7 @@ async function decodeWithMediabunny(args: {
 	durationHintSeconds: number
 	onProgress?: (progress: AnalysisProgress) => void
 }): Promise<{ sampleRate: number; channels: number; peak: number }> {
-	const { ALL_FORMATS, AudioBufferSink, BlobSource, Input } = await import('mediabunny')
+	const { ALL_FORMATS, AudioBufferSink, BlobSource, Input } = await loadMediaEngine()
 	const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(args.source) })
 
 	try {

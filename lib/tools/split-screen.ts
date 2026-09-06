@@ -34,6 +34,7 @@ import { createForwardFrameReader, type ForwardFrameReader, type ReadableSample 
 import { resampleChannel } from './audio-ops'
 import { decodeWholeTrack } from './av-remux'
 import { createRenderSink, describeRenderFailure } from '../media/render-sink'
+import { loadMediaEngine } from '../lazy-chunk'
 
 export type SplitLayoutId = 'side-by-side' | 'stacked' | 'triptych' | 'triptych-v' | 'grid' | 'left-feature' | 'top-feature'
 
@@ -194,7 +195,7 @@ export async function renderSplitScreen(args: {
 	}
 	const clips = args.clips.slice(0, layout.panels)
 
-	const mediabunny = await import('mediabunny')
+	const mediabunny = await loadMediaEngine()
 	const {
 		ALL_FORMATS,
 		AudioBufferSource,

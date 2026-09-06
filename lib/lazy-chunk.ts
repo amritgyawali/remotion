@@ -186,3 +186,27 @@ export function loadWebRenderer(options?: Omit<LoadChunkOptions, 'label'>) {
 export function prefetchWebRenderer(): void {
 	prefetchChunk(() => import('@remotion/web-renderer'), WEB_RENDERER_CHUNK)
 }
+
+export const MEDIA_ENGINE_CHUNK = 'media engine'
+
+/**
+ * The single import site for mediabunny, shared by every caller.
+ *
+ * Fifteen modules across the silence, tools, editor and caption studios each
+ * had their own bare `await import('mediabunny')`. That meant the demuxer,
+ * decoder and muxer chunk was fetched at the moment a render started - the
+ * worst possible moment - and a fetch that timed out on a phone ended the
+ * export rather than being retried, which is the exact failure the web-renderer
+ * chunk was routed through here to avoid.
+ *
+ * Going through one label also means the first caller's download is shared:
+ * probing a clip warms the chunk that exporting it will need.
+ */
+export function loadMediaEngine(options?: Omit<LoadChunkOptions, 'label'>) {
+	return loadChunk(() => import('mediabunny'), { label: MEDIA_ENGINE_CHUNK, ...options })
+}
+
+/** Warms the media engine while the studio is idle, so an export starts encoding. */
+export function prefetchMediaEngine(): void {
+	prefetchChunk(() => import('mediabunny'), MEDIA_ENGINE_CHUNK)
+}

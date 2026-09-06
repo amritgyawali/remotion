@@ -306,6 +306,43 @@ export default function RenderPanel({
 							</div>
 						</div>
 
+						{/*
+						  * Only offered where it changes anything: a composition that
+						  * imports @remotion/media is drawn by the compositor either
+						  * way, and the server renderer never uses this path at all.
+						  */}
+						{settings.engine === 'browser' && composition && !composition.needsWebRenderer ? (
+							<div className="field">
+								<span className="field-label">
+									Frame drawing
+									<span className="field-value">
+										{settings.renderPath === 'fast' ? 'fast' : 'compatible'}
+									</span>
+								</span>
+								<div className="segmented">
+									<button
+										data-active={settings.renderPath === 'fast'}
+										onClick={() => onSettings({ renderPath: 'fast' })}
+										disabled={rendering}
+									>
+										Fast
+									</button>
+									<button
+										data-active={settings.renderPath === 'compatible'}
+										onClick={() => onSettings({ renderPath: 'compatible' })}
+										disabled={rendering}
+									>
+										Compatible
+									</button>
+								</div>
+								<span className="field-hint">
+									{settings.renderPath === 'fast'
+										? 'Several times quicker, and the only mode that records an audio track. A few CSS backgrounds - gradients and repeating patterns - are not drawn.'
+										: 'Draws every CSS background the browser can, one screenshot per frame. Much slower, and the export has no audio.'}
+								</span>
+							</div>
+						) : null}
+
 						<div className="field">
 							<label className="field-label" htmlFor="preview-seconds">
 								Length

@@ -36,6 +36,7 @@
 
 import { CLOUD_ASR_LIMITS } from './asr-models'
 import { clipSegments, detectSpeech, mergeSegments, shiftSegments, type SpeechSegment } from './vad'
+import { loadMediaEngine } from '../lazy-chunk'
 
 export type AudioChunk = {
 	index: number
@@ -660,7 +661,7 @@ async function decodeWithMediabunny(
 	signal: AbortSignal,
 	report: () => void,
 ): Promise<void> {
-	const { ALL_FORMATS, AudioBufferSink, BlobSource, Input } = await import('mediabunny')
+	const { ALL_FORMATS, AudioBufferSink, BlobSource, Input } = await loadMediaEngine()
 	const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(source) })
 
 	try {

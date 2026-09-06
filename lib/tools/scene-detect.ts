@@ -12,6 +12,8 @@
  * setting re-detect from the measurement for free.
  */
 
+import { loadMediaEngine } from '../lazy-chunk'
+
 export type SceneCut = { atMs: number }
 
 export class SceneDetectCancelled extends Error {
@@ -28,7 +30,7 @@ export class SceneDetectCancelled extends Error {
  * for what is, editorially, a single moment.
  */
 export async function detectSceneCuts(source: Blob, signal: AbortSignal, sensitivity = 0.5): Promise<SceneCut[]> {
-	const mediabunny = await import('mediabunny')
+	const mediabunny = await loadMediaEngine()
 	const { ALL_FORMATS, BlobSource, Input, VideoSampleSink } = mediabunny
 	const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(source) })
 	try {

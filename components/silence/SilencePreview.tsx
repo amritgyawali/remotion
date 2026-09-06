@@ -39,6 +39,8 @@ const LOOKAHEAD_SECONDS = 0.06
 
 export default function SilencePreview({
 	url,
+	width,
+	height,
 	plan,
 	sourceMs,
 	seekNonce,
@@ -47,6 +49,9 @@ export default function SilencePreview({
 	onPreviewOriginal,
 }: {
 	url: string | null
+	/** the clip's own pixel size, which shapes the frame around it */
+	width: number
+	height: number
 	plan: CutPlan
 	sourceMs: number
 	/** bumped by the parent whenever it wants the element moved */
@@ -180,25 +185,41 @@ export default function SilencePreview({
 	const progress =
 		plan.outputDurationMs > 0 ? Math.min(1, Math.max(0, outputMs / plan.outputDurationMs)) : 0
 
+	const portrait = height >= width
+
 	return (
 		<div className="cut-preview">
 			<div className="cut-stage" data-skipping={skipping}>
 				{url ? (
-					<video
-						ref={videoRef}
-						className="cut-video"
-						src={url}
-						playsInline
-						muted={muted}
-						preload="metadata"
-						onEnded={() => setPlaying(false)}
-						onPause={() => setPlaying(false)}
-						onClick={toggle}
-						onLoadedMetadata={(event) => {
-							const video = event.currentTarget
-							if (sourceMs > 0) video.currentTime = sourceMs / 1000
+					/*
+					 * The frame is shaped to the clip rather than the clip letterboxed
+					 * into a full-bleed box: a 9:16 phone clip in a 16:9 stage is
+					 * otherwise a narrow strip of picture in 1600px of black.
+					 */
+					<div
+						className="cut-frame"
+						style={{
+							aspectRatio: `${width || 16} / ${height || 9}`,
+							height: portrait ? '100%' : 'auto',
+							width: portrait ? 'auto' : '100%',
 						}}
-					/>
+					>
+						<video
+							ref={videoRef}
+							className="cut-video"
+							src={url}
+							playsInline
+							muted={muted}
+							preload="metadata"
+							onEnded={() => setPlaying(false)}
+							onPause={() => setPlaying(false)}
+							onClick={toggle}
+							onLoadedMetadata={(event) => {
+								const video = event.currentTarget
+								if (sourceMs > 0) video.currentTime = sourceMs / 1000
+							}}
+						/>
+					</div>
 				) : (
 					<div className="stage-empty">
 						<span className="stage-empty-mark">

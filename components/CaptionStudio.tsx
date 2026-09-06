@@ -65,7 +65,7 @@ import {
 	soundForPreset,
 } from '../lib/captions/style-presets'
 import { buildSoundtrack } from '../lib/captions/sfx'
-import { prefetchWebRenderer } from '../lib/lazy-chunk'
+import { prefetchMediaEngine, prefetchWebRenderer } from '../lib/lazy-chunk'
 import { deviceProfile } from '../lib/device'
 import {
 	checkWhisperSupport,
@@ -176,6 +176,7 @@ const INITIAL_SETTINGS: RenderSettings = {
 	audioEnabled: true,
 	scale: 1,
 	previewSeconds: 0,
+	renderPath: 'fast',
 }
 
 const DEFAULT_PROFILE = profileById('nepali-english')
@@ -855,6 +856,7 @@ export default function CaptionStudio() {
 	useEffect(() => {
 		if (!video) return
 		prefetchWebRenderer()
+		prefetchMediaEngine()
 	}, [video])
 
 	/**

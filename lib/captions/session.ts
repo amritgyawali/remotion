@@ -263,6 +263,7 @@ export function normalizeStoredRenderSettings(
 		audioEnabled: bool(value.audioEnabled, fallback.audioEnabled),
 		scale: num(value.scale, fallback.scale, 0.25, 4),
 		previewSeconds: Math.round(num(value.previewSeconds, fallback.previewSeconds, 0, 3_600)),
+		renderPath: value.renderPath === 'compatible' ? 'compatible' : 'fast',
 	}
 }
 

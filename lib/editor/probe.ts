@@ -9,6 +9,8 @@
  * audio use the platform's own decoders, which are simpler and sufficient.
  */
 
+import { loadMediaEngine } from '../lazy-chunk'
+
 export type ProbedMedia = {
 	kind: 'video' | 'image' | 'audio'
 	durationSeconds: number
@@ -36,7 +38,7 @@ export function looksLikeAudio(file: File): boolean {
 }
 
 async function probeVideoFile(file: File): Promise<ProbedMedia> {
-	const { ALL_FORMATS, BlobSource, Input } = await import('mediabunny')
+	const { ALL_FORMATS, BlobSource, Input } = await loadMediaEngine()
 	const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(file) })
 	try {
 		const videoTrack = await input.getPrimaryVideoTrack()
@@ -63,7 +65,7 @@ async function probeVideoFile(file: File): Promise<ProbedMedia> {
 }
 
 async function probeAudioFile(file: File): Promise<ProbedMedia> {
-	const { ALL_FORMATS, BlobSource, Input } = await import('mediabunny')
+	const { ALL_FORMATS, BlobSource, Input } = await loadMediaEngine()
 	const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(file) })
 	try {
 		const duration = await input.computeDuration()
@@ -120,7 +122,7 @@ export async function generateThumbnail(file: File, kind: ProbedMedia['kind'], a
 		}
 		if (kind === 'audio') return null
 
-		const { ALL_FORMATS, BlobSource, Input, VideoSampleSink } = await import('mediabunny')
+		const { ALL_FORMATS, BlobSource, Input, VideoSampleSink } = await loadMediaEngine()
 		const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(file) })
 		try {
 			const track = await input.getPrimaryVideoTrack()

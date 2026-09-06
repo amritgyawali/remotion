@@ -6,7 +6,7 @@ import { planStoryboard, promptRequestsThreeDimensional } from '../lib/ai/planne
 import type { ArcId } from '../lib/ai/arcs'
 import type { TemplateId } from '../lib/ai/variation'
 import { compileProject } from '../lib/compiler'
-import { prefetchWebRenderer } from '../lib/lazy-chunk'
+import { prefetchMediaEngine, prefetchWebRenderer } from '../lib/lazy-chunk'
 import { loadSampleProject, projectFromFiles, projectFromZip } from '../lib/project'
 import { useRenderController } from '../lib/use-render-controller'
 import type { SampleDefinition } from '../lib/samples'
@@ -43,6 +43,7 @@ const INITIAL_SETTINGS: RenderSettings = {
 	audioEnabled: true,
 	scale: 1,
 	previewSeconds: 0,
+	renderPath: 'fast',
 }
 
 export default function Studio() {
@@ -148,7 +149,9 @@ export default function Studio() {
 	 * pressed, which is how a phone ends up failing at 0%.
 	 */
 	useEffect(() => {
-		if (project) prefetchWebRenderer()
+		if (!project) return
+		prefetchWebRenderer()
+		prefetchMediaEngine()
 	}, [project])
 
 	/** Compile whenever the project or its entry file changes. */
@@ -470,7 +473,7 @@ export default function Studio() {
 				/>
 			) : (
 				<>
-				<div className="workspace workspace--create" data-tab={mobileTab}>
+				<div className="workspace workspace--create workspace--flow" data-tab={mobileTab}>
 					<SourcePanel
 						project={project}
 						busy={compiling || render.rendering}

@@ -32,6 +32,7 @@ import {
 import { readBlob, removeBlob, requestPersistentStorage, writeBlob } from '../lib/persist/idb'
 import { useAutosave, useRestoredSnapshot } from '../lib/persist/use-vault'
 import { sendToStudio, useIncomingHandoff } from '../lib/handoff'
+import { prefetchMediaEngine } from '../lib/lazy-chunk'
 import { useCloud } from '../lib/cloud/use-cloud'
 import { useCloudMedia } from '../lib/cloud/use-cloud-media'
 import { useCloudProjectAutosave } from '../lib/cloud/use-project-autosave'
@@ -76,6 +77,14 @@ export default function ToolsStudio() {
 	const [pane, setPane] = useState<Pane>('source')
 	const [webCodecs, setWebCodecs] = useState(true)
 	const [showResult, setShowResult] = useState(false)
+	/**
+	 * The shape of whatever the stage is playing.
+	 *
+	 * Read from the element on load rather than taken from the source clip,
+	 * because rotate, crop and scale all hand back a different shape than they
+	 * were given. Seeded 16:9 so the frame has something before metadata lands.
+	 */
+	const [previewSize, setPreviewSize] = useState({ width: 16, height: 9 })
 	const [restoreSummary, setRestoreSummary] = useState<string | null>(null)
 	const [restoreWarning, setRestoreWarning] = useState<string | null>(null)
 	const [restoredAt, setRestoredAt] = useState<number | null>(null)
@@ -89,6 +98,21 @@ export default function ToolsStudio() {
 		if (cloud.location === 'cloud' && cloudMediaError) setLoadError(`Cloud upload: ${cloudMediaError}`)
 	}, [cloud.location, cloudMediaError])
 	const [cloudNote, setCloudNote] = useState<string | null>(null)
+
+	/**
+	 * Warm the media engine as soon as there is a clip.
+	 *
+	 * The demuxer, decoders and muxer live in one code-split chunk that used to
+	 * be fetched at the moment Export was pressed - the worst moment, because
+	 * nothing can encode until it lands and a slow fetch reads as a stuck
+	 * render. Starting it here usually means the export begins with the bytes
+	 * already cached, and a failure now costs nothing: the export path fetches
+	 * it again, with retries.
+	 */
+	useEffect(() => {
+		if (!video) return
+		prefetchMediaEngine()
+	}, [video])
 
 	const runAbortRef = useRef<AbortController | null>(null)
 
@@ -515,7 +539,7 @@ export default function ToolsStudio() {
 				</div>
 			) : null}
 
-			<div className="workspace workspace--tools" data-tab={pane}>
+			<div className="workspace workspace--tools workspace--flow" data-tab={pane}>
 				<ToolsSourcePanel
 					video={video}
 					videoBanked={videoBanked}
@@ -571,8 +595,33 @@ export default function ToolsStudio() {
 						) : null}
 
 						{previewUrl ? (
-							<div className="stage-frame">
-								<video key={previewUrl} src={previewUrl} controls playsInline className="result-media" style={{ width: '100%', height: '100%' }} />
+							/*
+							 * Shaped to whatever is actually playing, measured from the
+							 * element rather than assumed from the source: half these
+							 * tools change the frame size, so a rotated or cropped result
+							 * is a different shape from the clip it came from.
+							 */
+							<div
+								className="stage-frame"
+								style={{
+									aspectRatio: `${previewSize.width} / ${previewSize.height}`,
+									height: previewSize.height >= previewSize.width ? '100%' : 'auto',
+									width: previewSize.height >= previewSize.width ? 'auto' : '100%',
+								}}
+							>
+								<video
+									key={previewUrl}
+									src={previewUrl}
+									controls
+									playsInline
+									className="result-media"
+									onLoadedMetadata={(event) => {
+										const element = event.currentTarget
+										if (element.videoWidth > 0 && element.videoHeight > 0) {
+											setPreviewSize({ width: element.videoWidth, height: element.videoHeight })
+										}
+									}}
+								/>
 							</div>
 						) : (
 							<div className="stage-empty">

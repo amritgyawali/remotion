@@ -23,6 +23,7 @@
 import type { StreamTargetChunk, Target } from 'mediabunny'
 
 import { storageEstimate } from '../persist/idb'
+import { loadMediaEngine } from '../lazy-chunk'
 
 export type RenderSink = {
 	/** Hand this to `new Output({ target })`. */
@@ -151,7 +152,7 @@ export async function assertExportHeadroom(): Promise<void> {
 }
 
 export async function createRenderSink(baseName: string): Promise<RenderSink> {
-	const { BufferTarget, StreamTarget } = await import('mediabunny')
+	const { BufferTarget, StreamTarget } = await loadMediaEngine()
 
 	const directory = await openExportDirectory()
 	// Stale exports are swept before the space is counted, not after: a session

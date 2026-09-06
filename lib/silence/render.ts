@@ -25,6 +25,7 @@
 
 import { createRenderSink, describeRenderFailure } from '../media/render-sink'
 import { outputToSource, type CutPlan, type PlanSegment } from './plan'
+import { loadMediaEngine } from '../lazy-chunk'
 
 export type RenderQuality = 'draft' | 'high' | 'max'
 export type RenderFormat = 'mp4' | 'webm'
@@ -220,7 +221,7 @@ export async function renderCutVideo(options: SilenceRenderOptions): Promise<Sil
 		throw new Error('This plan removes the entire clip. Keep at least one stretch of speech.')
 	}
 
-	const mediabunny = await import('mediabunny')
+	const mediabunny = await loadMediaEngine()
 	const {
 		ALL_FORMATS,
 		AudioBufferSink,
