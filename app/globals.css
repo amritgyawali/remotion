@@ -8674,46 +8674,13 @@ textarea::placeholder {
 	margin: 0;
 }
 
-/* ------------------------------------- other studios: emphasise the step */
+/* ------------------------------------- editor studio: emphasise the step */
 
 /*
- * The remaining studios keep all three panels on a desktop - their side panels
- * carry controls used while watching the preview - but the active step decides
- * who gets the width. The rail being edited grows; the other one gives way.
+ * The editor keeps all three panes on a desktop - you drag from the bin onto
+ * the timeline, so hiding one would break the gesture - and the active step
+ * decides who gets the width instead.
  */
-.workspace--silence[data-tab='source'],
-.workspace--tools[data-tab='source'] {
-	grid-template-columns: clamp(330px, 25vw, 430px) minmax(0, 1fr) clamp(230px, 15vw, 268px);
-}
-
-.workspace--silence[data-tab='preview'],
-.workspace--tools[data-tab='preview'] {
-	grid-template-columns: clamp(228px, 15vw, 268px) minmax(0, 1fr) clamp(228px, 15vw, 268px);
-}
-
-.workspace--silence[data-tab='export'],
-.workspace--tools[data-tab='export'] {
-	grid-template-columns: clamp(228px, 15vw, 268px) minmax(0, 1fr) clamp(330px, 25vw, 440px);
-}
-
-.workspace--create[data-tab='create'] {
-	grid-template-columns: clamp(340px, 26vw, 452px) minmax(0, 1fr) clamp(232px, 15vw, 272px);
-}
-
-.workspace--create[data-tab='preview'] {
-	grid-template-columns: clamp(232px, 15vw, 272px) minmax(0, 1fr) clamp(232px, 15vw, 272px);
-}
-
-.workspace--create[data-tab='export'] {
-	grid-template-columns: clamp(232px, 15vw, 272px) minmax(0, 1fr) clamp(330px, 25vw, 440px);
-}
-
-/* The editor's timeline is the work, so its own step gives it the height. */
-.editor-workspace[data-tab='edit'] .editor-timeline {
-	height: clamp(240px, 34vh, 400px);
-	min-height: 240px;
-}
-
 .editor-workspace[data-tab='media'] {
 	grid-template-columns: clamp(300px, 23vw, 400px) minmax(0, 1fr) clamp(230px, 16vw, 268px);
 }
@@ -8906,4 +8873,182 @@ textarea::placeholder {
 	.cue-row--advanced .cue-times--advanced .cue-duration {
 		display: none;
 	}
+}
+
+/* ========================================================================== *
+ * The shared three-step flow
+ *
+ * The video, silence and tools studios are all the same shape - a form, a
+ * picture, an output bench - so they get one layout rather than three. It is
+ * the same rule the subtitle studio proved: the step you are on decides who
+ * gets the window, and the middle step, where you are watching rather than
+ * setting, gives the picture all of it.
+ *
+ * Opted into with `workspace--flow`, because a workspace that is not a flow
+ * (there is no such studio today, but there will be) should not inherit this
+ * by accident.
+ * ========================================================================== */
+
+/* 1. Set up - the form leads, with the picture beside it to check against. */
+.workspace--flow:is([data-tab='source'], [data-tab='create']) {
+	grid-template-columns: clamp(336px, 26vw, 464px) minmax(0, 1fr);
+}
+
+.workspace--flow:is([data-tab='source'], [data-tab='create']) > .panel--right {
+	display: none;
+}
+
+/* 2. Watch - both rails stand down and the frame takes the screen. */
+.workspace--flow[data-tab='preview'] {
+	grid-template-columns: minmax(0, 1fr);
+}
+
+.workspace--flow[data-tab='preview'] > .panel--left,
+.workspace--flow[data-tab='preview'] > .panel--right {
+	display: none;
+}
+
+/* 3. Finish - the output bench, with the picture still on screen beside it. */
+.workspace--flow[data-tab='export'] {
+	grid-template-columns: minmax(0, 1fr) clamp(336px, 25vw, 452px);
+}
+
+.workspace--flow[data-tab='export'] > .panel--left {
+	display: none;
+}
+
+/*
+ * The silence studio's waveform is the thing being tuned on the first step and
+ * the thing being reviewed on the second, so it stays through both and only
+ * stands down on the export bench, where the decision has already been made.
+ */
+.workspace--silence[data-tab='export'] .cut-timeline {
+	display: none;
+}
+
+@media (max-width: 1000px) {
+	/*
+	 * One step per screen again. The shared `.workspace[data-tab] > .panel`
+	 * rule higher up hides everything; these say what each step brings back,
+	 * and have to out-specify the desktop rules directly above.
+	 */
+	.workspace--flow[data-tab] {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.workspace--flow:is([data-tab='source'], [data-tab='create']) > .panel--stage,
+	.workspace--flow[data-tab='export'] > .panel--stage {
+		display: none;
+	}
+
+	.workspace--flow:is([data-tab='source'], [data-tab='create']) > .panel--left,
+	.workspace--flow[data-tab='preview'] > .panel--stage,
+	.workspace--flow[data-tab='export'] > .panel--right {
+		display: flex;
+	}
+}
+
+/* --------------------------------------------------- editor studio: steps */
+
+/*
+ * The editor's three panes are a bin, a timeline and an inspector, and unlike
+ * the other studios all three are genuinely useful at once - you drag from the
+ * bin onto the timeline. So its steps widen rather than hide: the pane the step
+ * is about gets the room, and the other keeps enough to drag from.
+ */
+.editor-workspace[data-tab='edit'] {
+	grid-template-columns: clamp(196px, 13vw, 232px) minmax(0, 1fr) clamp(196px, 13vw, 232px);
+}
+
+/* Cutting is the timeline's job, so on its own step it gets the height. */
+.editor-workspace[data-tab='edit'] .editor-timeline {
+	height: clamp(240px, 34vh, 400px);
+	min-height: 240px;
+}
+
+/* Importing and inspecting are reading tasks: the list gets the width, and the
+   preview stays large enough to tell two similar clips apart. */
+.editor-workspace[data-tab='media'] .editor-timeline,
+.editor-workspace[data-tab='adjust'] .editor-timeline {
+	height: clamp(150px, 20vh, 208px);
+	min-height: 150px;
+}
+
+/* ==================== previews keep the shape of what they are playing ==== */
+
+/*
+ * Two studios drew a vertical clip as a landscape box.
+ *
+ * `max-height: 100%` on a media element is a promise the browser cannot always
+ * keep: inside a grid area or a flex item whose own height is being decided by
+ * its content, the percentage has nothing definite to resolve against and comes
+ * out as `none`. The element then lays out at its intrinsic size - a 1080x1920
+ * phone clip in a 1082x464 stage - and the container's `overflow: hidden` turns
+ * the mistake into a crop rather than an error.
+ *
+ * So the media box is told to fill its area outright, the area is allowed to
+ * shrink, and `object-fit: contain` is what keeps the aspect ratio. That path
+ * needs no percentage resolution at all.
+ */
+/*
+ * `.stage` centres a single frame, which is right for a shaped preview and
+ * wrong for a panel that draws its own transport under the picture. The cut
+ * preview is that panel, so it is given the box rather than centred inside it -
+ * without this the media going out of flow (below) collapses the whole column
+ * to its content width.
+ */
+.stage--cut {
+	align-items: stretch;
+	justify-content: stretch;
+}
+
+.stage--cut > .cut-preview {
+	flex: 1;
+	min-width: 0;
+}
+
+/* Centres one shaped frame, the same way the caption stage does. */
+.cut-stage {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: transparent;
+	border: 0;
+	box-shadow: none;
+}
+
+.cut-frame {
+	position: relative;
+	flex: none;
+	max-width: 100%;
+	max-height: 100%;
+	overflow: hidden;
+	border-radius: var(--radius-lg);
+	border: 1px solid var(--border-strong);
+	background: #000;
+	box-shadow: var(--shadow);
+}
+
+/*
+ * Taking the media out of flow is the half that matters. Absolute positioning
+ * against the stage gives `width`/`height: 100%` a containing block that is
+ * definite by construction, and it stops a 1920px-tall clip from being what
+ * decides how tall its own container should be.
+ */
+.cut-frame > .cut-video,
+.workspace--tools .panel--stage .stage-frame > .result-media {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	max-width: none;
+	max-height: none;
+	object-fit: contain;
+	background: #000;
+}
+
+.workspace--tools .panel--stage .stage-frame {
+	position: relative;
+	flex: none;
+	min-height: 0;
 }

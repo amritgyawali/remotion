@@ -736,7 +736,7 @@ export default function SilenceStudio() {
 				</div>
 			) : null}
 
-			<div className="workspace workspace--silence" data-tab={pane}>
+			<div className="workspace workspace--silence workspace--flow" data-tab={pane}>
 				<SilenceSourcePanel
 					video={video}
 					videoBanked={videoBanked}
@@ -789,6 +789,8 @@ export default function SilenceStudio() {
 					<div className="stage stage--cut">
 						<SilencePreview
 							url={video?.url ?? null}
+							width={video?.width ?? 16}
+							height={video?.height ?? 9}
 							plan={plan}
 							sourceMs={sourceMs}
 							seekNonce={seekNonce}

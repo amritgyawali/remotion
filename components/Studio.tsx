@@ -470,7 +470,7 @@ export default function Studio() {
 				/>
 			) : (
 				<>
-				<div className="workspace workspace--create" data-tab={mobileTab}>
+				<div className="workspace workspace--create workspace--flow" data-tab={mobileTab}>
 					<SourcePanel
 						project={project}
 						busy={compiling || render.rendering}

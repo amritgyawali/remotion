@@ -76,6 +76,14 @@ export default function ToolsStudio() {
 	const [pane, setPane] = useState<Pane>('source')
 	const [webCodecs, setWebCodecs] = useState(true)
 	const [showResult, setShowResult] = useState(false)
+	/**
+	 * The shape of whatever the stage is playing.
+	 *
+	 * Read from the element on load rather than taken from the source clip,
+	 * because rotate, crop and scale all hand back a different shape than they
+	 * were given. Seeded 16:9 so the frame has something before metadata lands.
+	 */
+	const [previewSize, setPreviewSize] = useState({ width: 16, height: 9 })
 	const [restoreSummary, setRestoreSummary] = useState<string | null>(null)
 	const [restoreWarning, setRestoreWarning] = useState<string | null>(null)
 	const [restoredAt, setRestoredAt] = useState<number | null>(null)
@@ -515,7 +523,7 @@ export default function ToolsStudio() {
 				</div>
 			) : null}
 
-			<div className="workspace workspace--tools" data-tab={pane}>
+			<div className="workspace workspace--tools workspace--flow" data-tab={pane}>
 				<ToolsSourcePanel
 					video={video}
 					videoBanked={videoBanked}
@@ -571,8 +579,33 @@ export default function ToolsStudio() {
 						) : null}
 
 						{previewUrl ? (
-							<div className="stage-frame">
-								<video key={previewUrl} src={previewUrl} controls playsInline className="result-media" style={{ width: '100%', height: '100%' }} />
+							/*
+							 * Shaped to whatever is actually playing, measured from the
+							 * element rather than assumed from the source: half these
+							 * tools change the frame size, so a rotated or cropped result
+							 * is a different shape from the clip it came from.
+							 */
+							<div
+								className="stage-frame"
+								style={{
+									aspectRatio: `${previewSize.width} / ${previewSize.height}`,
+									height: previewSize.height >= previewSize.width ? '100%' : 'auto',
+									width: previewSize.height >= previewSize.width ? 'auto' : '100%',
+								}}
+							>
+								<video
+									key={previewUrl}
+									src={previewUrl}
+									controls
+									playsInline
+									className="result-media"
+									onLoadedMetadata={(event) => {
+										const element = event.currentTarget
+										if (element.videoWidth > 0 && element.videoHeight > 0) {
+											setPreviewSize({ width: element.videoWidth, height: element.videoHeight })
+										}
+									}}
+								/>
 							</div>
 						) : (
 							<div className="stage-empty">
