@@ -78,7 +78,7 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 	const [exportError, setExportError] = useState<string | null>(null)
 	const [renderCapabilities, setRenderCapabilities] = useState<ServerCapabilities>(DEFAULT_CAPABILITIES)
 	const [renderAccessKey, setRenderAccessKey] = useState('')
-	const [editorPane, setEditorPane] = useState<EditorPane>('edit')
+	const [editorPane, setEditorPane] = useState<EditorPane>('media')
 	const device = useDeviceProfile()
 
 	const poolRef = useRef<AssetSinkPool>(new AssetSinkPool())
@@ -713,8 +713,24 @@ export default function EditorStudio({ standalone = false }: { standalone?: bool
 				onStep={setEditorPane}
 				steps={[
 					{ id: 'media', label: 'Media', hint: 'Import clips', done: Object.keys(doc.assets).length > 0 },
-					{ id: 'edit', label: 'Timeline', hint: 'Cut and arrange', done: Object.keys(doc.clips).length > 0 },
-					{ id: 'adjust', label: 'Adjust', hint: 'Polish and export', done: exportResult !== null },
+					{
+						id: 'edit',
+						label: 'Timeline',
+						hint: 'Cut and arrange',
+						done: Object.keys(doc.clips).length > 0,
+						// An empty bin means an empty timeline; the import step is the
+						// only thing that can change that.
+						locked: Object.keys(doc.assets).length === 0,
+						lockedHint: 'Import a clip first',
+					},
+					{
+						id: 'adjust',
+						label: 'Adjust',
+						hint: 'Polish and export',
+						done: exportResult !== null,
+						locked: Object.keys(doc.clips).length === 0,
+						lockedHint: 'Put a clip on the timeline first',
+					},
 				]}
 			/>
 

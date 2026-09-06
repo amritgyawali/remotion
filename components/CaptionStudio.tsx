@@ -8,6 +8,7 @@ import {
 	useMemo,
 	useRef,
 	useState,
+	type CSSProperties,
 	type DragEvent as ReactDragEvent,
 } from 'react'
 import { compileProject } from '../lib/compiler'
@@ -146,6 +147,7 @@ import {
 	IconCaptions,
 	IconClose,
 	IconDownload,
+	IconFit,
 	IconKeyboard,
 	IconLayers,
 	IconScissors,
@@ -154,6 +156,8 @@ import {
 	IconType,
 	IconUpload,
 	IconVolume,
+	IconZoomIn,
+	IconZoomOut,
 } from './Icons'
 
 const CaptionPlayer = dynamic(() => import('./captions/CaptionPlayer'), {
@@ -247,13 +251,29 @@ function isTypingTarget(target: EventTarget | null): boolean {
 	return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
 }
 
-type CaptionPane = 'source' | 'preview' | 'design'
+/**
+ * The four steps of the studio, in the order the work actually happens.
+ *
+ * They are steps rather than panels: each one owns the whole window and gets
+ * the layout its job needs. That is what makes the picture usable - a 9:16 clip
+ * squeezed between a source form and a design rail is 130px wide on a 1080p
+ * screen, and no amount of styling makes that a preview you can time captions
+ * against. `edit` drops both rails and gives the frame the room.
+ */
+type CaptionPane = 'source' | 'edit' | 'tools' | 'render'
 
 const CAPTION_PANES: Array<{ id: CaptionPane; label: string; hint: string }> = [
-	{ id: 'source', label: 'Source', hint: 'Add video and words' },
-	{ id: 'preview', label: 'Preview', hint: 'Check timing on-screen' },
-	{ id: 'design', label: 'Design', hint: 'Style, sound, and render' },
+	{ id: 'source', label: 'Upload', hint: 'Add the video and the words' },
+	{ id: 'edit', label: 'Edit', hint: 'Full-size preview and timeline' },
+	{ id: 'tools', label: 'Style & tools', hint: 'Design, sound, objects, bulk edits' },
+	{ id: 'render', label: 'Render', hint: 'Burn in and download' },
 ]
+
+/** The right rail's tabs, split by the step that owns them. */
+const WORK_TABS: CaptionPanelTab[] = ['design', 'sound', 'objects', 'tools']
+
+/** Preview zoom stops, in multiples of "fit the window". */
+const ZOOM_STOPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3]
 
 /** Number keys, in the order the panel tabs are drawn. */
 /**
@@ -367,8 +387,27 @@ export default function CaptionStudio() {
 	const [aligning, setAligning] = useState(false)
 	const [cueHistory, setCueHistory] = useState({ canUndo: false, canRedo: false })
 	const [shortcutsOpen, setShortcutsOpen] = useState(false)
-	/** Which single pane a phone shows; ignored above the tablet break. */
+	/** Which step of the flow is on screen, on every viewport. */
 	const [pane, setPane] = useState<CaptionPane>('source')
+	/**
+	 * How large the preview is drawn, as a multiple of "fit the window".
+	 *
+	 * 1 is fit - the frame takes all the height or width the step gives it.
+	 * Above 1 the stage scrolls, so a caption's exact baseline can be checked
+	 * against the speaker's mouth without rendering a test video first.
+	 */
+	const [previewZoom, setPreviewZoom] = useState(1)
+	/** Set once the user has moved past the upload step by hand. */
+	const advancedRef = useRef(false)
+	/**
+	 * Steps the user has actually opened.
+	 *
+	 * A tick on the rail should mean "you have been here and it holds", which no
+	 * single piece of document state can answer for the middle two steps: a clip
+	 * can be perfectly timed without an edit, and the default look is a real
+	 * choice. Visiting is the honest signal, so it is the one recorded.
+	 */
+	const [visited, setVisited] = useState<CaptionPane[]>(['source'])
 	/** true while a file is being dragged over the preview */
 	const [dragOverStage, setDragOverStage] = useState(false)
 
@@ -899,6 +938,115 @@ export default function CaptionStudio() {
 		}
 	}, [compiled, cues, sound, soundtrack, style, video])
 
+	/**
+	 * Which way the clip stands.
+	 *
+	 * The edit step reads this to decide where the timeline goes. A 9:16 phone
+	 * clip leaves two empty columns beside it, so the timeline moves into one of
+	 * them and the frame keeps the full height; a 16:9 clip wants the width, so
+	 * the timeline goes underneath as it always has.
+	 */
+	const orient: 'portrait' | 'landscape' = composition
+		? composition.height >= composition.width
+			? 'portrait'
+			: 'landscape'
+		: 'landscape'
+
+	/** A step is reachable once the thing it edits exists. */
+	const canEdit = video !== null && cues.length > 0
+	const canRender = video !== null
+
+	/**
+	 * Moving between steps.
+	 *
+	 * Locked steps are refused rather than shown empty, and the right rail is
+	 * pointed at a tab that belongs to the step being opened - the render step
+	 * owns `export` and the style step owns the other four, so walking the flow
+	 * never lands on a rail showing the previous step's controls.
+	 */
+	const goToPane = useCallback(
+		(next: CaptionPane) => {
+			if (next === 'edit' && !canEdit) return
+			if (next === 'render' && !canRender) return
+			advancedRef.current = advancedRef.current || next !== 'source'
+			setPane(next)
+			setVisited((current) => (current.includes(next) ? current : [...current, next]))
+			setPreviewZoom(1)
+			if (next === 'render') setTab('export')
+			else if (next === 'tools') setTab((current) => (current === 'export' ? 'design' : current))
+		},
+		[canEdit, canRender],
+	)
+
+	/**
+	 * The one automatic move in the flow.
+	 *
+	 * The first time a clip has words - transcribed, pasted or imported - the
+	 * studio opens the edit step, because that is the moment there is something
+	 * to look at. It fires once per clip: after that the steps are the user's.
+	 */
+	useEffect(() => {
+		if (advancedRef.current) return
+		if (!video || cues.length === 0 || !composition) return
+		advancedRef.current = true
+		setPane('edit')
+		setVisited((current) => (current.includes('edit') ? current : [...current, 'edit']))
+	}, [composition, cues.length, video])
+
+	/** A step whose subject disappeared hands the flow back rather than blanking. */
+	useEffect(() => {
+		if (!video && pane !== 'source') setPane('source')
+		else if (pane === 'edit' && video && cues.length === 0) setPane('source')
+	}, [cues.length, pane, video])
+
+	/**
+	 * The rail the right panel actually draws.
+	 *
+	 * The render step owns `export` and the style step owns the rest, so the
+	 * step decides and `tab` only chooses between the four it can. Deriving it
+	 * rather than syncing it is what keeps the rail from flashing the previous
+	 * step's panel for a frame after a step change.
+	 */
+	const activeTab: CaptionPanelTab =
+		pane === 'render' ? 'export' : WORK_TABS.includes(tab) ? tab : 'design'
+
+	// The key handler is bound once and must not be rebound on every step
+	// change, so it reads both through refs.
+	const goToPaneRef = useRef(goToPane)
+	goToPaneRef.current = goToPane
+	const paneRef = useRef(pane)
+	paneRef.current = pane
+
+	/** Step through the zoom stops rather than by a fixed amount. */
+	const zoomBy = useCallback((direction: 1 | -1) => {
+		setPreviewZoom((current) => {
+			const found = ZOOM_STOPS.findIndex((stop) => stop >= current - 0.001)
+			const at = found === -1 ? ZOOM_STOPS.length - 1 : found
+			return ZOOM_STOPS[Math.max(0, Math.min(ZOOM_STOPS.length - 1, at + direction))] ?? current
+		})
+	}, [])
+
+	/**
+	 * How big the frame is drawn.
+	 *
+	 * At fit (1) the frame takes all of the one dimension the clip is limited by
+	 * and lets the aspect ratio decide the other, which is what makes a vertical
+	 * clip fill the height of an empty step instead of a 130px column. Past fit
+	 * the caps come off so the stage can scroll around a magnified frame.
+	 */
+	const frameStyle = useMemo<CSSProperties>(() => {
+		if (!composition) return {}
+		const size = `${Math.round(previewZoom * 100)}%`
+		return {
+			aspectRatio: `${composition.width} / ${composition.height}`,
+			height: orient === 'portrait' ? size : 'auto',
+			width: orient === 'portrait' ? 'auto' : size,
+			maxWidth: previewZoom > 1 ? 'none' : '100%',
+			maxHeight: previewZoom > 1 ? 'none' : '100%',
+			flex: 'none',
+		}
+	}, [composition, orient, previewZoom])
+
 	// What the transcript is actually made of, measured rather than assumed -
 	// drives both the font-stack warning and the auto-enable below.
 	const scriptMix = useMemo<ScriptMix>(() => scriptMixOf(cues), [cues])
@@ -1000,8 +1148,12 @@ export default function CaptionStudio() {
 				setSendToSilenceState('idle')
 				pendingSeekRef.current = null
 				resetRender()
-				// A phone shows one pane at a time: land on the clip, not the form.
-				setPane('preview')
+				// A new clip has no words yet, so the next thing to do is still on
+				// the upload step - transcribe it, paste a script, or import an .srt.
+				// The step only moves on once there is something to edit.
+				setPreviewZoom(1)
+				advancedRef.current = false
+				setPane('source')
 
 				// Bank the bytes so the clip is still here after a refresh. A pasted
 				// address needs no copy - the address itself is the whole source.
@@ -1828,8 +1980,20 @@ export default function CaptionStudio() {
 			}
 			const tabForKey = PANEL_KEYS[event.key]
 			if (tabForKey) {
+				// The number keys still choose a rail, and now also open the step
+				// that rail belongs to - otherwise 5 would set a tab nothing shows.
 				event.preventDefault()
 				setTab(tabForKey)
+				goToPaneRef.current(tabForKey === 'export' ? 'render' : 'tools')
+				return
+			}
+			// Bracket keys walk the flow, the same order the rail draws.
+			if (event.key === '[' || event.key === ']') {
+				event.preventDefault()
+				const order = CAPTION_PANES.map((item) => item.id)
+				const at = order.indexOf(paneRef.current)
+				const target = order[at + (event.key === ']' ? 1 : -1)]
+				if (target) goToPaneRef.current(target)
 				return
 			}
 			if (busy || cuesRef.current.length === 0) return
@@ -2473,6 +2637,10 @@ export default function CaptionStudio() {
 		setLayout(DEFAULT_LAYOUT)
 		setMode('auto')
 		setTab('design')
+		setPane('source')
+		setVisited(['source'])
+		setPreviewZoom(1)
+		advancedRef.current = false
 		setToolNote(null)
 		setRestoredAt(null)
 		setRestoreSummary(null)
@@ -2483,9 +2651,9 @@ export default function CaptionStudio() {
 		<div className="app">
 			<CaptionTopBar
 				steps={[
-					{ id: 'video', label: 'Video', done: video !== null },
-					{ id: 'transcript', label: 'Transcript', done: cues.length > 0 },
-					{ id: 'design', label: 'Design', done: cues.length > 0 && tab === 'export' },
+					{ id: 'source', label: 'Upload', done: video !== null && cues.length > 0 },
+					{ id: 'edit', label: 'Edit', done: visited.includes('edit') && cues.length > 0 },
+					{ id: 'tools', label: 'Style', done: visited.includes('tools') && cues.length > 0 },
 					{ id: 'render', label: 'Render', done: render.output !== null },
 				]}
 				engine={render.settings.engine}
@@ -2588,6 +2756,7 @@ export default function CaptionStudio() {
 				<section
 					className="panel panel--stage"
 					data-dragging={dragOverStage}
+					data-orient={orient}
 					onDragOver={handleStageDragOver}
 					onDragLeave={handleStageDragLeave}
 					onDrop={handleStageDrop}
@@ -2615,6 +2784,42 @@ export default function CaptionStudio() {
 						</div>
 
 						<div className="stage-bar-group stage-bar-group--end">
+							{/*
+							 * Fit is the default and covers most of the work; the stops
+							 * either side of it are what makes a small caption on a 4K
+							 * source checkable without a test render.
+							 */}
+							<div className="stage-zoom" role="group" aria-label="Preview size">
+								<button
+									className="icon-btn"
+									onClick={() => zoomBy(-1)}
+									disabled={!composition || previewZoom <= ZOOM_STOPS[0]}
+									title="Smaller preview"
+									aria-label="Smaller preview"
+								>
+									<IconZoomOut size={13} />
+								</button>
+								<button
+									className="stage-zoom-value"
+									onClick={() => setPreviewZoom(1)}
+									disabled={!composition}
+									data-active={previewZoom === 1}
+									title="Fit the preview to the window"
+									aria-label="Fit the preview to the window"
+								>
+									{previewZoom === 1 ? <IconFit size={12} /> : null}
+									{previewZoom === 1 ? 'Fit' : `${Math.round(previewZoom * 100)}%`}
+								</button>
+								<button
+									className="icon-btn"
+									onClick={() => zoomBy(1)}
+									disabled={!composition || previewZoom >= ZOOM_STOPS[ZOOM_STOPS.length - 1]}
+									title="Larger preview"
+									aria-label="Larger preview"
+								>
+									<IconZoomIn size={13} />
+								</button>
+							</div>
 							<button
 								className="btn btn--sm caption-place-button"
 								data-active={placingCaption}
@@ -2656,92 +2861,123 @@ export default function CaptionStudio() {
 						</div>
 					</div>
 
-					<div className="stage stage--captions">
-						{videoError && !composition ? (
-							<div className="stage-empty">
-								<span className="stage-empty-mark" style={{ color: 'var(--red)' }}>
-									<IconAlert size={24} />
-								</span>
-								<h2>That video did not load</h2>
-								<p>{videoError}</p>
-							</div>
-						) : compileError ? (
-							<div className="stage-empty">
-								<span className="stage-empty-mark" style={{ color: 'var(--red)' }}>
-									<IconAlert size={24} />
-								</span>
-								<h2>The caption composition did not build</h2>
-								<pre className="log" style={{ textAlign: 'left', marginTop: 12 }}>
-									{compileError}
-								</pre>
-							</div>
-						) : composition ? (
-							<div
-								className="stage-frame"
-								style={{
-									aspectRatio: `${composition.width} / ${composition.height}`,
-									height: composition.height >= composition.width ? '100%' : 'auto',
-									width: composition.height >= composition.width ? 'auto' : '100%',
-								}}
-							>
-								<CaptionPlayer
-									composition={composition}
-									audioEnabled={render.settings.audioEnabled}
-									playerRef={playerRef}
-									onFrame={setCurrentFrame}
-								/>
-								{placingCaption ? (
-									<button
-										type="button"
-										className="caption-placement-overlay"
-										aria-label="Choose subtitle position on the video"
-										onClick={(event) => {
-											const rect = event.currentTarget.getBoundingClientRect()
-											handlePreviewPlacement(event.clientY, rect.top, rect.height)
-										}}
-									>
-										<span className="caption-placement-zone caption-placement-zone--top">TOP</span>
-										<span className="caption-placement-zone caption-placement-zone--middle">MIDDLE</span>
-										<span className="caption-placement-zone caption-placement-zone--bottom">BOTTOM</span>
-										<span className="caption-placement-hint">Click where the subtitle should appear</span>
-									</button>
-								) : null}
-							</div>
-						) : (
-							<div className="stage-empty stage-empty--captions">
-								<span className="stage-empty-mark">
-									<IconCaptions size={24} />
-								</span>
-								<h2>Drop in a video to subtitle</h2>
-								<p>
-									During transcription, your video stays local and cloud engines receive only extracted audio.
-									Your edits are saved to this browser as you work.
-								</p>
-								<ol className="stage-steps">
-									<li>
-										<b>1</b>
-										<span>
-											<strong>Add the video</strong>
-											MP4, MOV or WebM, or paste a link
-										</span>
-									</li>
-									<li>
-										<b>2</b>
-										<span>
-											<strong>Get the words</strong>
-											Transcribe it, paste a script, or import an .srt
-										</span>
-									</li>
-									<li>
-										<b>3</b>
-										<span>
-											<strong>Style and render</strong>
-											18 presets, then burn the subtitles in
-										</span>
-									</li>
-								</ol>
-							</div>
-						)}
+					{/*
+					 * Preview and timeline are one block so the edit step can turn them
+					 * from a column into a row. Beside a vertical clip the timeline uses
+					 * space the frame cannot, and every caption row stays on screen with
+					 * the picture instead of below the fold.
+					 */}
+					<div className="stage-body" data-orient={orient}>
+						<div className="stage stage--captions" data-zoomed={previewZoom > 1 || undefined}>
+							{videoError && !composition ? (
+								<div className="stage-empty">
+									<span className="stage-empty-mark" style={{ color: 'var(--red)' }}>
+										<IconAlert size={24} />
+									</span>
+									<h2>That video did not load</h2>
+									<p>{videoError}</p>
+								</div>
+							) : compileError ? (
+								<div className="stage-empty">
+									<span className="stage-empty-mark" style={{ color: 'var(--red)' }}>
+										<IconAlert size={24} />
+									</span>
+									<h2>The caption composition did not build</h2>
+									<pre className="log" style={{ textAlign: 'left', marginTop: 12 }}>
+										{compileError}
+									</pre>
+								</div>
+							) : composition ? (
+								<div className="stage-frame" style={frameStyle}>
+									<CaptionPlayer
+										composition={composition}
+										audioEnabled={render.settings.audioEnabled}
+										playerRef={playerRef}
+										onFrame={setCurrentFrame}
+									/>
+									{placingCaption ? (
+										<button
+											type="button"
+											className="caption-placement-overlay"
+											aria-label="Choose subtitle position on the video"
+											onClick={(event) => {
+												const rect = event.currentTarget.getBoundingClientRect()
+												handlePreviewPlacement(event.clientY, rect.top, rect.height)
+											}}
+										>
+											<span className="caption-placement-zone caption-placement-zone--top">TOP</span>
+											<span className="caption-placement-zone caption-placement-zone--middle">MIDDLE</span>
+											<span className="caption-placement-zone caption-placement-zone--bottom">BOTTOM</span>
+											<span className="caption-placement-hint">Click where the subtitle should appear</span>
+										</button>
+									) : null}
+								</div>
+							) : (
+								<div className="stage-empty stage-empty--captions">
+									<span className="stage-empty-mark">
+										<IconCaptions size={24} />
+									</span>
+									<h2>Drop in a video to subtitle</h2>
+									<p>
+										During transcription, your video stays local and cloud engines receive only extracted audio.
+										Your edits are saved to this browser as you work.
+									</p>
+									<ol className="stage-steps">
+										<li>
+											<b>1</b>
+											<span>
+												<strong>Upload</strong>
+												MP4, MOV or WebM, or paste a link - then transcribe, paste a script,
+												or import an .srt
+											</span>
+										</li>
+										<li>
+											<b>2</b>
+											<span>
+												<strong>Edit</strong>
+												A full-size preview with the timeline beside it
+											</span>
+										</li>
+										<li>
+											<b>3</b>
+											<span>
+												<strong>Style &amp; tools</strong>
+												18 presets, per-caption sound, objects, bulk transcript edits
+											</span>
+										</li>
+										<li>
+											<b>4</b>
+											<span>
+												<strong>Render</strong>
+												Burn the subtitles in and download the video
+											</span>
+										</li>
+									</ol>
+								</div>
+							)}
+						</div>
+
+						{video ? (
+							<CueTrack
+								cues={cues}
+								currentMs={currentMs}
+								durationMs={durationMs}
+								fps={fps}
+								disabled={busy}
+								canUndo={cueHistory.canUndo}
+								canRedo={cueHistory.canRedo}
+								onSeek={seekToMs}
+								onUpdate={handleCueUpdate}
+								onSplit={handleCueSplit}
+								onMerge={handleCueMerge}
+								onDuplicate={handleCueDuplicate}
+								onDelete={handleCueDelete}
+								onAdd={handleCueAdd}
+								onShiftAll={handleShiftAll}
+								onUndo={handleCueUndo}
+								onRedo={handleCueRedo}
+							/>
+						) : null}
 					</div>
 
 					{dragOverStage ? (
@@ -2753,74 +2989,74 @@ export default function CaptionStudio() {
 							<small>MP4, MOV or WebM - it is read here and kept in this browser</small>
 						</div>
 					) : null}
-
-					{video ? (
-						<CueTrack
-							cues={cues}
-							currentMs={currentMs}
-							durationMs={durationMs}
-							fps={fps}
-							disabled={busy}
-							canUndo={cueHistory.canUndo}
-							canRedo={cueHistory.canRedo}
-							onSeek={seekToMs}
-							onUpdate={handleCueUpdate}
-							onSplit={handleCueSplit}
-							onMerge={handleCueMerge}
-							onDuplicate={handleCueDuplicate}
-							onDelete={handleCueDelete}
-							onAdd={handleCueAdd}
-							onShiftAll={handleShiftAll}
-							onUndo={handleCueUndo}
-							onRedo={handleCueRedo}
-						/>
-					) : null}
 				</section>
 
 				<aside className="panel panel--right">
+					{/*
+					 * The rail carries the step it belongs to, not all five tabs at
+					 * once: the four workbenches while styling, the render bench while
+					 * rendering. Both steps still reach the other through the flow rail,
+					 * and the number keys keep working because they move the step too.
+					 */}
 					<div className="panel-tabs">
-						<div className="segmented segmented--icons segmented--wrap">
-							<button
-								data-active={tab === 'design'}
-								onClick={() => setTab('design')}
-								title="Design the captions (1)"
-							>
-								<IconType size={13} /> Design
-							</button>
-							<button
-								data-active={tab === 'sound'}
-								onClick={() => setTab('sound')}
-								title="Give every caption a sound (2)"
-							>
-								<IconVolume size={13} /> Sound
-								{sound.enabled ? <span className="tab-dot" aria-label="on" /> : null}
-							</button>
-							<button
-								data-active={tab === 'objects'}
-								onClick={() => setTab('objects')}
-								title="Put an object behind the speaker (3)"
-							>
-								<IconLayers size={13} /> Objects
-								{objectPlan.shots.length > 0 ? <span className="tab-dot" aria-label="planned" /> : null}
-							</button>
-							<button
-								data-active={tab === 'tools'}
-								onClick={() => setTab('tools')}
-								title="Bulk edit the transcript (4)"
-							>
-								<IconTools size={13} /> Tools
-							</button>
-							<button
-								data-active={tab === 'export'}
-								onClick={() => setTab('export')}
-								title="Render and download (5)"
-							>
-								<IconDownload size={13} /> Render
-							</button>
-						</div>
+						{pane === 'render' ? (
+							<div className="panel-step-head">
+								<span className="section-label">
+									<IconDownload size={13} /> Render
+								</span>
+								<button
+									type="button"
+									className="btn btn--ghost btn--sm"
+									onClick={() => goToPane('tools')}
+								>
+									Back to styling
+								</button>
+							</div>
+						) : (
+							<div className="segmented segmented--icons segmented--wrap">
+								<button
+									data-active={activeTab === 'design'}
+									onClick={() => setTab('design')}
+									title="Design the captions (1)"
+								>
+									<IconType size={13} /> Design
+								</button>
+								<button
+									data-active={activeTab === 'sound'}
+									onClick={() => setTab('sound')}
+									title="Give every caption a sound (2)"
+								>
+									<IconVolume size={13} /> Sound
+									{sound.enabled ? <span className="tab-dot" aria-label="on" /> : null}
+								</button>
+								<button
+									data-active={activeTab === 'objects'}
+									onClick={() => setTab('objects')}
+									title="Put an object behind the speaker (3)"
+								>
+									<IconLayers size={13} /> Objects
+									{objectPlan.shots.length > 0 ? <span className="tab-dot" aria-label="planned" /> : null}
+								</button>
+								<button
+									data-active={activeTab === 'tools'}
+									onClick={() => setTab('tools')}
+									title="Bulk edit the transcript (4)"
+								>
+									<IconTools size={13} /> Tools
+								</button>
+								<button
+									data-active={false}
+									onClick={() => goToPane('render')}
+									disabled={!canRender}
+									title="Render and download (5)"
+								>
+									<IconDownload size={13} /> Render
+								</button>
+							</div>
+						)}
 					</div>
 					<div className="panel-scroll">
-						{tab === 'design' ? (
+						{activeTab === 'design' ? (
 							<CaptionDesignPanel
 								style={style}
 								disabled={render.rendering}
@@ -2828,7 +3064,7 @@ export default function CaptionStudio() {
 								onStyle={handleStyle}
 								onPreset={handlePreset}
 							/>
-						) : tab === 'sound' ? (
+						) : activeTab === 'sound' ? (
 							<CaptionSoundPanel
 								sound={sound}
 								style={style}
@@ -2837,7 +3073,7 @@ export default function CaptionStudio() {
 								disabled={render.rendering}
 								onSound={handleSound}
 							/>
-						) : tab === 'objects' ? (
+						) : activeTab === 'objects' ? (
 							<CaptionObjectPanel
 								state={{
 									cueCount: cues.length,
@@ -2875,7 +3111,7 @@ export default function CaptionStudio() {
 								}}
 								actions={objectActions}
 							/>
-						) : tab === 'tools' ? (
+						) : activeTab === 'tools' ? (
 							<CaptionToolsPanel
 								cues={cues}
 								style={style}
@@ -2924,10 +3160,20 @@ export default function CaptionStudio() {
 			<WorkflowSteps<CaptionPane>
 				label="Subtitle studio workflow"
 				active={pane}
-				onStep={setPane}
+				onStep={goToPane}
 				steps={CAPTION_PANES.map((item) => ({
 					...item,
-					done: item.id === 'source' ? video !== null : item.id === 'preview' ? cues.length > 0 && composition !== null : render.output !== null,
+					done:
+						item.id === 'source'
+							? video !== null && cues.length > 0
+							: item.id === 'render'
+								? render.output !== null
+								: visited.includes(item.id) && cues.length > 0,
+					locked: item.id === 'edit' ? !canEdit : item.id === 'render' ? !canRender : false,
+					lockedHint:
+						item.id === 'edit'
+							? 'Add a video and its words first'
+							: 'Add a video first',
 				}))}
 			/>
 

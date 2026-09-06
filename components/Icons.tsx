@@ -424,3 +424,24 @@ export const IconPalette = (props: IconProps) => (
 		<circle cx="15.5" cy="9" r="1.1" fill="currentColor" stroke="none" />
 	</Base>
 )
+
+export const IconChevronLeft = (props: IconProps) => (
+	<Base {...props}>
+		<path d="m14.5 5-7 7 7 7" />
+	</Base>
+)
+
+export const IconChevronRight = (props: IconProps) => (
+	<Base {...props}>
+		<path d="m9.5 5 7 7-7 7" />
+	</Base>
+)
+
+export const IconFit = (props: IconProps) => (
+	<Base {...props}>
+		<path d="M4 9V4h5" />
+		<path d="M20 9V4h-5" />
+		<path d="M4 15v5h5" />
+		<path d="M20 15v5h-5" />
+	</Base>
+)
