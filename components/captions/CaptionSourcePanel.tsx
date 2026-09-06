@@ -102,21 +102,11 @@ const ORIGIN_LABEL: Record<TranscriptOrigin, string> = {
 }
 
 const ENGINE_OPTIONS: { id: TranscribeEngine; label: string; note: string }[] = [
-	{
-		id: 'auto',
-		label: 'Auto',
-		note: 'Groq Whisper first, then NVIDIA if Groq is unset or fails, then this device. The right choice unless you have a reason not to be.',
-	},
-	{
-		id: 'cloud',
-		label: 'Cloud (Groq)',
-		note: "Groq's hosted Whisper large-v3 leads - it is free, needs no download, writes Devanagari, and returns a real per-word clock. NVIDIA is the automatic fallback. Only the audio is uploaded, as 16 kHz mono, never the video.",
-	},
-	{
-		id: 'device',
-		label: 'On this device',
-		note: 'Whisper runs inside this tab with WebAssembly and nothing leaves the machine. Needs a one-off model download and a browser that allows SharedArrayBuffer.',
-	},
+	{ id: 'auto', label: 'Auto', note: 'Gemini first, then Groq, NVIDIA, and this device if unavailable. Cloud providers receive only extracted audio. Any fallback is reported.' },
+	{ id: 'gemini', label: 'Gemini', note: 'Gemini 3.5 Transcribe preserves spoken words and returns word timestamps. Only extracted audio is uploaded. Review captions before export.' },
+	{ id: 'groq', label: 'Groq', note: 'Whisper large-v3 with word timestamps. Only extracted audio is uploaded to Groq.' },
+	{ id: 'nvidia', label: 'NVIDIA', note: 'NVIDIA speech recognition. Only extracted audio is uploaded. Models without word timestamps use estimated timing.' },
+	{ id: 'device', label: 'On this device', note: 'Whisper runs locally. Audio stays on your device. Requires a model download and SharedArrayBuffer support. Optional AI cleanup sends transcript text to NVIDIA.' },
 ]
 
 export default function CaptionSourcePanel({
@@ -265,23 +255,26 @@ export default function CaptionSourcePanel({
 	const languageMismatch = !modelSupportsLanguage(whisperModel, profile.language)
 	const words = cues.reduce((sum, cue) => sum + cue.tokens.length, 0)
 
-	const cloudReady = cloudStatus?.configured === true
+	const explicitProvider = ['gemini', 'groq', 'nvidia'].includes(engine)
+	const cloudReady = explicitProvider
+		? cloudStatus?.providers?.some(provider => provider.id === engine && provider.available) === true
+		: cloudStatus?.configured === true
 	// What "Auto" would actually do right now, so every hint below is about the
 	// engine that will really run rather than about the one that was picked.
 	const resolvedEngine: 'cloud' | 'device' =
-		engine === 'auto' ? (cloudReady ? 'cloud' : 'device') : engine
-	const engineNote = ENGINE_OPTIONS.find((option) => option.id === engine)?.note ?? ''
+		engine === 'auto' ? (cloudReady ? 'cloud' : 'device') : engine === 'device' ? 'device' : 'cloud'
+	const engineNote = ENGINE_OPTIONS.find((option) => option.id === (engine === 'cloud' ? 'auto' : engine))?.note ?? ''
 	// English-only Whisper builds pin the language; no cloud model does.
 	const englishPinned = resolvedEngine === 'device' && model.englishOnly
 	const effectiveLanguage = englishPinned ? 'en' : whisperLanguage
 	const autoCloudModel = cloudModelForLanguage(whisperLanguage)
 	const resolvedCloudModel = cloudAsrModelById(cloudModel ?? autoCloudModel)
 	const cloudLanguageMismatch =
-		resolvedCloudModel !== null && !cloudModelSupports(resolvedCloudModel, whisperLanguage)
+		engine === 'nvidia' && resolvedCloudModel !== null && !cloudModelSupports(resolvedCloudModel, whisperLanguage)
 	const deviceUnavailable = whisperSupport !== null && !whisperSupport.supported
 	const blockedEngine =
 		(resolvedEngine === 'device' && deviceUnavailable && engine === 'device') ||
-		(resolvedEngine === 'cloud' && engine === 'cloud' && cloudStatus !== null && !cloudReady)
+		(resolvedEngine === 'cloud' && engine !== 'auto' && engine !== 'device' && cloudStatus !== null && !cloudReady)
 
 	return (
 		<aside className="panel panel--left">
@@ -364,7 +357,7 @@ export default function CaptionSourcePanel({
 								</div>
 								<div className="dropzone-title">Drop your video here</div>
 								<div className="dropzone-hint">
-									MP4, MOV or WebM - it stays on this device, nothing is uploaded
+									MP4, MOV or WebM. Cloud transcription uploads extracted audio; local mode keeps audio on this device.
 								</div>
 							</div>
 
@@ -476,10 +469,10 @@ export default function CaptionSourcePanel({
 								</span>
 							</div>
 
-							{resolvedEngine === 'cloud' ? (
+							{resolvedEngine === 'cloud' ? (engine === 'nvidia' ? (
 								<div className="field">
 									<label className="field-label" htmlFor="cloud-model">
-										Fallback model
+										NVIDIA speech model
 										<span className="badge badge--muted">
 											{cloudStatus === null
 												? 'checking'
@@ -510,7 +503,7 @@ export default function CaptionSourcePanel({
 											'The server picks the model that fits the spoken language.'}
 									</span>
 								</div>
-							) : (
+							) : <p className="hint-text">{cloudStatus === null ? 'Checking speech providers...' : cloudReady ? 'Ready. Verbatim transcription with word timestamps.' : 'Selected speech provider is unavailable.'}</p>) : (
 								<>
 									{languageMismatch ? (
 										<div className="notice notice--warn">
@@ -600,12 +593,10 @@ export default function CaptionSourcePanel({
 								/>
 								<span>
 									<span className="field-label" style={{ display: 'block' }}>
-										Tidy the transcript with NVIDIA AI
+										AI cleanup with NVIDIA (optional)
 									</span>
 									<span style={{ fontSize: 11.5, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-										A language model fixes punctuation, capitalisation and misheard words line by
-										line. It never translates, and every word keeps the timing the recogniser gave
-										it. Only the text is sent - never the audio.
+										Sends transcript text to NVIDIA for spelling and punctuation changes. This may change spoken wording and estimate new timings. Leave off for verbatim captions.
 									</span>
 								</span>
 							</label>
@@ -642,7 +633,7 @@ export default function CaptionSourcePanel({
 											: (whisperSupport?.reason ??
 												'On-device speech recognition is not available in this browser.')}{' '}
 										{engine === 'device'
-											? 'Switch the engine to Cloud (Groq), or write the transcript by hand.'
+											? 'Switch the engine to Gemini or Auto, or write the transcript by hand.'
 											: 'Cloud transcription is used instead - it needs nothing from the browser.'}
 									</span>
 								</div>
@@ -654,7 +645,7 @@ export default function CaptionSourcePanel({
 										{engine === 'cloud' ? <IconAlert size={14} /> : <IconInfo size={14} />}
 									</span>
 									<span>
-										{cloudStatus.reason ??
+										{(explicitProvider ? `${engine} is not configured on this server. Choose Auto or another provider.` : cloudStatus.reason) ??
 											'Cloud transcription is not configured on this server.'}
 									</span>
 								</div>
@@ -732,11 +723,11 @@ export default function CaptionSourcePanel({
 								</span>
 								<span>
 									{engineUsed === 'cloud'
-										? 'Transcribed in the cloud - Groq\'s Whisper large-v3 unless it was unavailable, in which case NVIDIA answered. The studio decoded the audio here and sent it as 16 kHz mono; every word came back on its own measured timestamp, which is what the karaoke styles ride on.'
+										? 'Transcribed from extracted audio. The result notice identifies the providers and any fallback. Review words and timing before export.'
 										: engineUsed === 'device'
 											? 'Transcribed inside this tab with WebAssembly - the audio never left the machine, and every word carries its own timestamp.'
 											: resolvedEngine === 'cloud'
-												? "The studio decodes the audio here and uploads it as 16 kHz mono - the video itself never leaves this device. Groq's Whisper large-v3 goes first and returns a measured timestamp per word, which is what the karaoke styles ride on."
+												? "Audio is decoded here into lossless 16 kHz mono WAV. Only audio chunks go to the selected provider; the uploaded video stays local during transcription."
 												: 'Whisper runs inside this tab with WebAssembly. The audio never leaves the machine, and every word gets its own timestamp for karaoke styles.'}
 								</span>
 							</div>

@@ -74,10 +74,10 @@ export default function CaptionTopBar({
 				title={
 					crossOriginIsolated
 						? 'This page is cross-origin isolated, so on-device speech recognition can run'
-						: 'Without cross-origin isolation the browser blocks the speech model - write or import the transcript instead'
+						: 'Local speech recognition needs cross-origin isolation. Use Gemini, Groq, or NVIDIA cloud transcription instead.'
 				}
 			>
-				{crossOriginIsolated ? 'on-device speech ready' : 'speech model unavailable'}
+				{crossOriginIsolated ? 'on-device speech ready' : 'local speech unavailable'}
 			</span>
 
 			<span

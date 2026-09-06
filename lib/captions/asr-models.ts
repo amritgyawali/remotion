@@ -171,6 +171,8 @@ export type TimingSource = 'recogniser' | 'aligned' | 'spread'
 
 export type CloudAsrStatus = {
 	configured: boolean
+	primary?: 'gemini' | 'groq' | 'nvidia' | null
+	providers?: { id: string; label: string; available: boolean; role: string }[]
 	/** why the cloud path is unavailable, when it is */
 	reason?: string
 	endpoints: string[]

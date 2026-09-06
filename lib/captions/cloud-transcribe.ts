@@ -1,40 +1,18 @@
 'use client'
 
 /**
- * The cloud half of automatic captioning.
- *
- * The browser decodes the video's audio, conditions it, cuts it into chunks
- * small enough for a serverless request body, and streams them to
- * /api/captions/transcribe, which is the only place the NVIDIA key exists.
- * Chunks are uploaded a few at a time while later ones are still being decoded,
- * so a ten-minute clip does not wait for a full pass over its audio before the
- * first word comes back.
- *
- * What happens to the answer matters as much as getting one. A hosted
- * recogniser returns text and, if you are lucky, word timings; the text is
- * usually right and the timings are not always there at all. NVIDIA's hosted
- * Whisper function returns none, and the honest fallback - spread the words
- * evenly across the chunk - drifts seconds away from the speaker inside a
- * single minute of audio, which is exactly what makes captions feel broken.
- *
- * So the audio's own speech map, measured while it was being cut, is used to
- * place the words: on speech, never in a silence, weighted by how long each
- * word takes to say. When timings *are* returned they are checked against the
- * same map, the constant offset that every hosted model seems to carry is
- * measured and removed, and any word stranded in a pause is pulled back onto
- * the speech it belongs to.
- *
- * A chunk that fails is retried; a chunk that keeps failing costs its own
- * seconds of transcript and nothing more, and the caller is told which ones
- * they were. Losing one chunk must never lose the other nine.
+ * Decode and condition audio locally, upload bounded WAV chunks, then map each
+ * provider's timestamps onto the video timeline. Preserve recognized words and
+ * timestamps; speech detection only estimates timing when the provider has none.
+ * Only the overlap between adjacent chunks is reconciled. Spoken repetitions
+ * within a chunk remain intact. Incomplete runs fail instead of replacing the
+ * editor's transcript with captions that silently omit chunks.
  */
 
 import { streamAudioChunks, type AudioChunk } from './audio'
 import {
 	alignmentReport,
 	distributeOverSpeech,
-	monotonic,
-	snapWordsToSpeech,
 	type AlignmentReport,
 	type TimedWord,
 } from './align'
@@ -61,9 +39,6 @@ const REFINE_BATCH = 40
  * earlier chunk produced is dropped.
  */
 const BOUNDARY_TRIM_MS = 320
-/** Repeats of the same word inside this window are one word heard twice. */
-const DUPLICATE_WINDOW_MS = 600
-
 export class CloudTranscriptionError extends Error {
 	readonly code: string
 	constructor(message: string, code = 'upstream') {
@@ -104,8 +79,11 @@ type ChunkResult = {
 	words: CloudWord[]
 	model: string
 	endpoint: string
-	/** 'groq' | 'nvidia' - which provider actually answered this chunk. */
+	/** Which provider actually answered this chunk. */
 	provider: string
+	fallbackUsed: boolean
+	fallbackReason?: string
+	timingWarnings?: string[]
 	estimatedTimings: boolean
 }
 
@@ -113,6 +91,7 @@ async function postChunk(
 	chunk: AudioChunk,
 	args: {
 		language: string
+		provider?: string
 		model: string | null
 		signal: AbortSignal
 		/** The tail of the previous chunk's transcript, when it has come back. */
@@ -122,6 +101,7 @@ async function postChunk(
 	const form = new FormData()
 	form.append('audio', chunk.blob, `chunk-${chunk.index}.wav`)
 	form.append('language', args.language)
+	form.append('provider', args.provider ?? 'auto')
 	// The blob is longer than the span the chunk owns whenever a boundary had to
 	// be taken mid-word, and the recogniser must be told about the whole blob.
 	form.append('durationMs', String(chunk.endMs - chunk.startMs + chunk.contextMs))
@@ -158,11 +138,15 @@ async function postChunk(
 		endpoint: payload.endpoint,
 		provider: typeof payload.provider === 'string' ? payload.provider : payload.endpoint,
 		estimatedTimings: payload.estimatedTimings === true,
+		fallbackUsed: payload.fallbackUsed === true,
+		fallbackReason: payload.fallbackReason,
+		timingWarnings: payload.timingWarnings,
 	}
 }
 
 /** Names the provider in the progress line, and stays quiet until one has answered. */
 function providerLabel(provider: string): string {
+	if (provider === 'gemini') return ' with Gemini'
 	if (provider === 'groq') return ' with Groq Whisper'
 	if (provider === 'nvidia' || provider.startsWith('grpc') || provider.startsWith('http')) {
 		return ' with NVIDIA'
@@ -174,21 +158,19 @@ function providerLabel(provider: string): string {
 function isFatal(error: unknown): boolean {
 	return (
 		error instanceof CloudTranscriptionError &&
-		(error.code === 'credentials' || error.code === 'not-configured')
+		(error.code === 'credentials' || error.code === 'not-configured' || error.code === 'invalid-request')
 	)
 }
 
 function delay(ms: number, signal: AbortSignal): Promise<void> {
 	return new Promise((resolve, reject) => {
-		const timer = setTimeout(resolve, ms)
-		signal.addEventListener(
-			'abort',
-			() => {
-				clearTimeout(timer)
-				reject(new DOMException('Aborted', 'AbortError'))
-			},
-			{ once: true },
-		)
+		if (signal.aborted) { reject(signal.reason); return }
+		const abort = () => { clearTimeout(timer); reject(signal.reason) }
+		const timer = setTimeout(() => {
+			signal.removeEventListener('abort', abort)
+			resolve()
+		}, ms)
+		signal.addEventListener('abort', abort, { once: true })
 	})
 }
 
@@ -196,6 +178,7 @@ async function postChunkWithRetries(
 	chunk: AudioChunk,
 	args: {
 		language: string
+		provider?: string
 		model: string | null
 		signal: AbortSignal
 		previousText: string | null
@@ -217,6 +200,7 @@ async function postChunkWithRetries(
 
 export type CloudTranscribeArgs = {
 	source: Blob
+	provider?: string
 	language: string
 	model: string | null
 	durationSeconds: number
@@ -227,8 +211,11 @@ export type CloudTranscribeArgs = {
 export type CloudTranscribeResult = {
 	words: WordTiming[]
 	model: string
-	/** Which provider produced this transcript: 'groq' or 'nvidia'. */
+	/** A provider id, or mixed when multiple providers answered. */
 	provider: string
+	providers: string[]
+	fallbackReasons: string[]
+	timingWarnings: string[]
 	endpoint: string
 	chunks: number
 	failedChunks: number
@@ -243,42 +230,6 @@ export type CloudTranscribeResult = {
 }
 
 /* ------------------------------------------------------------- stitching */
-
-/** Comparison key for "is this the same word": script and letters, nothing else. */
-function wordKey(text: string): string {
-	return text
-		.toLowerCase()
-		.replace(/[^\p{L}\p{N}]/gu, '')
-		.normalize('NFC')
-}
-
-/**
- * Words that survive a chunk boundary can arrive twice - once at the end of one
- * chunk and once at the start of the next. Identical text inside a short window
- * is that duplicate, not a speaker repeating themselves; the two copies are
- * fused into the union of their spans so no time is lost either.
- */
-function dedupe(words: TimedWord[]): TimedWord[] {
-	const sorted = [...words].sort((left, right) => left.startMs - right.startMs)
-	const kept: TimedWord[] = []
-	for (const word of sorted) {
-		const previous = kept[kept.length - 1]
-		if (
-			previous &&
-			wordKey(previous.text) === wordKey(word.text) &&
-			wordKey(word.text).length > 0 &&
-			Math.abs(previous.startMs - word.startMs) < DUPLICATE_WINDOW_MS
-		) {
-			previous.endMs = Math.max(previous.endMs, word.endMs)
-			// Prefer whichever spelling carries punctuation - it is the one the
-			// recogniser saw in context rather than at a truncated edge.
-			if (word.text.length > previous.text.length) previous.text = word.text
-			continue
-		}
-		kept.push({ ...word })
-	}
-	return kept
-}
 
 function splitTokens(text: string): string[] {
 	return text
@@ -321,10 +272,8 @@ function placeChunkWords(chunk: AudioChunk, result: ChunkResult): ChunkTranscrip
 		.filter((word) => word.text.length > 0)
 
 	if (!result.estimatedTimings && recognised.length > 0) {
-		words = snapWordsToSpeech(recognised, speech, {
-			limitMs: blobEndMs + BOUNDARY_TRIM_MS,
-			maxShiftMs: 1_500,
-		}).words
+		// Provider timestamps remain authoritative; VAD is diagnostic, not forced alignment.
+		words = recognised
 		timing = 'recogniser'
 	} else {
 		const tokens = splitTokens(result.text || recognised.map((word) => word.text).join(' '))
@@ -352,7 +301,18 @@ function assemble(transcripts: ChunkTranscript[]): TimedWord[] {
 	for (const transcript of ordered) {
 		if (transcript.contextMs > 0 && transcript.words.length > 0) {
 			const boundary = transcript.spanStartMs - BOUNDARY_TRIM_MS
-			while (out.length > 0 && out[out.length - 1].startMs >= boundary) out.pop()
+			while (out.length > 0 && (out[out.length - 1].startMs + out[out.length - 1].endMs) / 2 >= boundary) out.pop()
+			// A small timestamp disagreement can put the same boundary word on
+			// opposite sides of the ownership cut. Reconcile only this cross-chunk
+			// pair when their actual spans substantially overlap. Adjacent spoken
+			// repetitions within either chunk are never deduplicated.
+			const previous = out[out.length - 1]
+			const incoming = transcript.words[0]
+			const key = (text: string) => text.normalize('NFC').toLowerCase().replace(/\p{P}/gu, '')
+			if (previous && key(previous.text) === key(incoming.text)) {
+				const overlap = Math.min(previous.endMs, incoming.endMs) - Math.max(previous.startMs, incoming.startMs)
+				if (overlap > 0.5 * Math.min(previous.endMs - previous.startMs, incoming.endMs - incoming.startMs)) out.pop()
+			}
 		}
 		for (const word of transcript.words) out.push(word)
 	}
@@ -370,7 +330,9 @@ function weakestTiming(transcripts: ChunkTranscript[]): TimingSource {
 export async function transcribeInCloud(
 	args: CloudTranscribeArgs,
 ): Promise<CloudTranscribeResult> {
-	const { source, language, model, durationSeconds, onProgress, signal } = args
+	const { source, language, model, durationSeconds, onProgress } = args
+	const pipeline = new AbortController()
+	const signal = AbortSignal.any([args.signal, pipeline.signal])
 
 	const transcripts: ChunkTranscript[] = []
 	const inflight = new Set<Promise<void>>()
@@ -388,6 +350,9 @@ export async function transcribeInCloud(
 	let estimatedTimings = false
 	/** Finished chunk index -> the tail of its transcript, for the next chunk's prompt. */
 	const tails = new Map<number, string>()
+	const providers = new Set<string>()
+	const fallbackReasons = new Set<string>()
+	const timingWarnings: string[] = []
 
 	const report = (extractRatio: number) => {
 		const extracted = Math.min(1, extractRatio)
@@ -407,6 +372,7 @@ export async function transcribeInCloud(
 		try {
 			const result = await postChunkWithRetries(chunk, {
 				language,
+				provider: args.provider,
 				model,
 				signal,
 				previousText: tails.get(chunk.index - 1) ?? null,
@@ -414,6 +380,11 @@ export async function transcribeInCloud(
 			usedModel = result.model || usedModel
 			usedEndpoint = result.endpoint || usedEndpoint
 			usedProvider = result.provider || usedProvider
+			if (result.provider) providers.add(result.provider)
+			if (result.fallbackUsed && result.fallbackReason) fallbackReasons.add(result.fallbackReason)
+			for (const warning of result.timingWarnings ?? []) {
+				timingWarnings.push(`Audio chunk ${chunk.index + 1} (starts at ${((chunk.startMs - chunk.contextMs) / 1000).toFixed(3)}s): ${warning}`)
+			}
 			estimatedTimings ||= result.estimatedTimings
 			if (result.text.trim()) tails.set(chunk.index, result.text.trim().slice(-400))
 			transcripts.push(placeChunkWords(chunk, result))
@@ -455,40 +426,36 @@ export async function transcribeInCloud(
 			})
 			inflight.add(tracked)
 		},
+	}).catch(async (error: unknown) => {
+		pipeline.abort(error)
+		await Promise.allSettled([...inflight])
+		throw error
 	})
 
 	expected = extraction.chunks
 	await Promise.all([...inflight])
 	if (fatal) throw fatal
 
-	if (failures.length === extraction.chunks && extraction.chunks > 0) {
+	if (failures.length > 0) {
 		throw new CloudTranscriptionError(
-			lastError ??
-				'NVIDIA could not transcribe any part of that audio. Check the server logs for the endpoint error, or transcribe on this device instead.',
+			`Transcription incomplete: ${failures.length} of ${extraction.chunks} chunks failed. ${lastError ?? ''}`,
 		)
 	}
 
-	onProgress({ stage: 'transcribing', progress: 0.99, message: 'Aligning the transcript' })
+	onProgress({ stage: 'transcribing', progress: 0.99, message: 'Joining timed words into captions' })
 
 	const speech = mergeSegments(extraction.speech, 120)
-	const stitched = dedupe(assemble(transcripts))
-
-	// One last pass over the whole clip. Per-chunk correction cannot see an
-	// offset that every chunk shares - a hosted model that pads its input, or a
-	// track whose first packet is late - and that shared offset is precisely
-	// what a viewer reads as the captions being out of sync with the mouth.
-	const snapped = snapWordsToSpeech(stitched, speech, {
-		maxShiftMs: 1_200,
-		limitMs: Math.max(extraction.durationMs, durationSeconds * 1000),
-	})
-
-	const words = monotonic(snapped.words, { minWordMs: 60 })
+	const words = assemble(transcripts)
+	const snapped = { offsetMs: 0, rescued: 0 }
 
 	return {
 		words,
 		model: usedModel,
 		endpoint: usedEndpoint,
-		provider: usedProvider,
+		provider: providers.size === 1 ? usedProvider : 'mixed',
+		providers: [...providers].sort(),
+		fallbackReasons: [...fallbackReasons],
+		timingWarnings,
 		chunks: extraction.chunks,
 		failedChunks: failures.length,
 		estimatedTimings,

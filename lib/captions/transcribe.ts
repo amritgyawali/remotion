@@ -103,7 +103,7 @@ export const SPEECH_PROFILES: SpeechProfile[] = [
 	{
 		id: 'nepali-english',
 		label: 'Nepali + English',
-		language: 'ne',
+		language: 'auto',
 		model: 'small',
 		note: 'Code-switched speech. Nepali is transcribed in Devanagari, English words stay in Latin - the studio loads a Devanagari face so both render.',
 	},
@@ -586,7 +586,7 @@ export async function runTranscription(args: RunTranscriptionArgs): Promise<Tran
 	assertLive(signal)
 
 	const order: Array<'cloud' | 'device'> =
-		engine === 'cloud'
+		engine !== 'auto' && engine !== 'device'
 			? ['cloud']
 			: engine === 'device'
 				? ['device']
@@ -602,11 +602,12 @@ export async function runTranscription(args: RunTranscriptionArgs): Promise<Tran
 	for (const attempt of order) {
 		try {
 			if (attempt === 'cloud') {
-				if (status && !status.configured && engine !== 'cloud') {
+				if (status && !status.configured && engine === 'auto') {
 					throw new Error(status.reason ?? 'Cloud transcription is not configured on this server.')
 				}
 				const result = await transcribeInCloud({
 					source: blob,
+					provider: ['gemini', 'groq', 'nvidia'].includes(engine) ? engine : 'auto',
 					language,
 					model: cloudModel,
 					durationSeconds: video.durationInSeconds,
@@ -619,11 +620,16 @@ export async function runTranscription(args: RunTranscriptionArgs): Promise<Tran
 					throw new Error(
 						result.silent
 							? 'That video has an audio track, but it is silent from start to finish.'
-							: 'NVIDIA returned no words for that audio. Try the on-device engine, or write the transcript by hand.',
+							: 'The speech provider returned no words for that audio. Try the on-device engine, or write the transcript by hand.',
 					)
 				}
 
-				const notices: string[] = []
+				const names: Record<string, string> = { gemini: 'Gemini 3.5 Transcribe', groq: 'Groq Whisper', nvidia: 'NVIDIA' }
+				const notices: string[] = [`Transcribed with ${result.providers.map(provider => names[provider] ?? provider).join(', ')}.`]
+				if (result.fallbackReasons.length) notices.push(`Fallback used. ${result.fallbackReasons.join(' ')}`)
+				if (result.timingWarnings.length) {
+					notices.push(`${result.timingWarnings.length} word timing(s) need review. ${result.timingWarnings.slice(0, 5).join(' ')}`)
+				}
 				if (failures.length > 0) notices.push(failures[failures.length - 1])
 				if (result.failedChunks > 0) {
 					notices.push(
@@ -673,7 +679,7 @@ export async function runTranscription(args: RunTranscriptionArgs): Promise<Tran
 					cues,
 					origin: 'cloud',
 					engine: 'cloud',
-					model: result.model || (result.provider === 'groq' ? 'Groq Whisper' : 'NVIDIA'),
+					model: result.model || (names[result.provider] ?? result.provider),
 					notice: notices.length > 0 ? notices.join(' ') : undefined,
 					speech: result.speech,
 					onSpeech: result.alignment.onSpeech,

@@ -17,7 +17,7 @@ transcribes an uploaded clip on-device, lets you edit and style the lines, and
 renders the video back out with the subtitles burned in.
 
 ```
-upload .mp4  ->  NVIDIA speech (cloud) or Whisper (WASM, on-device)  ->  editable cues
+upload .mp4  ->  Gemini speech (cloud) or Whisper (WASM, on-device)  ->  editable cues
              ->  generated .tsx  ->  captioned video + .srt
 ```
 
@@ -122,7 +122,8 @@ renders match frame for frame.
    secret normally starts with `nvapi-`; the credential ID shown in the account
    table is not the API key.
 2. Copy `.env.example` to `.env.local`, set `NVIDIA_API_KEY`, and restart `npm run dev`.
-   For automatic captions, set `GROQ_API_KEY` as well (or instead) - a free key
+   For automatic captions, set `GEMINI_API_KEY` for the primary speech provider.
+   Optionally set `GROQ_API_KEY` for fallback - a key
    from <https://console.groq.com> is the primary speech recogniser, and either
    key alone is enough to caption a video.
 3. **Auto** starts with the fastest planner and falls back automatically when a
@@ -168,79 +169,52 @@ Open **Subtitle a video** in the top bar, or go straight to
    size, frame rate and whether it has an audio track come from mediabunny, the
    same demuxer Remotion renders with. A public video URL works too.
 2. **Get the transcript**, three ways:
-   * **Auto** - speech recognition, with two engines behind one button.
+   * **Auto** tries **Gemini 3.5 Transcribe**, **Groq Whisper large-v3**,
+     **NVIDIA**, then **on-device Whisper**, using whichever providers are
+     configured. Explicit Gemini, Groq, NVIDIA, and On this device selections
+     run only that provider. The result notice reports every provider used and
+     any cloud fallback reason.
 
-     **Cloud** (used first whenever the server has any speech key) decodes the
-     audio in the browser, resamples it to 16 kHz mono, conditions it (DC
-     removal, an 85 Hz high-pass under the voice, and a level pass measured over
-     speech only), cuts it in the longest pause near each boundary and uploads
-     those chunks to `/api/captions/transcribe`.
+     Set `GEMINI_API_KEY` in `.env.local` and restart the app. `GOOGLE_API_KEY`
+     is also accepted when `GEMINI_API_KEY` is unset. Optional `GROQ_API_KEY` and
+     `NVIDIA_API_KEY` enable cloud fallbacks. Never use `NEXT_PUBLIC_` for keys.
 
-     That route tries **Groq's hosted Whisper large-v3 first** - it is free at
-     <https://console.groq.com>, needs no download, covers 99 languages, writes
-     Devanagari, and returns a measured timestamp for every individual word,
-     which is what the karaoke styles ride on. Each chunk is sent with
-     `temperature=0` (greedy decoding, so the model cannot re-roll a
-     low-confidence segment into an invented one) and a 224-token prompt that
-     *demonstrates* the wanted output rather than instructing it - Whisper has no
-     instruction tuning, and conditions on the prompt as if it were the
-     transcript so far, so an imperative prompt gets transcribed instead of
-     obeyed. See `lib/captions/asr-prompt.ts`. The tail of the previous chunk's
-     transcript rides along too, which keeps a name spelled the same way on both
-     sides of a chunk boundary.
+     The uploaded video stays local during transcription. The browser extracts
+     lossless 16 kHz mono PCM WAV, removes DC/low-frequency rumble, and adjusts
+     speech level without clipping. Approximately 60-second chunks stay below
+     the 4 MB audio limit for serverless uploads. Cuts prefer pauses; unavoidable
+     speech boundaries carry 1.5 seconds of overlap. Long videos stream through
+     the same bounded chunks instead of exceeding a provider's request limit.
 
-     **NVIDIA** is the automatic fallback when `GROQ_API_KEY` is unset or Groq
-     fails - Whisper large-v3 for Nepali and the other 98 languages, Parakeet and
-     Canary for English and the major European ones. The video never leaves the
-     device, there is nothing to download, and a chunk that fails is retried and
-     then skipped rather than losing the whole
-     transcript. When a boundary genuinely cannot be placed in a pause, the next
-     chunk carries a second and a half of overlap so the word sitting on the cut
-     is transcribed whole by somebody, and the two copies are stitched back into
-     one.
+     Gemini uses Google's `@google/genai` SDK and Interactions API with
+     `gemini-3.5-transcribe`, `mode.type: "verbatim"`, and word timestamps.
+     Nepali + English uses automatic language detection; Nepali and English
+     profiles provide language hints. This dedicated ASR model uses structured
+     transcription controls, not a creative instruction prompt. Smart mode and
+     custom vocabulary are omitted because they conflict with word timestamps.
+     Audio is sent inline, with `store: false`; no Files API upload is created.
+     See [Google's transcription documentation](https://ai.google.dev/gemini-api/docs/transcribe).
 
-     **On this device** runs Whisper as WebAssembly inside the tab. Six models
-     from tiny to small, English-only or multilingual (77 MB - 488 MB),
-     downloaded once into IndexedDB and reused afterwards. Nothing is uploaded
-     and no API key is involved; it does need a cross-origin isolated page for
-     SharedArrayBuffer.
+     Gemini responses must have complete word annotations with finite,
+     increasing, positive-duration timestamps inside the audio chunk. Invalid
+     output is retried once. If a short word still has zero duration, its onset
+     is retained with a flagged 1 ms display span; neighboring timestamps are
+     unchanged. These words are identified for timing review. rate limits and server errors use bounded backoff.
+     Recognizer timestamps are preserved when mapped onto the video timeline.
+     Repeated spoken words remain intact. Providers without word timestamps
+     use explicitly reported timing estimates from the speech map. A failed
+     chunk fails the run, allowing Auto to try local recognition; an incomplete
+     transcript never replaces the editor's existing captions as a success.
 
-     Either way every word gets its own timestamp, and a cleanup pass drops
-     music/silence hallucinations and the credit-loop lines Whisper falls into
-     on long clips. **Auto** falls back to the other engine when one fails, so a
-     missing key or a browser without SharedArrayBuffer still produces captions.
+     On-device Whisper downloads a model once (77 MB to 488 MB) and requires
+     SharedArrayBuffer support. Its audio stays local. Optional NVIDIA cleanup
+     sends transcript text to NVIDIA. Cleanup and English spelling restoration
+     default off; enabling them may change wording or estimate new timings.
+     No speech model guarantees perfect text or timing: review editable cues
+     before export. Timed words drive the existing karaoke overlay and Remotion
+     video export, with deterministic SRT/VTT generation.
 
-     **Every timestamp is then checked against the audio itself.** The same pass
-     that cut the chunks also measured where speech is, frame by frame, using a
-     two-threshold detector whose speech/silence split is recomputed per three
-     seconds by Otsu's method rather than assumed. That map does three jobs. A
-     recogniser that returns no word timings at all - which is what NVIDIA's
-     hosted Whisper function does - has its text laid down on the speech,
-     weighted by syllables, so a pause on screen is a pause in the audio instead
-     of the text being smeared evenly across a whole minute. A recogniser that
-     does return timings has its constant offset measured by cross-correlating
-     its word activity against the real speech and taken back out, and any word
-     left stranded in a silence is pulled onto the speech beside it. Line breaks
-     are placed on real pauses rather than on whatever gap the word timings
-     happened to leave. The studio reports what it did - the offset it removed,
-     and the share of words that landed on speech.
-
-     Optionally an NVIDIA language model then tidies the transcript - one
-     rewritten line per recognised line, so punctuation and spelling improve
-     while every word timing is kept. It is refused if the model changes the
-     line count or rewrites a line beyond recognition.
-
-     **English words come back in English.** Nepali speech is code-switched, and
-     a recogniser told the language is Nepali writes the English it hears in
-     Devanagari anyway - कम्प्युटर for computer, बैंक for bank, अपडेट for update,
-     ओटिपी for OTP. That is neither what the speaker said nor how any Nepali
-     writer spells it, so three layers put it back: the recogniser is handed the
-     common loanwords as phrase hints before it starts, a hand-decided lexicon
-     restores the ones it still wrote in Devanagari, and the clean-up model is
-     told explicitly that each word keeps the script it belongs to. It never
-     runs the other way - a Nepali word is never written in Latin - and a
-     loanword that has taken a Nepali ending is left whole, because बैंकमा is a
-     Nepali word and "bankमा" is not an improvement.
+     Run `npm run captions:check` for caption, export, and provider regressions.
    * **Write** - paste the script and it is spread across the clip, weighted by
      word length (Devanagari clusters count as one syllable, not one code
      point, so Nepali timing reads naturally), with a blank line acting as a

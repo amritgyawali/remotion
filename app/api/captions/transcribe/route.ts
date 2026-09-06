@@ -1,31 +1,7 @@
 /**
- * Speech -> timed words. Groq's hosted Whisper first, NVIDIA's recognisers second.
- *
- * The browser sends one chunk of 16 kHz mono WAV per request and this route
- * forwards it to a provider with an API key that never leaves the server. Two
- * providers are tried in order, and the browser never learns which one answered
- * beyond a `provider` field it may show:
- *
- *  1. Groq. One HTTPS hop to `api.groq.com/openai/v1/audio/transcriptions`,
- *     `whisper-large-v3`, `verbose_json` with word *and* segment timestamps. It
- *     returns a real per-word clock in seconds under keys the normaliser already
- *     reads, and its multilingual model handles Nepali and code-switched English
- *     in one pass - which is why it leads. Language is left undeclared so Whisper
- *     detects it; forcing a wrong ISO code only makes the transcript worse.
- *
- *  2. NVIDIA, unchanged, as the fallback for when Groq is unset, rate limited, or
- *     down. NVIDIA hosts its speech models as NVIDIA Cloud Functions reached by
- *     gRPC to `grpc.nvcf.nvidia.com:443` carrying the model's function id - there
- *     is no OpenAI-style `/v1/audio/transcriptions` on integrate.api.nvidia.com,
- *     so gRPC is the primary NVIDIA transport. Two HTTP transports follow it for
- *     a self-hosted NIM or an HTTP-enabled NVCF function: the OpenAI-compatible
- *     form and the Riva form (`language=en-US`, `word_time_offsets`). Whichever
- *     pairing answers first is remembered for the life of the instance, so only
- *     the first chunk pays for probing.
- *
- * Either provider's key alone is enough to run. Every failed attempt is reported
- * back so a misconfiguration names itself instead of hiding behind "could not
- * transcribe".
+ * Extracted audio -> timed words. Auto tries Gemini, Groq, then NVIDIA.
+ * Explicit provider selections never fall back. All keys stay on the server.
+ * Audio arrives as bounded WAV chunks; fallback metadata follows every answer.
  */
 
 import {
@@ -42,13 +18,14 @@ import {
 import { loanwordHints } from '../../../../lib/captions/loanwords'
 import { buildWhisperPrompt, whisperLanguage } from '../../../../lib/captions/asr-prompt'
 import { RIVA_GRPC_TARGET, rivaRecognize } from '../../../../lib/captions/riva/client'
+import { callGemini, geminiApiKey, GEMINI_TRANSCRIBE_MODEL, GeminiTranscriptionError } from '../../../../lib/captions/gemini'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
 /** A chunk is ~1.9 MB of WAV; anything much larger is not from this studio. */
-const MAX_AUDIO_BYTES = 12 * 1024 * 1024
+const MAX_AUDIO_BYTES = CLOUD_ASR_LIMITS.maxChunkBytes
 const REQUEST_TIMEOUT_MS = 120_000
 
 type Transport =
@@ -65,7 +42,7 @@ function nvidiaApiKey(): string | null {
 	return key ? key : null
 }
 
-/** Groq's key. Whisper is the primary recogniser; the key stays server-side only. */
+/** Groq's optional fallback key stays server-side only. */
 function groqApiKey(): string | null {
 	const key = process.env.GROQ_API_KEY?.trim()
 	return key ? key : null
@@ -613,31 +590,26 @@ async function callGrpc(args: {
 
 /* ------------------------------------------------------------------ route */
 
-/**
- * What the browser is allowed to know about the server's keys: whether cloud
- * transcription can run at all, and which provider would take the request.
- *
- * `configured` must be true when *either* key is set. It used to read the
- * NVIDIA key alone, so a server holding only GROQ_API_KEY - the free tier this
- * studio leads with - reported the cloud as unavailable, and the Auto engine
- * silently fell back to the on-device Whisper it was meant to replace.
- */
+/** Configuration availability, not a claim that credentials or quotas were verified. */
 export function GET() {
+	const gemini = geminiApiKey() !== null
 	const groq = groqApiKey() !== null
 	const nvidia = nvidiaApiKey() !== null
-	const configured = groq || nvidia
+	const configured = gemini || groq || nvidia
 	return Response.json(
 		{
 			configured,
-			primary: groq ? 'groq' : nvidia ? 'nvidia' : null,
+			primary: gemini ? 'gemini' : groq ? 'groq' : nvidia ? 'nvidia' : null,
 			providers: [
-				{ id: 'groq', label: `Groq ${GROQ_MODEL}`, available: groq, role: 'primary' },
+				{ id: 'gemini', label: 'Gemini 3.5 Transcribe', available: gemini, role: 'primary' },
+				{ id: 'groq', label: `Groq ${GROQ_MODEL}`, available: groq, role: 'fallback' },
 				{ id: 'nvidia', label: 'NVIDIA Riva', available: nvidia, role: 'fallback' },
 			],
 			reason: configured
 				? undefined
-				: 'Neither GROQ_API_KEY nor NVIDIA_API_KEY is set on the server, so cloud transcription is off. A free Groq key at console.groq.com is the quickest fix - add GROQ_API_KEY to .env.local and restart, or transcribe on this device instead.',
+				: 'Cloud transcription needs GEMINI_API_KEY, GROQ_API_KEY, or NVIDIA_API_KEY on the server. Add a key to .env.local and restart, or select On this device.',
 			endpoints: [
+				...(gemini ? ['gemini'] : []),
 				...(groq ? [GROQ_ENDPOINT] : []),
 				...(grpcDisabled() ? [] : [grpcTarget()]),
 				...httpEndpoints(CLOUD_ASR_MODELS[0]).map((entry) => entry.endpoint),
@@ -652,13 +624,14 @@ export function GET() {
 }
 
 export async function POST(request: Request) {
-	const groqKey = groqApiKey()
-	const nvidiaKey = nvidiaApiKey()
-	if (!groqKey && !nvidiaKey) {
+	let geminiKey = geminiApiKey()
+	let groqKey = groqApiKey()
+	let nvidiaKey = nvidiaApiKey()
+	if (!geminiKey && !groqKey && !nvidiaKey) {
 		return Response.json(
 			{
 				error:
-					'Neither GROQ_API_KEY nor NVIDIA_API_KEY is set on the server. Add at least one to .env.local and restart.',
+					'Add GEMINI_API_KEY, GROQ_API_KEY, or NVIDIA_API_KEY to .env.local and restart.',
 				code: 'not-configured',
 			},
 			{ status: 503 },
@@ -670,6 +643,23 @@ export async function POST(request: Request) {
 		form = await request.formData()
 	} catch {
 		return Response.json({ error: 'Send the audio as multipart/form-data.' }, { status: 400 })
+	}
+	const selection = form.get('provider') ?? 'auto'
+	if (typeof selection !== 'string' || !['auto', 'gemini', 'groq', 'nvidia'].includes(selection)) {
+		return Response.json({ error: 'Unknown speech provider.', code: 'invalid-request' }, { status: 400 })
+	}
+	if (selection !== 'auto') {
+		if (selection !== 'gemini') geminiKey = null
+		if (selection !== 'groq') groqKey = null
+		if (selection !== 'nvidia') nvidiaKey = null
+		if (!geminiKey && !groqKey && !nvidiaKey) {
+			return Response.json({ error: `${selection} is not configured on the server.`, code: 'not-configured' }, { status: 503 })
+		}
+	}
+	for (const field of ['language', 'model', 'durationMs', 'fileName', 'hints', 'contextMs', 'previousText']) {
+		if (form.has(field) && typeof form.get(field) !== 'string') {
+			return Response.json({ error: `Invalid ${field}.`, code: 'invalid-request' }, { status: 400 })
+		}
 	}
 
 	const audio = form.get('audio')
@@ -709,6 +699,10 @@ export async function POST(request: Request) {
 	const model = modelFor(requestedModel, language)
 	const bytes = new Uint8Array(await audio.arrayBuffer())
 	const { pcm, sampleRate } = pcmFromWav(bytes)
+	if (geminiKey && (bytes.length < 44 || Buffer.from(bytes.subarray(0, 4)).toString() !== 'RIFF' ||
+		Buffer.from(bytes.subarray(8, 12)).toString() !== 'WAVE')) {
+		return Response.json({ error: 'Send extracted WAV audio.', code: 'invalid-request' }, { status: 400 })
+	}
 
 	// The remembered language spelling goes first; the rest still follow, so a
 	// model swap mid-session cannot strand the request on the wrong dialect.
@@ -719,17 +713,30 @@ export async function POST(request: Request) {
 			: languages
 
 	const attempts: Attempt[] = []
+	const fallback = () => ({
+		fallbackUsed: attempts.length > 0,
+		fallbackReason: attempts.length ? attempts.map(attempt => `${attempt.transport}: ${attempt.error}`).join(' | ') : undefined,
+	})
+	if (geminiKey) {
+		try {
+			const result = await callGemini({ audio, key: geminiKey, language, durationMs, signal: request.signal })
+			return Response.json({
+				text: result.text, words: result.words, model: GEMINI_TRANSCRIBE_MODEL,
+				provider: 'gemini', endpoint: 'gemini', language, estimatedTimings: false,
+				timingWarnings: result.timingWarnings,
+				contextMs, durationMs, ...fallback(),
+			}, { headers: { 'cache-control': 'no-store' } })
+		} catch (error) {
+			if (request.signal.aborted) return new Response(null, { status: 499 })
+			const message = error instanceof GeminiTranscriptionError ? error.message : 'Gemini request timed out or was unavailable.'
+			attempts.push({ transport: 'gemini', language, error: message })
+			if (!groqKey && !nvidiaKey) {
+				return Response.json({ error: message, code: error instanceof GeminiTranscriptionError ? error.code : 'upstream' }, { status: 502 })
+			}
+		}
+	}
 
-	/*
-	 * 1. Groq, the primary.
-	 *
-	 * Whisper takes a bare ISO-639-1 code or nothing at all, so the Riva locale
-	 * candidates (`ne-NP`, `en-US`) that the NVIDIA path walks are meaningless
-	 * here - `whisperLanguage` reduces them to one code, and detection covers
-	 * the rest. That makes this a single attempt rather than a language loop,
-	 * which also means a Groq outage costs one request instead of three before
-	 * the fallback gets its turn.
-	 */
+	// Groq follows Gemini in Auto; an explicit Groq request starts here.
 	if (groqKey) {
 		try {
 			const result = await callGroq({
@@ -747,6 +754,7 @@ export async function POST(request: Request) {
 					words: result.words,
 					model: GROQ_MODEL,
 					provider: 'groq',
+					...fallback(),
 					endpoint: 'groq',
 					language: whisperLanguage(language) ?? 'auto',
 					estimatedTimings: result.estimated,
@@ -778,7 +786,7 @@ export async function POST(request: Request) {
 		}
 	}
 
-	// 2. NVIDIA, the fallback. Skipped entirely without a key - running the
+	// NVIDIA, the final cloud fallback. Skipped entirely without a key - running the
 	//    transport loop on a null key only buries the real (Groq) failure under
 	//    a pile of authentication errors.
 	if (!nvidiaKey) {
@@ -830,6 +838,8 @@ export async function POST(request: Request) {
 						text: result.text,
 						words: result.words,
 						model: model.id,
+						provider: 'nvidia',
+						...fallback(),
 						endpoint: label,
 						language: languageCode,
 						estimatedTimings: result.estimated,
