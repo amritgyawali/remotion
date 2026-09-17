@@ -60,6 +60,7 @@ import {
 	type ExportSettings,
 	type SilenceSession,
 } from '../lib/silence/session'
+import { describeProxy, usePreviewProxy } from '../lib/media/use-preview-proxy'
 import { readBlob, removeBlob, requestPersistentStorage, writeBlob } from '../lib/persist/idb'
 import { useAutosave, useRestoredSnapshot } from '../lib/persist/use-vault'
 import { sendToStudio, useIncomingHandoff } from '../lib/handoff'
@@ -695,6 +696,22 @@ export default function SilenceStudio() {
 	const busy = analyzing || rendering
 	const savedLabel = plan.savedMs > 500 ? formatSpan(plan.savedMs) : null
 
+	/**
+	 * A preview-sized copy of the clip, built once in the background.
+	 *
+	 * Watching a cut is the one thing this studio does that seeks constantly -
+	 * every removed pause is a jump - and a seek costs whatever the file's key
+	 * frame spacing makes it cost. The proxy is written with a key frame twice a
+	 * second, which is what turns those jumps from a visible stall into an edit.
+	 *
+	 * It is held back while the audio is being measured or the cut is being
+	 * written: both already saturate the machine, and a transcode joining them
+	 * would slow the thing the person is actually waiting for. The export never
+	 * sees it - `renderCutVideo` is handed `video.file`, the original bytes.
+	 */
+	const proxy = usePreviewProxy(video, { enabled: !busy })
+	const proxyNote = describeProxy(proxy)
+
 	return (
 		<div className="app">
 			<SilenceTopBar
@@ -808,13 +825,15 @@ export default function SilenceStudio() {
 
 					<div className="stage stage--cut">
 						<SilencePreview
-							url={video?.url ?? null}
+							url={proxy.url}
 							width={video?.width ?? 16}
 							height={video?.height ?? 9}
 							plan={plan}
 							sourceMs={sourceMs}
 							seekNonce={seekNonce}
 							previewOriginal={previewOriginal}
+							proxyNote={proxyNote}
+							proxyBusy={proxy.status === 'queued' || proxy.status === 'building'}
 							onSourceMs={setSourceMs}
 							onPreviewOriginal={setPreviewOriginal}
 						/>

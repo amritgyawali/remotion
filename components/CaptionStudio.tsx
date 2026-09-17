@@ -80,6 +80,7 @@ import { cloudAsrStatus } from '../lib/captions/cloud-transcribe'
 import type { SpeechSegment } from '../lib/captions/vad'
 import type { CloudAsrStatus } from '../lib/captions/asr-models'
 import { isVideoFile, probeVideo, releaseVideoSource } from '../lib/captions/video-source'
+import { describeProxy, usePreviewProxy } from '../lib/media/use-preview-proxy'
 import {
 	explainEmptyImport,
 	importSubtitleFile,
@@ -1049,6 +1050,34 @@ export default function CaptionStudio() {
 			flex: 'none',
 		}
 	}, [composition, orient, previewZoom])
+
+	/**
+	 * A preview-sized copy of the clip, built once in the background.
+	 *
+	 * The Player decodes the source at its native resolution however small the
+	 * panel showing it is, and holds the decoded frames in a cache measured in
+	 * bytes - so a 4K clip fills that cache with about four seconds of video and
+	 * then re-decodes everything the moment the playhead moves. Handing the
+	 * Player a preview-sized file makes each frame a twentieth of the work and
+	 * the same cache hold a minute of it, which is the difference between
+	 * scrubbing a subtitle into place and waiting for one.
+	 *
+	 * It is held back while a transcription or a render is running, and it never
+	 * leaves this component: `composition` below keeps the original `src`, so
+	 * every export, every .tsx download and every server render reads the file
+	 * the person actually uploaded.
+	 */
+	const proxy = usePreviewProxy(video, { enabled: !busy })
+	const proxyNote = describeProxy(proxy)
+
+	const previewComposition = useMemo(() => {
+		if (!composition) return null
+		if (!proxy.proxy) return composition
+		return {
+			...composition,
+			defaultProps: { ...(composition.defaultProps ?? {}), src: proxy.proxy.url },
+		}
+	}, [composition, proxy.proxy])
 
 	// What the transcript is actually made of, measured rather than assumed -
 	// drives both the font-stack warning and the auto-enable below.
@@ -2787,6 +2816,20 @@ export default function CaptionStudio() {
 									<IconSpinner size={11} /> building preview
 								</span>
 							) : null}
+							{proxyNote ? (
+								<span
+									className="badge"
+									data-proxy={proxy.status}
+									title={
+										proxy.status === 'ready'
+											? 'The preview plays a smaller copy of the clip so it scrubs instantly. Exports always read the original file.'
+											: 'A smaller copy of the clip is being prepared in the background. The preview keeps playing the original until it is ready.'
+									}
+								>
+									{proxy.status === 'ready' ? null : <IconSpinner size={11} />}
+									{proxyNote}
+								</span>
+							) : null}
 						</div>
 
 						<div className="stage-bar-group stage-bar-group--end">
@@ -2896,7 +2939,7 @@ export default function CaptionStudio() {
 							) : composition ? (
 								<div className="stage-frame" style={frameStyle}>
 									<CaptionPlayer
-										composition={composition}
+										composition={previewComposition ?? composition}
 										audioEnabled={render.settings.audioEnabled}
 										playerRef={playerRef}
 										onFrame={setCurrentFrame}

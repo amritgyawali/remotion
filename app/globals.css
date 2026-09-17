@@ -1497,6 +1497,21 @@ textarea::placeholder {
 	color: var(--text-tertiary);
 }
 
+/* The preview proxy reports itself quietly: it is a fact about the preview,
+   not a state anyone has to act on, so it reads as green once it is doing its
+   job and as the ordinary "working" grey while it is being built. */
+.badge[data-proxy='ready'] {
+	background: var(--green-soft);
+	border-color: color-mix(in srgb, var(--green) 24%, transparent);
+	color: color-mix(in srgb, var(--green) 80%, var(--text));
+}
+.badge[data-proxy='queued'],
+.badge[data-proxy='building'] {
+	background: color-mix(in srgb, var(--text) 7%, transparent);
+	color: var(--text-tertiary);
+	font-variant-numeric: tabular-nums;
+}
+
 /* ----------------------------------------------------------------- lists */
 
 .file-list {
@@ -6356,6 +6371,36 @@ textarea::placeholder {
 	display: block;
 	cursor: pointer;
 	background: #000;
+}
+
+/* Sits opposite the cut and speed flashes so the three never collide. */
+.cut-proxy-flag {
+	position: absolute;
+	top: 12px;
+	left: 12px;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 5px 10px;
+	border-radius: 999px;
+	font-size: 10.5px;
+	font-weight: 640;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	white-space: nowrap;
+	border: 1px solid color-mix(in srgb, var(--green) 40%, transparent);
+	background: color-mix(in srgb, var(--green) 18%, transparent);
+	color: var(--green);
+	backdrop-filter: blur(10px);
+	-webkit-backdrop-filter: blur(10px);
+	font-variant-numeric: tabular-nums;
+	animation: fade-in var(--fast) var(--ease) both;
+}
+
+.cut-proxy-flag[data-busy='true'] {
+	border-color: color-mix(in srgb, var(--text) 18%, transparent);
+	background: color-mix(in srgb, var(--surface-1) 72%, transparent);
+	color: var(--text-tertiary);
 }
 
 .cut-skip-flash,

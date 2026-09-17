@@ -13,6 +13,17 @@
  * The seek is done a beat early - a browser takes a moment to land on a new
  * position, and jumping at the instant the hole opens lets a frame of it
  * through. Leaving early is invisible; leaving late is a stutter.
+ *
+ * How early is measured rather than assumed. A seek costs "decode everything
+ * since the last key frame", which is a handful of milliseconds on the preview
+ * proxy and most of a second on a 4K file whose key frames are five seconds
+ * apart. A fixed lookahead can only be right for one of those, so the element
+ * is timed as it works - `seeking` to `seeked`, smoothed - and the loop leaves
+ * that much ahead of every hole, within sane bounds.
+ *
+ * The file being played is whatever the studio hands over. That is usually the
+ * preview proxy, which is the same footage at preview size with a key frame
+ * twice a second; the export always reads the original, so the two never meet.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -30,12 +41,24 @@ import {
 	IconScissors,
 	IconSkipNext,
 	IconSkipPrev,
+	IconSpinner,
 	IconVolume,
 	IconVolumeOff,
 } from '../Icons'
 
-/** How far ahead of a hole the seek is issued, in seconds. */
-const LOOKAHEAD_SECONDS = 0.06
+/** The least notice a seek is ever given, in seconds. */
+const MIN_LOOKAHEAD_SECONDS = 0.06
+
+/**
+ * The most notice a seek is ever given.
+ *
+ * Past this the jump starts to cut audible speech off the end of the kept
+ * stretch, which is a worse fault than the stutter it would be avoiding.
+ */
+const MAX_LOOKAHEAD_SECONDS = 0.45
+
+/** Weight of each new measurement in the running estimate of seek cost. */
+const SEEK_COST_SMOOTHING = 0.3
 
 export default function SilencePreview({
 	url,
@@ -45,9 +68,12 @@ export default function SilencePreview({
 	sourceMs,
 	seekNonce,
 	previewOriginal,
+	proxyNote,
+	proxyBusy = false,
 	onSourceMs,
 	onPreviewOriginal,
 }: {
+	/** the file to play - the preview proxy when there is one, else the original */
 	url: string | null
 	/** the clip's own pixel size, which shapes the frame around it */
 	width: number
@@ -57,6 +83,10 @@ export default function SilencePreview({
 	/** bumped by the parent whenever it wants the element moved */
 	seekNonce: number
 	previewOriginal: boolean
+	/** one line about the preview copy, shown over the frame */
+	proxyNote?: string | null
+	/** true while that copy is still being built */
+	proxyBusy?: boolean
 	onSourceMs: (ms: number) => void
 	onPreviewOriginal: (value: boolean) => void
 }) {
@@ -73,6 +103,37 @@ export default function SilencePreview({
 	originalRef.current = previewOriginal
 	const emitRef = useRef(onSourceMs)
 	emitRef.current = onSourceMs
+	const sourceMsRef = useRef(sourceMs)
+	sourceMsRef.current = sourceMs
+	const playingRef = useRef(playing)
+	playingRef.current = playing
+
+	/* ------------------------------------------------ measured seek cost */
+
+	/** Seconds the element has been taking to land a seek, smoothed. */
+	const seekCost = useRef(MIN_LOOKAHEAD_SECONDS)
+	const seekStartedAt = useRef<number | null>(null)
+
+	const noteSeekStart = useCallback(() => {
+		seekStartedAt.current = performance.now()
+	}, [])
+
+	const noteSeekEnd = useCallback(() => {
+		const started = seekStartedAt.current
+		seekStartedAt.current = null
+		if (started === null) return
+		const measured = (performance.now() - started) / 1000
+		// A seek the browser served from what it had already decoded reports a
+		// millisecond or less. Folding those in would pull the estimate below
+		// what a real jump costs, so the floor does the clamping, not the mean.
+		seekCost.current =
+			seekCost.current * (1 - SEEK_COST_SMOOTHING) + measured * SEEK_COST_SMOOTHING
+	}, [])
+
+	const lookahead = useCallback(
+		() => Math.min(MAX_LOOKAHEAD_SECONDS, Math.max(MIN_LOOKAHEAD_SECONDS, seekCost.current * 1.6)),
+		[],
+	)
 
 	/* --------------------------------------------------- external seeks */
 
@@ -86,6 +147,28 @@ export default function SilencePreview({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [seekNonce])
 
+	/* ------------------------------------------------- swapping the file */
+
+	/**
+	 * The proxy usually arrives mid-session, so the element's `src` changes
+	 * under a person who is part-way through watching. Where they were and
+	 * whether they were playing is restored on the other side of the swap, which
+	 * makes the upgrade something you notice only by it suddenly being smooth.
+	 */
+	const restoreTo = useRef<number | null>(null)
+	const resumeAfterLoad = useRef(false)
+	const firstLoad = useRef(true)
+
+	useEffect(() => {
+		if (!url) return
+		if (firstLoad.current) {
+			firstLoad.current = false
+			return
+		}
+		restoreTo.current = sourceMsRef.current / 1000
+		resumeAfterLoad.current = playingRef.current
+	}, [url])
+
 	/* ------------------------------------------------------- the loop */
 
 	const step = useCallback(() => {
@@ -95,7 +178,7 @@ export default function SilencePreview({
 		const positionMs = video.currentTime * 1000
 
 		if (!originalRef.current && currentPlan.segments.length > 0) {
-			const at = sourceToOutput(currentPlan, positionMs + LOOKAHEAD_SECONDS * 1000)
+			const at = sourceToOutput(currentPlan, positionMs + lookahead() * 1000)
 			const segment = at.segment
 
 			if (segment && segment.mode === 'drop') {
@@ -120,7 +203,7 @@ export default function SilencePreview({
 
 		emitRef.current(positionMs)
 		frameRef.current = window.requestAnimationFrame(step)
-	}, [])
+	}, [lookahead])
 
 	useEffect(() => {
 		if (!playing) {
@@ -210,13 +293,28 @@ export default function SilencePreview({
 							src={url}
 							playsInline
 							muted={muted}
-							preload="metadata"
+							// The whole point of this panel is scrubbing, and a browser that
+							// has only read the headers re-fetches for every jump.
+							preload="auto"
 							onEnded={() => setPlaying(false)}
 							onPause={() => setPlaying(false)}
+							onSeeking={noteSeekStart}
+							onSeeked={noteSeekEnd}
 							onClick={toggle}
 							onLoadedMetadata={(event) => {
 								const video = event.currentTarget
-								if (sourceMs > 0) video.currentTime = sourceMs / 1000
+								const restored = restoreTo.current
+								restoreTo.current = null
+								const target = restored ?? (sourceMs > 0 ? sourceMs / 1000 : 0)
+								const ceiling = Number.isFinite(video.duration) ? video.duration : target
+								if (target > 0) video.currentTime = Math.min(target, ceiling)
+								if (resumeAfterLoad.current) {
+									resumeAfterLoad.current = false
+									void video
+										.play()
+										.then(() => setPlaying(true))
+										.catch(() => setPlaying(false))
+								}
 							}}
 						/>
 					</div>
@@ -232,6 +330,13 @@ export default function SilencePreview({
 						</p>
 					</div>
 				)}
+
+				{url && proxyNote ? (
+					<span className="cut-proxy-flag" data-busy={proxyBusy}>
+						{proxyBusy ? <IconSpinner size={11} /> : null}
+						{proxyNote}
+					</span>
+				) : null}
 
 				{skipping ? (
 					<span className="cut-skip-flash">
